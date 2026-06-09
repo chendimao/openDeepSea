@@ -2,6 +2,8 @@ export type KnowledgeLocale = 'zh' | 'en';
 
 export type KnowledgeTone = 'success' | 'info' | 'warning' | 'danger' | 'muted' | 'neutral';
 
+export type KnowledgeRetrievalMode = 'keyword' | 'vector_preview' | 'hybrid';
+
 export type KnowledgeSourceStatus =
   | 'pending'
   | 'processing'
@@ -46,11 +48,24 @@ export interface KnowledgeSourceTypeDisplay {
   iconKey: KnowledgeSourceIconKey;
 }
 
+export interface KnowledgeRetrievalModeDisplay {
+  label: string;
+  description: string;
+  sortWeight: number;
+}
+
 export interface KnowledgeMetadata {
   key_points?: string[];
+  decisions?: string[];
+  constraints?: string[];
+  risks?: string[];
+  learnings?: string[];
   content_kind?: string;
   parser?: string;
   parser_version?: string;
+  parser_status?: 'complete' | 'partial' | 'metadata_only' | 'requires_sidecar' | 'failed';
+  parser_warnings?: string[];
+  requires_sidecar?: boolean;
   [key: string]: unknown;
 }
 
@@ -141,6 +156,8 @@ export interface KnowledgeSearchResult {
   content: string;
   snippet: string;
   score: number;
+  retrieval_mode?: KnowledgeRetrievalMode;
+  ranking?: KnowledgeRankingSignals;
   metadata: KnowledgeMetadata;
   citation: {
     source_id: string;
@@ -152,6 +169,84 @@ export interface KnowledgeSearchResult {
     heading: string | null;
     room_id: string | null;
   };
+}
+
+export interface KnowledgeRankingSignals {
+  keywordScore?: number;
+  vectorScore?: number;
+  titleMatch: boolean;
+  tagMatch: boolean;
+  summaryMatch: boolean;
+  recencyBoost: number;
+  finalScore: number;
+}
+
+export interface KnowledgeInsightGroup {
+  count: number;
+  source_ids: string[];
+}
+
+export interface KnowledgeInsights {
+  duplicates: KnowledgeInsightGroup;
+  stale: KnowledgeInsightGroup;
+  parser_incomplete: KnowledgeInsightGroup;
+  empty_index: KnowledgeInsightGroup;
+}
+
+export type KnowledgeInsightKey = keyof KnowledgeInsights;
+
+export interface KnowledgeInsightSummaryItem {
+  key: KnowledgeInsightKey;
+  label: string;
+  tone: KnowledgeTone;
+  count: number;
+  sourceIds: string[];
+  sortWeight: number;
+}
+
+export interface KnowledgeInsightsSummary {
+  totalIssues: number;
+  items: KnowledgeInsightSummaryItem[];
+}
+
+export interface ManualKnowledgeInput {
+  title: string;
+  content: string;
+  tags?: string[];
+  roomId?: string;
+}
+
+export interface UrlKnowledgeInput {
+  url: string;
+  title?: string;
+  content?: string;
+  tags?: string[];
+  roomId?: string;
+}
+
+export interface WorkspaceKnowledgeImportInput {
+  paths: string[];
+  tags?: string[];
+  roomId?: string;
+}
+
+export interface KnowledgeMetadataPatch {
+  key_points?: string[];
+  decisions?: string[];
+  constraints?: string[];
+  risks?: string[];
+  learnings?: string[];
+}
+
+export interface KnowledgeImportResult {
+  source: KnowledgeSource;
+  extraction?: KnowledgeExtraction | null;
+  chunks?: KnowledgeChunk[];
+}
+
+export interface WorkspaceKnowledgeImportResult {
+  created: KnowledgeSource[];
+  failed: Array<{ path: string; error: string }>;
 }
 
 export interface KnowledgeSourceFilters {
@@ -276,6 +371,69 @@ const KNOWLEDGE_SOURCE_TYPE_DISPLAY: Record<KnowledgeSourceType, Record<Knowledg
   },
 };
 
+const KNOWLEDGE_RETRIEVAL_MODE_DISPLAY: Record<KnowledgeRetrievalMode, Record<KnowledgeLocale, string> & {
+  description: Record<KnowledgeLocale, string>;
+  sortWeight: number;
+}> = {
+  keyword: {
+    zh: '关键词',
+    en: 'Keyword',
+    description: {
+      zh: 'FTS 关键词匹配',
+      en: 'FTS keyword match',
+    },
+    sortWeight: 10,
+  },
+  vector_preview: {
+    zh: '向量预览',
+    en: 'Vector preview',
+    description: {
+      zh: '本地 hash embedding 预览',
+      en: 'Local hash embedding preview',
+    },
+    sortWeight: 20,
+  },
+  hybrid: {
+    zh: '混合',
+    en: 'Hybrid',
+    description: {
+      zh: '关键词与向量信号合并',
+      en: 'Keyword and vector signals',
+    },
+    sortWeight: 30,
+  },
+};
+
+const KNOWLEDGE_INSIGHT_DISPLAY: Record<KnowledgeInsightKey, Record<KnowledgeLocale, string> & {
+  tone: KnowledgeTone;
+  sortWeight: number;
+}> = {
+  parser_incomplete: {
+    zh: '解析待补全',
+    en: 'Parser incomplete',
+    tone: 'warning',
+    sortWeight: 10,
+  },
+  duplicates: {
+    zh: '重复内容',
+    en: 'Duplicates',
+    tone: 'info',
+    sortWeight: 20,
+  },
+  stale: {
+    zh: '待刷新',
+    en: 'Stale',
+    tone: 'warning',
+    sortWeight: 30,
+  },
+  empty_index: {
+    zh: '空索引',
+    en: 'Empty index',
+    tone: 'danger',
+    sortWeight: 40,
+  },
+};
+
 const KNOWLEDGE_STATUS_FILTER_OPTIONS: ReadonlyArray<KnowledgeSourceStatus | ''> = [
   '',
   'ready',
@@ -314,6 +472,45 @@ export function getKnowledgeSourceTypeDisplay(
   return {
     label: display[locale],
     iconKey: display.iconKey,
+  };
+}
+
+export function getKnowledgeRetrievalModeDisplay(
+  mode: KnowledgeRetrievalMode,
+  locale: KnowledgeLocale = 'zh',
+): KnowledgeRetrievalModeDisplay {
+  const display = KNOWLEDGE_RETRIEVAL_MODE_DISPLAY[mode];
+  return {
+    label: display[locale],
+    description: display.description[locale],
+    sortWeight: display.sortWeight,
+  };
+}
+
+export function summarizeKnowledgeInsights(
+  insights: KnowledgeInsights | null | undefined,
+  locale: KnowledgeLocale = 'zh',
+): KnowledgeInsightsSummary {
+  if (!insights) return { totalIssues: 0, items: [] };
+  const items = (Object.keys(KNOWLEDGE_INSIGHT_DISPLAY) as KnowledgeInsightKey[])
+    .map((key) => {
+      const display = KNOWLEDGE_INSIGHT_DISPLAY[key];
+      const group = insights[key];
+      return {
+        key,
+        label: display[locale],
+        tone: display.tone,
+        count: group.count,
+        sourceIds: group.source_ids,
+        sortWeight: display.sortWeight,
+      };
+    })
+    .filter((item) => item.count > 0)
+    .sort((left, right) => (right.count - left.count) || (left.sortWeight - right.sortWeight));
+
+  return {
+    totalIssues: items.reduce((sum, item) => sum + item.count, 0),
+    items,
   };
 }
 

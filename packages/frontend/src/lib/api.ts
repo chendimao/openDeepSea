@@ -31,6 +31,7 @@ import type {
   OnlineSkillAuditResponse,
   OnlineSkillDetailResponse,
   OnlineSkillListResponse,
+  OnlineSkillsTokenConfig,
   OnlineSkillView,
   PlatformSkill,
   PlatformSkillAggregate,
@@ -92,11 +93,19 @@ import type {
 import type {
   KnowledgeChunk,
   KnowledgeExtraction,
+  KnowledgeImportResult,
+  KnowledgeInsights,
+  KnowledgeMetadataPatch,
+  KnowledgeRetrievalMode,
   KnowledgeSearchResult,
   KnowledgeSource,
   KnowledgeSourceDetail,
   KnowledgeSourceStatus,
   KnowledgeSourceType,
+  ManualKnowledgeInput,
+  UrlKnowledgeInput,
+  WorkspaceKnowledgeImportInput,
+  WorkspaceKnowledgeImportResult,
 } from './knowledgeDisplay';
 
 const BASE = '/api';
@@ -541,6 +550,13 @@ export const api = {
     workspaceRequest<OnlineSkillDetailResponse>(`/online-skills/${encodeURIComponent(id)}`),
   getOnlineSkillAudit: (id: string) =>
     workspaceRequest<OnlineSkillAuditResponse>(`/online-skills/${encodeURIComponent(id)}/audit`),
+  getOnlineSkillsTokenConfig: () =>
+    workspaceRequest<OnlineSkillsTokenConfig>('/online-skills/config'),
+  updateOnlineSkillsTokenConfig: (input: { token: string | null }) =>
+    workspaceRequest<OnlineSkillsTokenConfig>('/online-skills/config', {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
   createTerminalSession: (input: CreateTerminalSessionInput) =>
     workspaceRequest<TerminalSessionInfo>('/terminals', {
       method: 'POST',
@@ -721,6 +737,7 @@ export const api = {
     projectId: string;
     roomId?: string;
     query: string;
+    mode?: KnowledgeRetrievalMode;
     status?: KnowledgeSourceStatus | '';
     sourceType?: KnowledgeSourceType | '';
     limit?: number;
@@ -729,15 +746,39 @@ export const api = {
       projectId: filters.projectId,
       roomId: filters.roomId,
       q: filters.query,
+      mode: filters.mode,
       status: filters.status || undefined,
       sourceType: filters.sourceType || undefined,
       limit: filters.limit,
     })}`),
+  getKnowledgeInsights: (filters: { projectId: string; roomId?: string }) =>
+    request<KnowledgeInsights>(`/knowledge/insights${buildQuery(filters)}`),
+  createManualKnowledge: (projectId: string, input: ManualKnowledgeInput) =>
+    request<KnowledgeImportResult>(`/projects/${encodeURIComponent(projectId)}/knowledge/manual`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  createUrlKnowledge: (projectId: string, input: UrlKnowledgeInput) =>
+    request<KnowledgeImportResult>(`/projects/${encodeURIComponent(projectId)}/knowledge/url`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  importWorkspaceKnowledgeDocs: (projectId: string, input: WorkspaceKnowledgeImportInput) =>
+    request<WorkspaceKnowledgeImportResult>(`/projects/${encodeURIComponent(projectId)}/knowledge/workspace-docs`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   reprocessKnowledgeSource: (sourceId: string) =>
     request<KnowledgeSource>(`/knowledge/sources/${encodeURIComponent(sourceId)}/reprocess`, { method: 'POST' }),
   updateKnowledgeSource: (
     sourceId: string,
-    input: { status?: 'ready' | 'disabled' | 'stale'; enabled?: 0 | 1 | boolean; tags?: string[]; summary?: string | null },
+    input: {
+      status?: 'ready' | 'disabled' | 'stale';
+      enabled?: 0 | 1 | boolean;
+      tags?: string[];
+      summary?: string | null;
+      metadataPatch?: KnowledgeMetadataPatch;
+    },
   ) =>
     request<KnowledgeSource>(`/knowledge/sources/${encodeURIComponent(sourceId)}`, {
       method: 'PATCH',

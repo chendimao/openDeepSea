@@ -243,6 +243,65 @@ test('knowledge search API builds FTS query URL', async () => {
   );
 });
 
+test('knowledge Phase 4A APIs build query URLs and import payloads', async () => {
+  const searchUrl = await captureApiRequest(
+    () => api.searchKnowledge({ projectId: 'p1', query: 'A12', mode: 'hybrid' }),
+    [],
+  );
+  assert.equal(searchUrl, '/api/knowledge/search?projectId=p1&q=A12&mode=hybrid');
+
+  const insightsUrl = await captureApiRequest(
+    () => api.getKnowledgeInsights({ projectId: 'p1', roomId: 'r1' }),
+    {
+      duplicates: { count: 0, source_ids: [] },
+      stale: { count: 0, source_ids: [] },
+      parser_incomplete: { count: 0, source_ids: [] },
+      empty_index: { count: 0, source_ids: [] },
+    },
+  );
+  assert.equal(insightsUrl, '/api/knowledge/insights?projectId=p1&roomId=r1');
+
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ url: string; method: string; body: string | null }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push({
+      url: String(input),
+      method: init?.method ?? 'GET',
+      body: typeof init?.body === 'string' ? init.body : null,
+    });
+    return new Response(JSON.stringify({ source: { id: 'source-1', status: 'ready' }, created: [], failed: [] }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  try {
+    await api.createManualKnowledge('p1', { title: 'Manual', content: 'A12', tags: ['manual'] });
+    await api.createUrlKnowledge('p1', { url: 'https://example.com/a12', content: 'A12' });
+    await api.importWorkspaceKnowledgeDocs('p1', { paths: ['docs/a12.md'], tags: ['docs'] });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(requests, [
+    {
+      url: '/api/projects/p1/knowledge/manual',
+      method: 'POST',
+      body: JSON.stringify({ title: 'Manual', content: 'A12', tags: ['manual'] }),
+    },
+    {
+      url: '/api/projects/p1/knowledge/url',
+      method: 'POST',
+      body: JSON.stringify({ url: 'https://example.com/a12', content: 'A12' }),
+    },
+    {
+      url: '/api/projects/p1/knowledge/workspace-docs',
+      method: 'POST',
+      body: JSON.stringify({ paths: ['docs/a12.md'], tags: ['docs'] }),
+    },
+  ]);
+});
+
 test('session knowledge note API sends message save payload', async () => {
   const originalFetch = globalThis.fetch;
   const requests: Array<{ url: string; method: string; body: string | null }> = [];
@@ -304,7 +363,11 @@ test('knowledge action APIs send method and payload', async () => {
 
   try {
     await api.reprocessKnowledgeSource('source-1');
-    await api.updateKnowledgeSource('source-1', { status: 'disabled', enabled: 0 });
+    await api.updateKnowledgeSource('source-1', {
+      status: 'disabled',
+      enabled: 0,
+      metadataPatch: { decisions: ['采用 hybrid'] },
+    });
     await api.deleteKnowledgeSource('source-1');
   } finally {
     globalThis.fetch = originalFetch;
@@ -315,7 +378,10 @@ test('knowledge action APIs send method and payload', async () => {
     ['/api/knowledge/sources/source-1', 'PATCH'],
     ['/api/knowledge/sources/source-1', 'DELETE'],
   ]);
-  assert.equal(requests[1]?.body, JSON.stringify({ status: 'disabled', enabled: 0 }));
+  assert.equal(
+    requests[1]?.body,
+    JSON.stringify({ status: 'disabled', enabled: 0, metadataPatch: { decisions: ['采用 hybrid'] } }),
+  );
 });
 
 test('workspace directory API requests encoded tree path', async () => {

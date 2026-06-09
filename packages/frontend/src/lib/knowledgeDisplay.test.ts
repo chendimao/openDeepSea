@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   filterKnowledgeSources,
+  getKnowledgeRetrievalModeDisplay,
   getKnowledgeStatusFilterOptions,
   getKnowledgeSourceTypeDisplay,
   getKnowledgeStatusDisplay,
+  summarizeKnowledgeInsights,
   summarizeKnowledgeStats,
+  type KnowledgeRetrievalMode,
   type KnowledgeSource,
   type KnowledgeSourceType,
 } from './knowledgeDisplay';
@@ -82,6 +85,33 @@ test('knowledge source type display covers backend source types and falls back f
     label: 'external_feed',
     iconKey: 'file-text',
   });
+});
+
+test('knowledge retrieval mode display maps labels and sort order', () => {
+  assert.equal(getKnowledgeRetrievalModeDisplay('keyword', 'zh').label, '关键词');
+  assert.equal(getKnowledgeRetrievalModeDisplay('vector_preview', 'zh').label, '向量预览');
+  assert.equal(getKnowledgeRetrievalModeDisplay('hybrid', 'zh').label, '混合');
+  const modes: KnowledgeRetrievalMode[] = ['hybrid', 'keyword', 'vector_preview'];
+  assert.deepEqual(
+    modes.sort((left, right) =>
+      getKnowledgeRetrievalModeDisplay(left).sortWeight -
+      getKnowledgeRetrievalModeDisplay(right).sortWeight,
+    ),
+    ['keyword', 'vector_preview', 'hybrid'],
+  );
+});
+
+test('knowledge insights summarize actionable counts', () => {
+  const summary = summarizeKnowledgeInsights({
+    duplicates: { count: 2, source_ids: ['a', 'b'] },
+    stale: { count: 1, source_ids: ['c'] },
+    parser_incomplete: { count: 3, source_ids: ['d', 'e', 'f'] },
+    empty_index: { count: 1, source_ids: ['g'] },
+  });
+
+  assert.equal(summary.totalIssues, 7);
+  assert.equal(summary.items[0]?.key, 'parser_incomplete');
+  assert.equal(summary.items[0]?.label, '解析待补全');
 });
 
 test('knowledge source filters compose keyword, status, source type, project, and room', () => {
