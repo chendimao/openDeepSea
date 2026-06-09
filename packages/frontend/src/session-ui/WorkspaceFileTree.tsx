@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, File, Folder, FolderOpen, RefreshCcw } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   StaticTreeDataProvider,
   Tree,
@@ -10,21 +10,28 @@ import {
 } from 'react-complex-tree';
 import { api } from '../lib/api';
 import type { WorkspaceDirectoryEntry } from '../lib/types';
+import { pickInitialWorkspaceFile } from './workspace-file-model';
 
 type TreeItemData = WorkspaceDirectoryEntry & { title: string };
 type WorkspaceTreeItem = TreeItem<TreeItemData>;
 
 const ROOT_ITEM_ID = 'workspace-root';
+const WORKSPACE_TREE_ID = 'workspace-tree';
 
 export function WorkspaceFileTree({
   projectId,
+  activePath,
+  autoOpenRootFile = false,
   onOpenFile,
 }: {
   projectId: string;
+  activePath?: string | null;
+  autoOpenRootFile?: boolean;
   onOpenFile: (file: WorkspaceDirectoryEntry) => void;
 }): JSX.Element {
   const [loadedDirs, setLoadedDirs] = useState<Record<string, WorkspaceDirectoryEntry[]>>({});
   const [failedDirs, setFailedDirs] = useState<Record<string, string>>({});
+  const hasAutoOpenedRef = useRef(false);
   const rootQuery = useQuery({
     queryKey: ['workspace-tree', projectId, ''],
     queryFn: () => api.listWorkspaceDirectory(projectId, ''),
@@ -39,6 +46,28 @@ export function WorkspaceFileTree({
     })),
     [treeItems],
   );
+  const viewState = useMemo(
+    () => ({
+      [WORKSPACE_TREE_ID]: {
+        selectedItems: activePath ? [activePath] : [],
+      },
+    }),
+    [activePath],
+  );
+
+  useEffect(() => {
+    setLoadedDirs({});
+    setFailedDirs({});
+    hasAutoOpenedRef.current = false;
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!autoOpenRootFile || hasAutoOpenedRef.current) return;
+    const initialFile = pickInitialWorkspaceFile(rootEntries);
+    if (!initialFile) return;
+    hasAutoOpenedRef.current = true;
+    onOpenFile(initialFile);
+  }, [autoOpenRootFile, onOpenFile, rootEntries]);
 
   if (rootQuery.isLoading) return <FileTreeState>正在加载目录...</FileTreeState>;
   if (rootQuery.isError) {
@@ -61,7 +90,7 @@ export function WorkspaceFileTree({
       <UncontrolledTreeEnvironment<TreeItemData>
         dataProvider={dataProvider}
         getItemTitle={(item) => item.data.title}
-        viewState={{}}
+        viewState={viewState}
         disableMultiselect
         canDragAndDrop={false}
         canDropOnFolder={false}
@@ -91,7 +120,13 @@ export function WorkspaceFileTree({
               }));
             });
         }}
-        renderItemTitle={({ item }) => <WorkspaceTreeTitle item={item} failedMessage={failedDirs[item.data.path]} />}
+        renderItemTitle={({ item }) => (
+          <WorkspaceTreeTitle
+            item={item}
+            failedMessage={failedDirs[item.data.path]}
+            isActive={item.data.path === activePath}
+          />
+        )}
         renderItemArrow={({ item, context }) => (
           item.isFolder ? (
             <ChevronRight
@@ -101,7 +136,7 @@ export function WorkspaceFileTree({
           ) : null
         )}
       >
-        <Tree treeId="workspace-tree" rootItem={ROOT_ITEM_ID} treeLabel="当前项目目录" />
+        <Tree treeId={WORKSPACE_TREE_ID} rootItem={ROOT_ITEM_ID} treeLabel="当前项目目录" />
       </UncontrolledTreeEnvironment>
     </div>
   );
@@ -110,13 +145,19 @@ export function WorkspaceFileTree({
 function WorkspaceTreeTitle({
   item,
   failedMessage,
+  isActive,
 }: {
   item: WorkspaceTreeItem;
   failedMessage?: string;
+  isActive: boolean;
 }): JSX.Element {
   const Icon = item.data.type === 'directory' ? (item.children?.length ? FolderOpen : Folder) : File;
   return (
-    <span className="deepsea-workspace-tree__title" title={failedMessage ?? item.data.path}>
+    <span
+      className="deepsea-workspace-tree__title"
+      data-active={isActive ? 'true' : undefined}
+      title={failedMessage ?? item.data.path}
+    >
       <Icon aria-hidden="true" />
       <span>{item.data.title}</span>
     </span>

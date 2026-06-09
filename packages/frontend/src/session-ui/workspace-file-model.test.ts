@@ -4,6 +4,7 @@ import {
   closeWorkspaceFileTab,
   createWorkspaceFileTab,
   openWorkspaceFileTab,
+  pickInitialWorkspaceFile,
   reorderWorkspaceFileTabs,
   resolveWorkspaceFileViewer,
   workspaceFileTabId,
@@ -113,6 +114,25 @@ test('resolveWorkspaceFileViewer distinguishes text, image, and unsupported file
     name: 'archive.zip',
     mimeType: 'application/zip',
   })), 'unsupported');
+});
+
+test('pickInitialWorkspaceFile prefers package.json and falls back to previewable files', () => {
+  const entries: WorkspaceDirectoryEntry[] = [
+    createWorkspaceFile({ path: 'archive.zip', name: 'archive.zip', mimeType: 'application/zip' }),
+    createWorkspaceFile({ path: 'README.md', name: 'README.md', mimeType: 'text/markdown' }),
+    createWorkspaceFile({ path: 'package.json', name: 'package.json', mimeType: 'application/json' }),
+  ];
+
+  assert.equal(pickInitialWorkspaceFile(entries)?.path, 'package.json');
+
+  assert.equal(pickInitialWorkspaceFile([
+    createWorkspaceFile({ path: 'archive.zip', name: 'archive.zip', mimeType: 'application/zip' }),
+    createWorkspaceFile({ path: 'README.md', name: 'README.md', mimeType: 'text/markdown' }),
+  ])?.path, 'README.md');
+
+  assert.equal(pickInitialWorkspaceFile([
+    createWorkspaceFile({ path: 'archive.zip', name: 'archive.zip', mimeType: 'application/zip' }),
+  ]), null);
 });
 
 function createWorkspaceFile(overrides: Partial<WorkspaceDirectoryEntry>): WorkspaceDirectoryEntry {

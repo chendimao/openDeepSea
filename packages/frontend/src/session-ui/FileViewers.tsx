@@ -42,15 +42,18 @@ function MonacoTextViewer({ projectId, tab }: { projectId: string; tab: Workspac
         language={languageForMonaco(data, tab)}
         value={data.content}
         theme="vs-dark"
+        loading={<CodePreviewFallback content={data.content} />}
         options={{
           readOnly: true,
           minimap: { enabled: false },
+          fontFamily: '"JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
           fontSize: 12,
           lineHeight: 18,
           scrollBeyondLastLine: false,
           wordWrap: 'on',
           automaticLayout: true,
           renderLineHighlight: 'line',
+          overviewRulerBorder: false,
         }}
       />
       {data.truncated ? (
@@ -60,6 +63,54 @@ function MonacoTextViewer({ projectId, tab }: { projectId: string; tab: Workspac
       ) : null}
     </div>
   );
+}
+
+function CodePreviewFallback({ content }: { content: string }): JSX.Element {
+  const lines = content.split('\n');
+  return (
+    <div className="deepsea-code-fallback" aria-label="文件内容预览">
+      <div className="deepsea-code-fallback__gutter" aria-hidden="true">
+        {lines.map((_, index) => <span key={index}>{index + 1}</span>)}
+      </div>
+      <pre className="deepsea-code-fallback__content">
+        {lines.map((line, index) => (
+          <code key={index}>{renderHighlightedLine(line) || ' '}</code>
+        ))}
+      </pre>
+    </div>
+  );
+}
+
+function renderHighlightedLine(line: string): React.ReactNode {
+  const tokenPattern = /("(?:\\.|[^"\\])*"|"[^"]*"|\btrue\b|\bfalse\b|\bnull\b|-?\d+(?:\.\d+)?|[{}[\],:])/gu;
+  const segments: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(line)) !== null) {
+    const token = match[0];
+    if (match.index > lastIndex) segments.push(line.slice(lastIndex, match.index));
+    segments.push(
+      <span key={`${match.index}-${token}`} className={classNameForCodeToken(line, token, match.index)}>
+        {token}
+      </span>,
+    );
+    lastIndex = match.index + token.length;
+  }
+
+  if (lastIndex < line.length) segments.push(line.slice(lastIndex));
+  return segments;
+}
+
+function classNameForCodeToken(line: string, token: string, index: number): string {
+  if (/^"(?:\\.|[^"\\])*"$/u.test(token)) {
+    return line.slice(index + token.length).trimStart().startsWith(':')
+      ? 'deepsea-code-token-key'
+      : 'deepsea-code-token-string';
+  }
+  if (/^(?:true|false|null)$/u.test(token)) return 'deepsea-code-token-bool';
+  if (/^-?\d/u.test(token)) return 'deepsea-code-token-number';
+  return 'deepsea-code-token-punctuation';
 }
 
 function ImageViewer({ projectId, tab }: { projectId: string; tab: WorkspaceFileTab }): JSX.Element {

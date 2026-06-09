@@ -48,6 +48,16 @@ export function createWorkspaceFileTab(file: WorkspaceDirectoryEntry): Workspace
   };
 }
 
+export function pickInitialWorkspaceFile(entries: WorkspaceDirectoryEntry[]): WorkspaceDirectoryEntry | null {
+  const files = entries.filter((entry) => entry.type === 'file');
+  const packageJson = files.find((entry) => entry.name.toLowerCase() === 'package.json');
+  if (packageJson && resolveWorkspaceFileViewer(packageJson) !== 'unsupported') return packageJson;
+
+  return files.find((entry) => resolveWorkspaceFileViewer(entry) === 'text')
+    ?? files.find((entry) => resolveWorkspaceFileViewer(entry) !== 'unsupported')
+    ?? null;
+}
+
 export function openWorkspaceFileTab(tabs: WorkspaceFileTab[], file: WorkspaceDirectoryEntry): {
   tabs: WorkspaceFileTab[];
   activePath: string;
