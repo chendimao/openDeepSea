@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useQueryClient } from '@tanstack/react-query';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { api } from '../lib/api';
 import type { WorkspaceDirectoryEntry } from '../lib/types';
 import { WorkspaceFileTabs } from './WorkspaceFileTabs';
@@ -219,6 +220,7 @@ export function FileBrowserWorkspace({ projectId }: { projectId: string }): JSX.
       });
       queryClient.setQueryData(['workspace-file-preview', projectId, path], preview);
       void queryClient.invalidateQueries({ queryKey: ['workspace-tree', projectId] });
+      toast.success('文件已保存', { description: path });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : '保存失败';

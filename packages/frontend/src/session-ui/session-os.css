@@ -1648,7 +1648,7 @@
   background: rgba(255, 255, 255, 0.3);
 }
 .deepsea-file-tabs .flexlayout__tabset_tabbar_outer {
-  min-height: 36px;
+  min-height: 31px;
 }
 .deepsea-center-workspace .flexlayout__tabset_tabbar_inner_tab_container,
 .deepsea-file-tabs .flexlayout__tabset_tabbar_inner_tab_container {
@@ -1665,9 +1665,9 @@
   letter-spacing: 0;
 }
 .deepsea-file-tabs .flexlayout__tab_button {
-  height: 36px;
-  min-width: 140px;
-  padding-inline: 16px;
+  height: 31px;
+  min-width: 112px;
+  padding-inline: 10px;
 }
 .deepsea-center-workspace .flexlayout__tab_button--selected,
 .deepsea-file-tabs .flexlayout__tab_button--selected {
@@ -1970,18 +1970,19 @@
 .deepsea-file-tab-title {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  max-width: 180px;
+  gap: 6px;
+  max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 10.5px;
 }
 .deepsea-file-tab-title[data-dirty="true"] {
   font-weight: 800;
 }
 .deepsea-file-tab-title__icon {
-  width: 14px;
-  height: 14px;
+  width: 11px;
+  height: 11px;
   border-radius: 2px;
   background: #64748b;
   box-shadow: inset 0 -2px 0 rgba(255, 255, 255, 0.28);
@@ -2006,8 +2007,8 @@
 }
 .deepsea-file-tab-title__dirty {
   flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 999px;
   background: #004ac6;
 }
@@ -2248,9 +2249,10 @@
   color: #191c1e;
 }
 .deepsea-workspace-tree__title {
-  display: inline-flex;
+  display: flex;
   flex: 1 1 auto;
   align-items: center;
+  width: 100%;
   min-width: 0;
   gap: 8px;
   height: 24px;

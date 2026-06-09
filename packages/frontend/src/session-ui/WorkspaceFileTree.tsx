@@ -224,6 +224,29 @@ export function WorkspaceFileTree({
     setContextMenu(null);
   }, []);
 
+  const openContextMenuForEntry = useCallback((entry: WorkspaceDirectoryEntry, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onSelectEntry(entry);
+    setContextMenu({ x: event.clientX, y: event.clientY, entry });
+  }, [onSelectEntry]);
+
+  const handleTreeContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const directEntryElement = target?.closest<HTMLElement>('[data-workspace-entry-index]');
+    const rowEntryElement = target
+      ?.closest<HTMLElement>('.rct-tree-item-button, .rct-tree-item-title-container')
+      ?.querySelector<HTMLElement>('[data-workspace-entry-index]');
+    const entryElement = directEntryElement ?? rowEntryElement;
+    if (!entryElement) return;
+
+    const entryIndex = entryElement.dataset.workspaceEntryIndex;
+    const entry = entryIndex ? visibleTreeItems[entryIndex]?.data : null;
+    if (!entry) return;
+
+    openContextMenuForEntry(entry, event);
+  }, [openContextMenuForEntry, visibleTreeItems]);
+
   const submitInlineAction = useCallback(async () => {
     if (!inlineAction) return;
     const error = validateWorkspaceEntryNameInput(inlineName);
@@ -264,7 +287,7 @@ export function WorkspaceFileTree({
   }
 
   return (
-    <div ref={treeRef} className="deepsea-workspace-tree">
+    <div ref={treeRef} className="deepsea-workspace-tree" onContextMenu={handleTreeContextMenu}>
       <div className="deepsea-workspace-tree__header">
         <span>资源管理器</span>
         <div>
@@ -381,12 +404,6 @@ export function WorkspaceFileTree({
             isSelected={item.index === selectedItemId}
             isDirty={Boolean(dirtyPaths?.has(item.data.path))}
             isSearchMatch={matchedItemIds.has(item.index)}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onSelectEntry(item.data);
-              setContextMenu({ x: event.clientX, y: event.clientY, entry: item.data });
-            }}
           />
         )}
         renderItemArrow={({ item, context }) => (
@@ -478,7 +495,6 @@ function WorkspaceTreeTitle({
   isSelected,
   isDirty,
   isSearchMatch,
-  onContextMenu,
 }: {
   item: WorkspaceTreeItem;
   failedMessage?: string;
@@ -486,7 +502,6 @@ function WorkspaceTreeTitle({
   isSelected: boolean;
   isDirty: boolean;
   isSearchMatch: boolean;
-  onContextMenu: (event: React.MouseEvent<HTMLSpanElement>) => void;
 }): JSX.Element {
   const Icon = item.data.type === 'directory' ? (item.children?.length ? FolderOpen : Folder) : File;
   const extension = item.data.type === 'file' ? getFileExtension(item.data.name || item.data.path) : '';
@@ -500,8 +515,8 @@ function WorkspaceTreeTitle({
       data-extension={extension || undefined}
       data-root={item.index === PROJECT_ROOT_ITEM_ID ? 'true' : undefined}
       data-search-match={isSearchMatch ? 'true' : undefined}
+      data-workspace-entry-index={String(item.index)}
       title={failedMessage ?? item.data.path}
-      onContextMenu={onContextMenu}
     >
       <Icon aria-hidden="true" />
       <span>{item.data.title}</span>
