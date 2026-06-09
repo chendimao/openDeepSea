@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import type { AcpBackend } from '../types.js';
 
 export type AcpProtocolMode = 'auto' | 'protocol' | 'legacy';
@@ -14,8 +15,11 @@ export interface AcpServerConfig {
 
 type AcpProtocolEnv = Partial<Record<string, string | undefined>>;
 
+const require = createRequire(import.meta.url);
+const CODEX_ACP_BIN_PATH = require.resolve('@zed-industries/codex-acp/bin/codex-acp.js');
+
 export const DEFAULT_COMMANDS: Record<AcpBackend, string> = {
-  codex: 'npx --yes --loglevel=error @zed-industries/codex-acp',
+  codex: formatCommandInvocation(getDefaultCodexAcpInvocation()),
   claudecode: 'npx @agentclientprotocol/claude-agent-acp',
   opencode: 'opencode acp',
 };
@@ -102,6 +106,13 @@ export function splitCommand(input: string): { command: string; args: string[] }
   return { command, args };
 }
 
+export function getDefaultCodexAcpInvocation(): { command: string; args: string[] } {
+  return {
+    command: process.execPath,
+    args: [CODEX_ACP_BIN_PATH],
+  };
+}
+
 export function getAcpServerConfig(
   backend: AcpBackend,
   env: AcpProtocolEnv = process.env,
@@ -153,6 +164,14 @@ function appendBackendArgs(
   if (args.some((arg) => arg.includes('model_reasoning_effort'))) return args;
 
   return [...args, '-c', `model_reasoning_effort=${reasoningEffort}`];
+}
+
+function formatCommandInvocation(invocation: { command: string; args: string[] }): string {
+  return [invocation.command, ...invocation.args].map(quoteCommandPart).join(' ');
+}
+
+function quoteCommandPart(value: string): string {
+  return /[\s"'\\]/.test(value) ? JSON.stringify(value) : value;
 }
 
 function readCodexReasoningEffort(value: string | undefined): string | null {

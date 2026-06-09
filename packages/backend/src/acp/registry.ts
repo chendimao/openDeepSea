@@ -1,4 +1,5 @@
 import type { AcpBackend } from '../types.js';
+import { getDefaultCodexAcpInvocation } from './protocol-registry.js';
 
 export interface AcpAgentServerConfig {
   provider: Extract<AcpBackend, 'claudecode' | 'codex' | 'opencode'>;
@@ -9,6 +10,8 @@ export interface AcpAgentServerConfig {
 }
 
 export function getDefaultAcpAgentServers(): AcpAgentServerConfig[] {
+  const codexInvocation = getDefaultCodexAcpInvocation();
+
   return [
     {
       provider: 'claudecode',
@@ -19,8 +22,8 @@ export function getDefaultAcpAgentServers(): AcpAgentServerConfig[] {
     },
     {
       provider: 'codex',
-      command: 'npx',
-      args: ['--yes', '--loglevel=error', '@zed-industries/codex-acp'],
+      command: codexInvocation.command,
+      args: codexInvocation.args,
       transport: 'stdio',
       enabled: true,
     },

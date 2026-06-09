@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getAcpServerConfig, parseAcpMode, splitCommand } from './protocol-registry.js';
+import { isAbsolute } from 'node:path';
+import { getAcpServerConfig, getDefaultCodexAcpInvocation, parseAcpMode, splitCommand } from './protocol-registry.js';
 
 test('parseAcpMode defaults to auto for unset values', () => {
   assert.equal(parseAcpMode(undefined), 'auto');
@@ -60,32 +61,25 @@ test('splitCommand rejects unmatched quote', () => {
 });
 
 test('getAcpServerConfig returns default codex protocol server config', () => {
-  assert.deepEqual(getAcpServerConfig('codex', {}), {
-    backend: 'codex',
-    mode: 'auto',
-    command: 'npx',
-    args: ['--yes', '--loglevel=error', '@zed-industries/codex-acp'],
-    env: {},
-    transport: 'stdio',
-    enabled: true,
-  });
+  const config = getAcpServerConfig('codex', {});
+
+  assert.equal(config.backend, 'codex');
+  assert.equal(config.mode, 'auto');
+  assert.equal(config.command, process.execPath);
+  assert.equal(config.args.length, 1);
+  assert.equal(config.args[0]?.endsWith('/node_modules/@zed-industries/codex-acp/bin/codex-acp.js'), true);
+  assert.equal(isAbsolute(config.args[0] ?? ''), true);
+  assert.deepEqual(config.env, {});
+  assert.equal(config.transport, 'stdio');
+  assert.equal(config.enabled, true);
 });
 
 test('getAcpServerConfig appends Codex reasoning effort when configured', () => {
-  assert.deepEqual(
-    getAcpServerConfig('codex', {
-      OPENCLAW_ACP_CODEX_REASONING_EFFORT: 'high',
-    }),
-    {
-      backend: 'codex',
-      mode: 'auto',
-      command: 'npx',
-      args: ['--yes', '--loglevel=error', '@zed-industries/codex-acp', '-c', 'model_reasoning_effort=high'],
-      env: {},
-      transport: 'stdio',
-      enabled: true,
-    },
-  );
+  const config = getAcpServerConfig('codex', {
+    OPENCLAW_ACP_CODEX_REASONING_EFFORT: 'high',
+  });
+
+  assert.deepEqual(config.args.slice(1), ['-c', 'model_reasoning_effort=high']);
 });
 
 test('getAcpServerConfig does not duplicate Codex reasoning effort args', () => {
@@ -96,6 +90,14 @@ test('getAcpServerConfig does not duplicate Codex reasoning effort args', () => 
     }).args,
     ['@zed-industries/codex-acp', '-c', 'model_reasoning_effort=medium'],
   );
+});
+
+test('getDefaultCodexAcpInvocation resolves installed Codex ACP binary', () => {
+  const invocation = getDefaultCodexAcpInvocation();
+
+  assert.equal(invocation.command, process.execPath);
+  assert.equal(invocation.args.length, 1);
+  assert.equal(invocation.args[0]?.endsWith('/node_modules/@zed-industries/codex-acp/bin/codex-acp.js'), true);
 });
 
 test('getAcpServerConfig applies opencode command override in protocol mode', () => {
