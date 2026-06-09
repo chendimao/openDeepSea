@@ -595,16 +595,27 @@ function blockGraphWorkflowRun(
     status: 'blocked',
     error,
   });
+  const childTaskIdSet = new Set(state?.childTaskIds ?? []);
+  const failedChildTaskIds = new Set<string>();
   for (const step of workflowRepo.listSteps(runId).filter((item) => item.status === 'running')) {
+    if (step.task_id && childTaskIdSet.has(step.task_id)) {
+      failedChildTaskIds.add(step.task_id);
+    }
     workflowRepo.updateStep(step.id, {
       status: 'failed',
       error,
     });
   }
+  for (const childTaskId of failedChildTaskIds) {
+    const child = taskRepo.get(childTaskId);
+    if (child?.status !== 'in_progress') continue;
+    taskRepo.updateStatus(child.id, 'failed');
+  }
   if (!state) return null;
   return {
     ...state,
     workflowRunId: run?.id ?? runId,
+    workflowPlan: markWorkflowPlanTasksBlockedByChildIds(state, failedChildTaskIds),
     status: 'blocked',
     error,
   };

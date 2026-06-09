@@ -2694,6 +2694,130 @@ test('continueGraphWorkflow waits without looping when implementation agent run 
   assert.equal(agentRunRepo.listActiveByWorkflow(run.id).length, 1);
 });
 
+test('continueGraphWorkflow block helper syncs running child workflowPlan state', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-block-child-plan-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Block Child Plan', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Runtime Block Child Plan Room' });
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Block child plan on shared helper failure',
+  });
+  const child = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: task.id,
+    title: 'Running child implementation',
+    description: 'Shared block helper should fail this child.',
+    assigned_agent_id: executor.id,
+    created_from: 'workflow_assignment',
+  });
+  const pendingState = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+    graph_state: serializeGraphState(pendingState),
+    workflow_definition_snapshot: '{"invalid": ',
+  });
+  taskRepo.updateStatus(child.id, 'in_progress');
+  const step = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: child.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'running',
+    room_agent_id: executor.id,
+    assigned_room_agent_id: executor.id,
+    prompt: 'running child before block helper failure',
+    sort_order: 1,
+  });
+  const state = {
+    ...pendingState,
+    workflowRunId: run.id,
+    plan: {
+      goal: task.title,
+      summary: 'Trigger shared block helper.',
+      assumptions: [],
+      tasks: [{
+        title: child.title,
+        description: child.description ?? '',
+        suggestedRole: 'executor' as const,
+        priority: 'normal' as const,
+        acceptance: ['Child failure is synchronized'],
+        scopeRead: [],
+        scopeWrite: [],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    workflowPlan: {
+      workflow_name: task.title,
+      source_message_id: task.id,
+      goal: task.title,
+      summary: 'Trigger shared block helper.',
+      tasks: [{
+        id: 'task-1-running-child-implementation',
+        title: child.title,
+        description: child.description ?? '',
+        role: 'executor' as const,
+        agent_id: executor.id,
+        mode: 'parallel' as const,
+        depends_on: [],
+        status: 'running' as const,
+        progress: 35,
+        result_refs: [],
+      }],
+    },
+    currentNode: 'execute' as const,
+    currentStepId: step.id,
+    activeAgentRunId: null,
+    childTaskIds: [child.id],
+    childTaskPlanIndexes: { [child.id]: 0 },
+    supervisorAssignments: [],
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required' as const,
+    status: 'running' as const,
+    error: null,
+  };
+  workflowRepo.updateGraphState(run.id, serializeGraphState(state));
+
+  await assert.rejects(
+    () => continueGraphWorkflow(run.id),
+    /workflow definition snapshot is invalid/,
+  );
+
+  const latest = workflowRepo.getRun(run.id);
+  const graphState = parseGraphState(latest?.graph_state ?? null);
+  const steps = workflowRepo.listSteps(run.id);
+
+  assert.equal(latest?.status, 'blocked');
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0]?.status, 'failed');
+  assert.equal(taskRepo.get(child.id)?.status, 'failed');
+  assert.equal(graphState?.status, 'blocked');
+  assert.equal(graphState?.workflowPlan?.tasks[0]?.status, 'blocked');
+});
+
 test('retryGraphWorkflow resets active child tasks and records status events', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-retry-child-events-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
