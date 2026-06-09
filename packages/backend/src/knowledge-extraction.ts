@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
 import type { KnowledgeChunkType } from './knowledge-types.js';
+import {
+  buildParserMetadata,
+  extractCsvTableMetadata,
+  extractStructuredTextMetadata,
+  isSidecarDocument,
+} from './knowledge-parser-capabilities.js';
 
 const TEXT_MIME_MARKERS = ['text/', 'json', 'xml', 'yaml', 'csv', 'markdown'];
 const TEXT_EXTENSIONS = ['.txt', '.md', '.markdown', '.json', '.csv', '.yaml', '.yml', '.xml'];
@@ -18,6 +24,7 @@ export interface KnowledgeExtractResult {
   layout: Record<string, unknown> | null;
   table: Record<string, unknown> | null;
   image: Record<string, unknown> | null;
+  metadata: Record<string, unknown>;
   contentHash: string;
 }
 
@@ -45,6 +52,15 @@ export interface KnowledgeChunkDraft {
 export async function extractKnowledgeText(input: KnowledgeExtractInput): Promise<KnowledgeExtractResult> {
   const mimeType = (input.mimeType ?? '').toLowerCase();
   if (mimeType.startsWith('image/')) {
+    const metadata = buildParserMetadata({
+      title: input.title,
+      mimeType: input.mimeType,
+      parser: 'image-metadata',
+      status: 'metadata_only',
+      capabilities: ['metadata', 'image_metadata'],
+      warnings: ['OCR sidecar is not configured'],
+      requiresSidecar: true,
+    });
     return {
       parser: 'image-metadata',
       parserVersion: '1',
@@ -53,32 +69,76 @@ export async function extractKnowledgeText(input: KnowledgeExtractInput): Promis
       layout: null,
       table: null,
       image: { kind: 'image', title: input.title, mimeType: input.mimeType },
+      metadata,
       contentHash: hashText(`${input.title}:${input.mimeType ?? ''}`),
     };
   }
 
   if (!isTextLike(input.title, mimeType) || input.content === null) {
+    const requiresSidecar = isSidecarDocument(input.title, mimeType);
+    const parser = requiresSidecar ? 'sidecar-required' : 'metadata-only';
     return {
-      parser: 'metadata-only',
+      parser,
       parserVersion: '1',
       plainText: '',
       markdown: null,
       layout: null,
       table: null,
       image: null,
+      metadata: buildParserMetadata({
+        title: input.title,
+        mimeType: input.mimeType,
+        parser,
+        status: requiresSidecar ? 'requires_sidecar' : 'metadata_only',
+        capabilities: ['metadata'],
+        warnings: requiresSidecar
+          ? ['Document parser sidecar is not configured']
+          : ['No text parser is available for this source type'],
+        requiresSidecar,
+      }),
       contentHash: hashText(`${input.title}:${input.mimeType ?? ''}`),
     };
   }
 
   const normalized = normalizeText(input.content);
+  const markdown = isMarkdown(input.title, mimeType) ? normalized : null;
+  const csv = isTableLike(input.title, mimeType) ? extractCsvTableMetadata(normalized) : null;
+  const structured = extractStructuredTextMetadata({
+    title: input.title,
+    mimeType,
+    content: normalized,
+  });
+  const extraMetadata: Record<string, unknown> = {
+    ...(csv?.metadata ?? {}),
+    ...(structured?.metadata ?? {}),
+  };
+  const parserWarnings = Array.isArray(extraMetadata.parser_warnings)
+    ? extraMetadata.parser_warnings.filter((warning): warning is string => typeof warning === 'string')
+    : [];
+  delete extraMetadata.parser_warnings;
   return {
     parser: 'builtin-text',
     parserVersion: '1',
     plainText: normalized,
-    markdown: isMarkdown(input.title, mimeType) ? normalized : null,
-    layout: null,
-    table: isTableLike(input.title, mimeType) ? { kind: 'csv' } : null,
+    markdown,
+    layout: structured?.layout ?? null,
+    table: csv?.table ?? null,
     image: null,
+    metadata: buildParserMetadata({
+      title: input.title,
+      mimeType: input.mimeType,
+      parser: 'builtin-text',
+      status: 'complete',
+      capabilities: [
+        'text',
+        ...(markdown ? ['markdown'] : []),
+        ...(csv ? ['table'] : []),
+        ...(structured ? ['structure'] : []),
+        'chunks',
+      ],
+      warnings: parserWarnings,
+      extras: extraMetadata,
+    }),
     contentHash: hashText(normalized),
   };
 }

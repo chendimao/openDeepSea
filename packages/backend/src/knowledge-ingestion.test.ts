@@ -38,6 +38,33 @@ test('ingestProjectFileIntoKnowledge indexes uploaded text file', async () => {
   assert.equal(knowledgeRepo.search({ projectId: project.id, query: 'A12' }).length, 1);
 });
 
+test('ingestProjectFileIntoKnowledge persists parser metadata on source and extraction', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'opendeepsea-knowledge-ingestion-parser-'));
+  const storedPath = join(root, 'table.csv');
+  writeFileSync(storedPath, 'name,value\nA12,ready');
+  const project = projectRepo.create({ name: 'Knowledge Parser Metadata', path: root });
+  const file = fileRepo.create({
+    project_id: project.id,
+    original_name: 'table.csv',
+    stored_name: 'table.csv',
+    mime_type: 'text/csv',
+    size: 20,
+    url: `/uploads/files/${project.id}/table.csv`,
+    storage_path: storedPath,
+    uploaded_by_id: 'user',
+    uploaded_by_name: 'You',
+  });
+
+  const source = await ingestProjectFileIntoKnowledge(file);
+  const extraction = knowledgeRepo.getLatestExtraction(source.id);
+
+  assert.equal(source.status, 'ready');
+  assert.equal(source.metadata.parser_status, 'complete');
+  assert.deepEqual(source.metadata.table_columns, ['name', 'value']);
+  assert.equal(extraction?.metadata.parser_status, 'complete');
+  assert.deepEqual(extraction?.metadata.table_columns, ['name', 'value']);
+});
+
 test('ingestProjectFileIntoKnowledge preserves agent document source metadata when ready', async () => {
   const root = mkdtempSync(join(tmpdir(), 'opendeepsea-knowledge-ingestion-agent-'));
   const project = projectRepo.create({ name: 'Agent Knowledge Ingestion', path: root });

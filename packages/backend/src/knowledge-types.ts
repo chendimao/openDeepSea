@@ -17,6 +17,8 @@ export type KnowledgeChunkType = 'plain_text' | 'markdown' | 'code' | 'table' | 
 
 export type KnowledgeRetrievalMode = 'keyword' | 'vector_preview' | 'hybrid';
 
+export type KnowledgeParserStatus = 'complete' | 'partial' | 'metadata_only' | 'requires_sidecar' | 'failed';
+
 export interface KnowledgeSource {
   id: string;
   project_id: string;

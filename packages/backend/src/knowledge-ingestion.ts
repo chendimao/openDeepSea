@@ -44,6 +44,7 @@ export async function ingestProjectFileIntoKnowledge(file: ProjectFile): Promise
       mimeType: file.mime_type,
       content: rawContent.content,
     });
+    const extractionMetadata = mergeMetadata(rawContent.metadata, extracted.metadata);
     source = knowledgeRepo.ensureSource({
       project_id: file.project_id,
       room_id: file.source_room_id,
@@ -58,7 +59,7 @@ export async function ingestProjectFileIntoKnowledge(file: ProjectFile): Promise
       parser_version: extracted.parserVersion,
       summary: null,
       tags: [],
-      metadata: mergeMetadata(sourceMetadata, rawContent.metadata),
+      metadata: mergeMetadata(sourceMetadata, extractionMetadata),
     });
     knowledgeRepo.saveExtraction({
       source_id: source.id,
@@ -68,7 +69,7 @@ export async function ingestProjectFileIntoKnowledge(file: ProjectFile): Promise
       table: extracted.table,
       image: extracted.image,
       error: null,
-      metadata: rawContent.metadata,
+      metadata: extractionMetadata,
     });
 
     const summary = summarizeKnowledgeText(extracted.plainText, file.original_name);
@@ -83,7 +84,7 @@ export async function ingestProjectFileIntoKnowledge(file: ProjectFile): Promise
       summary: summary.summary,
       tags: summary.tags,
       error: null,
-      metadata: mergeMetadata(source.metadata, sourceMetadata, rawContent.metadata, {
+      metadata: mergeMetadata(source.metadata, sourceMetadata, extractionMetadata, {
         key_points: summary.keyPoints,
         content_kind: summary.contentKind,
         error: null,
