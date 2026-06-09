@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AgentRun, Message, Task, WorkflowRun } from '../../types.js';
+import type { AgentRun, Message, Task, WorkflowPlanJson, WorkflowRun } from '../../types.js';
 import type { ParsedPlan } from '../plan-parser.js';
 import type { RespondAsAgentInput } from '../../dispatcher.js';
 
@@ -495,6 +495,87 @@ test('workflowOrchestrator.retryStep restores failed graph child task and resume
   assert.ok(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length >= 2);
 });
 
+test('workflowOrchestrator.retryStep resets failed workflowPlan task before resuming execute', async () => {
+  const task = createTask('graph-facade-retry-plan-status', 'Facade graph retry plan status');
+  const executor = addWorkflowAgent(task.room_id, 'executor');
+  const child = taskRepo.create({
+    room_id: task.room_id,
+    project_id: task.project_id,
+    parent_task_id: task.id,
+    title: 'Failed plan child task',
+    description: 'Retry should restore workflowPlan status before execute.',
+    assigned_agent_id: executor.id,
+  });
+  taskRepo.updateStatus(child.id, 'failed');
+  const run = createAwaitingGraphRun(task, {
+    status: 'blocked',
+    currentNode: 'execute',
+    childTaskIds: [child.id],
+    childTaskPlanIndexes: { [child.id]: 0 },
+    workflowPlan: {
+      workflow_name: task.title,
+      source_message_id: task.id,
+      goal: task.title,
+      summary: 'Retry failed workflowPlan task.',
+      tasks: [{
+        id: 'task-1-failed-plan-child-task',
+        title: child.title,
+        description: child.description ?? '',
+        role: 'executor',
+        agent_id: executor.id,
+        mode: 'parallel',
+        depends_on: [],
+        status: 'failed',
+        progress: 35,
+        result_refs: ['artifact-failed'],
+      }],
+    },
+    error: 'Agent run failed',
+  });
+  workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: child.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'failed',
+    assigned_room_agent_id: executor.id,
+    room_agent_id: executor.id,
+    prompt: 'failed graph work with workflowPlan failed status',
+    sort_order: 1,
+  });
+  let executed = false;
+  setWorkflowOrchestratorGraphDeps({
+    runAcpAgent: async (input) => {
+      executed = true;
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      return {
+        run: { ...agentRun, stdout: 'retry implementation completed' },
+        message: fakeMessage(task.room_id, 'retry implementation completed'),
+        status: 'completed',
+      };
+    },
+  });
+
+  await workflowOrchestrator.retryStep(run.id);
+  const state = parseGraphState(workflowRepo.getRun(run.id)?.graph_state ?? null);
+
+  assert.equal(executed, true);
+  assert.equal(taskRepo.get(child.id)?.status, 'review');
+  assert.equal(state?.workflowPlan?.tasks[0]?.status, 'completed');
+  assert.equal(state?.workflowPlan?.tasks[0]?.progress, 100);
+});
+
 test('workflowOrchestrator.retryStep reruns interrupted planning before awaiting approval', async () => {
   const task = createTask('graph-facade-retry-planning', 'Facade graph planning retry');
   const run = createAwaitingGraphRun(task, {
@@ -781,6 +862,8 @@ function createAwaitingGraphRun(
     plan?: ParsedPlan | null;
     approval?: 'pending' | 'approved' | 'not_required';
     childTaskIds?: string[];
+    childTaskPlanIndexes?: Record<string, number>;
+    workflowPlan?: WorkflowPlanJson | null;
     error?: string | null;
     reviewVerdict?: 'pass' | 'changes_requested' | 'failed' | null;
   } = {},
@@ -817,6 +900,8 @@ function createAwaitingGraphRun(
     currentStepId: null,
     activeAgentRunId: null,
     childTaskIds: overrides.childTaskIds ?? [],
+    childTaskPlanIndexes: overrides.childTaskPlanIndexes ?? {},
+    workflowPlan: overrides.workflowPlan ?? null,
     reviewFindings: [],
     reviewVerdict: overrides.reviewVerdict ?? null,
     verificationResults: [],

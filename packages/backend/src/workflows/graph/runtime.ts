@@ -428,14 +428,7 @@ export async function retryGraphWorkflow(id: string, deps: GraphRuntimeDeps = {}
   }
   const state = requireGraphStateOrBlock(run);
   const tools = createGraphTools(deps);
-  const retryState: AgentWorkflowState = {
-    ...state,
-    currentNode: retryCurrentNode(state),
-    currentStepId: null,
-    status: 'running',
-    error: null,
-    activeAgentRunId: null,
-  };
+  const resetChildTaskIds = new Set<string>();
   for (const child of taskRepo.listChildren(run.task_id).filter((item) =>
     state.childTaskIds.includes(item.id) && (item.status === 'failed' || item.status === 'in_progress'),
   )) {
@@ -453,8 +446,20 @@ export async function retryGraphWorkflow(id: string, deps: GraphRuntimeDeps = {}
       }
       return after;
     })();
-    if (resetChild) tools.broadcastTaskUpdated(resetChild);
+    if (resetChild) {
+      resetChildTaskIds.add(resetChild.id);
+      tools.broadcastTaskUpdated(resetChild);
+    }
   }
+  const retryState: AgentWorkflowState = {
+    ...state,
+    workflowPlan: resetWorkflowPlanTasksForRetry(state, resetChildTaskIds),
+    currentNode: retryCurrentNode(state),
+    currentStepId: null,
+    status: 'running',
+    error: null,
+    activeAgentRunId: null,
+  };
   for (const step of workflowRepo.listSteps(run.id).filter((item) =>
     item.node_name && (item.status === 'running' || item.status === 'failed' || item.status === 'cancelled' || item.status === 'interrupted'),
   )) {
@@ -474,6 +479,28 @@ export async function retryGraphWorkflow(id: string, deps: GraphRuntimeDeps = {}
   const latest = workflowRepo.getRun(run.id);
   if (!latest) throw new Error('workflow not found');
   return latest;
+}
+
+function resetWorkflowPlanTasksForRetry(
+  state: AgentWorkflowState,
+  childTaskIds: Set<string>,
+): AgentWorkflowState['workflowPlan'] {
+  if (!state.workflowPlan || childTaskIds.size === 0) return state.workflowPlan ?? null;
+  const planIndexes = new Set(Object.entries(state.childTaskPlanIndexes ?? {})
+    .filter(([childTaskId]) => childTaskIds.has(childTaskId))
+    .map(([, planIndex]) => planIndex));
+  if (planIndexes.size === 0) return state.workflowPlan;
+  return {
+    ...state.workflowPlan,
+    tasks: state.workflowPlan.tasks.map((task, index) => {
+      if (!planIndexes.has(index)) return task;
+      return {
+        ...task,
+        status: 'pending',
+        progress: 0,
+      };
+    }),
+  };
 }
 
 export async function cancelGraphWorkflow(id: string): Promise<WorkflowRun> {
