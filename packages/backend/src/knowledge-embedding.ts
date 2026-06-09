@@ -56,7 +56,7 @@ export function rebuildSourceEmbeddings(
   if (!source) throw new Error('knowledge source not found');
   const chunks = knowledgeRepo.listChunks(source.id).filter((chunk) => chunk.enabled === 1);
   for (const chunk of chunks) {
-    const vector = provider.embed(buildEmbeddingText(source.title, chunk));
+    const vector = provider.embed(buildKnowledgeEmbeddingText(source.title, chunk));
     if (isPromiseLike(vector)) {
       throw new Error('async embedding providers are not supported by rebuildSourceEmbeddings yet');
     }
@@ -68,14 +68,18 @@ export function rebuildSourceEmbeddings(
       model: provider.model,
       dimensions: provider.dimensions,
       vector,
-      content_hash: hashText(chunk.content),
+      content_hash: hashKnowledgeEmbeddingText(source.title, chunk),
     });
   }
   return chunks.length;
 }
 
-function buildEmbeddingText(sourceTitle: string, chunk: KnowledgeChunk): string {
+export function buildKnowledgeEmbeddingText(sourceTitle: string, chunk: Pick<KnowledgeChunk, 'heading' | 'content'>): string {
   return [sourceTitle, chunk.heading, chunk.content].filter(Boolean).join('\n');
+}
+
+export function hashKnowledgeEmbeddingText(sourceTitle: string, chunk: Pick<KnowledgeChunk, 'heading' | 'content'>): string {
+  return hashText(buildKnowledgeEmbeddingText(sourceTitle, chunk));
 }
 
 function tokenizeEmbeddingText(text: string): string[] {

@@ -1,3 +1,5 @@
+import { db } from './db.js';
+import { hashKnowledgeEmbeddingText } from './knowledge-embedding.js';
 import { ingestProjectFileIntoKnowledge } from './knowledge-ingestion.js';
 import {
   createManualKnowledgeSource,
@@ -13,7 +15,16 @@ import {
   getKnowledgeInsights,
   patchKnowledgeSourceMetadata,
 } from './knowledge-governance.js';
-import { searchKnowledge } from './knowledge-search.js';
+import {
+  getKnowledgeEmbeddingRuntime,
+  testKnowledgeEmbeddingProvider,
+  type KnowledgeEmbeddingRuntime,
+} from './knowledge-embedding-provider.js';
+import {
+  rebuildKnowledgeEmbeddings,
+  type KnowledgeEmbeddingRebuildResult,
+} from './knowledge-embedding-rebuild.js';
+import { searchKnowledgeAsync } from './knowledge-search.js';
 import { fileRepo } from './repos/files.js';
 import { knowledgeRepo } from './repos/knowledge.js';
 import { projectRepo } from './repos/projects.js';
@@ -102,8 +113,8 @@ export const knowledgeService = {
     sourceType?: KnowledgeSourceType;
     mode?: KnowledgeRetrievalMode;
     limit?: number;
-  }): KnowledgeSearchResult[] {
-    return searchKnowledge({
+  }): Promise<KnowledgeSearchResult[]> {
+    return searchKnowledgeAsync({
       projectId: input.projectId,
       roomId: input.roomId,
       query: input.query,
@@ -112,6 +123,23 @@ export const knowledgeService = {
       mode: input.mode,
       limit: input.limit,
     });
+  },
+
+  getEmbeddingStatus(input: { projectId?: string }) {
+    return getKnowledgeEmbeddingStatus(input);
+  },
+
+  testEmbeddingProvider() {
+    return testKnowledgeEmbeddingProvider();
+  },
+
+  rebuildEmbeddings(input: {
+    projectId: string;
+    sourceId?: string;
+    limit?: number;
+  }): Promise<KnowledgeEmbeddingRebuildResult> {
+    validateKnowledgeEmbeddingRebuildScope(input);
+    return rebuildKnowledgeEmbeddings(input);
   },
 
   async reprocess(sourceId: string): Promise<KnowledgeSource | undefined> {
@@ -202,6 +230,108 @@ export const knowledgeService = {
     return importWorkspaceDocumentsIntoKnowledge(input);
   },
 };
+
+interface KnowledgeEmbeddingStatusChunkRow {
+  source_id: string;
+  source_title: string;
+  chunk_id: string;
+  heading: string | null;
+  content: string;
+  embedding_provider: string | null;
+  embedding_model: string | null;
+  embedding_dimensions: number | null;
+  embedding_content_hash: string | null;
+}
+
+interface KnowledgeEmbeddingStatus {
+  runtime: KnowledgeEmbeddingRuntime;
+  project_id?: string;
+  total_enabled_chunks: number;
+  embedded_chunks: number;
+  stale_chunks: number;
+  missing_chunks: number;
+  failed_sources: number;
+}
+
+function getKnowledgeEmbeddingStatus(input: { projectId?: string }): KnowledgeEmbeddingStatus {
+  if (input.projectId !== undefined && !projectRepo.get(input.projectId)) {
+    throw new Error('project not found');
+  }
+
+  const runtime = getKnowledgeEmbeddingRuntime();
+  const projectFilter = input.projectId !== undefined ? 'AND knowledge_sources.project_id = @projectId' : '';
+  const params = input.projectId !== undefined ? { projectId: input.projectId } : {};
+  const rows = db
+    .prepare(
+      `SELECT
+         knowledge_sources.id AS source_id,
+         knowledge_sources.title AS source_title,
+         knowledge_chunks.id AS chunk_id,
+         knowledge_chunks.heading AS heading,
+         knowledge_chunks.content AS content,
+         knowledge_chunk_embeddings.provider AS embedding_provider,
+         knowledge_chunk_embeddings.model AS embedding_model,
+         knowledge_chunk_embeddings.dimensions AS embedding_dimensions,
+         knowledge_chunk_embeddings.content_hash AS embedding_content_hash
+       FROM knowledge_chunks
+       JOIN knowledge_sources ON knowledge_sources.id = knowledge_chunks.source_id
+       LEFT JOIN knowledge_chunk_embeddings ON knowledge_chunk_embeddings.chunk_id = knowledge_chunks.id
+       WHERE knowledge_chunks.enabled = 1
+         AND knowledge_sources.status = 'ready'
+         ${projectFilter}`,
+    )
+    .all(params) as KnowledgeEmbeddingStatusChunkRow[];
+  const failedSourcesRow = db
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM knowledge_sources
+       WHERE status = 'failed'
+       ${input.projectId !== undefined ? 'AND project_id = @projectId' : ''}`,
+    )
+    .get(params) as { count: number } | undefined;
+  let embeddedChunks = 0;
+  let missingChunks = 0;
+  let staleChunks = 0;
+
+  for (const row of rows) {
+    if (!row.embedding_provider) {
+      missingChunks += 1;
+      continue;
+    }
+    const contentHash = hashKnowledgeEmbeddingText(row.source_title, row);
+    const fresh =
+      row.embedding_provider === runtime.provider &&
+      row.embedding_model === runtime.model &&
+      row.embedding_content_hash === contentHash &&
+      (runtime.dimensions === null || row.embedding_dimensions === runtime.dimensions);
+    if (fresh) {
+      embeddedChunks += 1;
+    } else {
+      staleChunks += 1;
+    }
+  }
+
+  return {
+    runtime,
+    ...(input.projectId !== undefined ? { project_id: input.projectId } : {}),
+    total_enabled_chunks: rows.length,
+    embedded_chunks: embeddedChunks,
+    stale_chunks: staleChunks,
+    missing_chunks: missingChunks,
+    failed_sources: failedSourcesRow?.count ?? 0,
+  };
+}
+
+function validateKnowledgeEmbeddingRebuildScope(input: { projectId: string; sourceId?: string }): void {
+  if (input.sourceId === undefined) return;
+  const source = knowledgeRepo.getSource(input.sourceId);
+  if (!source || source.project_id !== input.projectId) {
+    throw new Error('knowledge source not found');
+  }
+  if (source.status !== 'ready') {
+    throw new Error('knowledge source is not ready');
+  }
+}
 
 function getOriginalFile(source: KnowledgeSource): ProjectFile | null {
   if (source.source_type === 'uploaded_file' || source.source_type === 'agent_document') {

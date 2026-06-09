@@ -167,6 +167,58 @@ test('system settings route trims planner fields and never returns raw api key',
   assert.equal('openai_api_key' in fetched, false);
 });
 
+test('system knowledge embedding settings patch accepts safe fields only', async () => {
+  const unsafeRes = await request('/api/settings/system/knowledge-embedding', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      provider: 'openai-compatible',
+      model: 'text-embedding-3-small',
+      dimensions: 1536,
+      baseUrl: 'https://embedding.example/v1',
+      apiKeyEnvVar: 'OPENDEEPSEA_EMBEDDING_API_KEY',
+      apiKey: 'sk-must-not-be-accepted',
+    }),
+  });
+
+  assert.equal(unsafeRes.status, 400);
+
+  const safeRes = await request('/api/settings/system/knowledge-embedding', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      provider: 'openai-compatible',
+      model: 'text-embedding-3-small',
+      dimensions: 1536,
+      baseUrl: 'https://embedding.example/v1',
+      apiKeyEnvVar: 'OPENDEEPSEA_EMBEDDING_API_KEY',
+    }),
+  });
+  assert.equal(safeRes.status, 200);
+  const body = await safeRes.json() as Record<string, unknown>;
+  assert.equal(body.knowledge_embedding_provider, 'openai-compatible');
+  assert.equal(body.knowledge_embedding_model, 'text-embedding-3-small');
+  assert.equal(body.knowledge_embedding_dimensions, 1536);
+  assert.equal(body.knowledge_embedding_base_url, 'https://embedding.example/v1');
+  assert.equal(body.knowledge_embedding_api_key_env_var, 'OPENDEEPSEA_EMBEDDING_API_KEY');
+  assert.equal('knowledge_embedding_api_key' in body, false);
+  assert.equal(JSON.stringify(body).includes('sk-must-not-be-accepted'), false);
+
+  const credentialedBaseUrlRes = await request('/api/settings/system/knowledge-embedding', {
+    method: 'PATCH',
+    body: JSON.stringify({
+      provider: 'openai-compatible',
+      model: 'text-embedding-3-small',
+      dimensions: 1536,
+      baseUrl: 'https://user:secret@embedding.example/v1',
+      apiKeyEnvVar: 'OPENDEEPSEA_EMBEDDING_API_KEY',
+    }),
+  });
+  assert.equal(credentialedBaseUrlRes.status, 400);
+
+  const fetched = settingsRepo.getSystem();
+  assert.equal(fetched.knowledge_embedding_base_url, 'https://embedding.example/v1');
+  assert.equal(JSON.stringify(fetched).includes('secret@embedding.example'), false);
+});
+
 test('system settings route stores global session prompt and rejects oversized prompt', async () => {
   const patchRes = await request('/api/settings/system', {
     method: 'PATCH',

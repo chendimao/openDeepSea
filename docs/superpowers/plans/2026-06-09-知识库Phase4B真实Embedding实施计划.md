@@ -841,8 +841,9 @@ git commit -m "feat(knowledge): 搜索记录embedding provider"
 - Modify: `packages/backend/src/routes.ts`
 - Test: `packages/backend/src/knowledge.routes.test.ts`
 - Test: `packages/backend/src/settings.routes.test.ts`
+- Review fix: `packages/backend/src/knowledge-embedding.ts` and `packages/backend/src/knowledge-embedding-rebuild.ts` share one embedding text/hash contract.
 
-- [ ] **Step 1: Write failing route tests**
+- [x] **Step 1: Write failing route tests**
 
 Add to `packages/backend/src/knowledge.routes.test.ts`:
 
@@ -896,7 +897,7 @@ test('system knowledge embedding settings patch accepts safe fields only', async
 });
 ```
 
-- [ ] **Step 2: Run failing route tests**
+- [x] **Step 2: Run failing route tests**
 
 Run:
 
@@ -907,7 +908,7 @@ cd packages/backend
 
 Expected: FAIL because routes do not exist.
 
-- [ ] **Step 3: Add service methods**
+- [x] **Step 3: Add service methods**
 
 In `packages/backend/src/knowledge-service.ts`, add methods:
 
@@ -925,7 +926,7 @@ rebuildEmbeddings(input: { projectId: string; sourceId?: string; limit?: number 
 
 Implement `getKnowledgeEmbeddingStatus()` in either service or a small helper using `knowledgeRepo.listSources()` and `knowledgeRepo.listChunkEmbeddings()`.
 
-- [ ] **Step 4: Add zod schemas and routes**
+- [x] **Step 4: Add zod schemas and routes**
 
 In `packages/backend/src/routes.ts`, add:
 
@@ -981,7 +982,7 @@ router.patch('/settings/system/knowledge-embedding', (req, res) => {
 });
 ```
 
-- [ ] **Step 5: Run route tests**
+- [x] **Step 5: Run route tests**
 
 Run:
 
@@ -992,7 +993,7 @@ cd packages/backend
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 5**
+- [x] **Step 6: Commit Task 5**
 
 ```bash
 git add packages/backend/src/knowledge-service.ts packages/backend/src/routes.ts packages/backend/src/knowledge.routes.test.ts packages/backend/src/settings.routes.test.ts

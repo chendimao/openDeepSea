@@ -15,6 +15,7 @@ const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { fileRepo } = await import('./repos/files.js');
 const { knowledgeRepo } = await import('./repos/knowledge.js');
+const { rebuildKnowledgeEmbeddings } = await import('./knowledge-embedding-rebuild.js');
 const { router } = await import('./routes.js');
 const express = (await import('express')).default;
 
@@ -220,6 +221,161 @@ test('knowledge chunks and search routes expose citations', async () => {
   assert.equal(hybridResults[0]?.chunk_id, chunks[0]?.id);
   assert.equal(hybridResults[0]?.retrieval_mode, 'hybrid');
   assert.ok(hybridResults[0]!.ranking.finalScore > 0);
+});
+
+test('knowledge search route uses async embedding metadata for hybrid results', async () => {
+  const project = createProject('async-search-route');
+  const source = knowledgeRepo.ensureSource({
+    project_id: project.id,
+    source_type: 'manual',
+    source_id: 'manual-async-search-route',
+    title: 'A12 Async Route',
+    status: 'ready',
+  });
+  knowledgeRepo.replaceChunks(source.id, [
+    { chunk_type: 'body', content: 'A12 async route content.', project_id: project.id, enabled: 1 },
+  ]);
+  await rebuildKnowledgeEmbeddings({ projectId: project.id, sourceId: source.id });
+
+  const searchRes = await request(`/api/knowledge/search?projectId=${project.id}&q=${encodeURIComponent('A12 async')}&mode=hybrid`);
+
+  assert.equal(searchRes.status, 200);
+  const results = await searchRes.json() as Array<{
+    source_id: string;
+    retrieval_mode: string;
+    ranking: { embeddingProvider?: string; embeddingModel?: string };
+  }>;
+  assert.equal(results[0]?.source_id, source.id);
+  assert.equal(results[0]?.retrieval_mode, 'hybrid');
+  assert.equal(results[0]?.ranking.embeddingProvider, 'local-hash');
+  assert.equal(results[0]?.ranking.embeddingModel, 'local-hash-v1');
+});
+
+test('knowledge embedding routes expose status, test, and rebuild without secrets', async () => {
+  const project = createProject('embedding-routes');
+
+  const statusRes = await request(`/api/knowledge/embedding/status?projectId=${encodeURIComponent(project.id)}`);
+  assert.equal(statusRes.status, 200);
+  const statusBody = await statusRes.json() as {
+    runtime: { provider: string; model: string; api_key_set: boolean };
+    total_enabled_chunks: number;
+  };
+  assert.equal(statusBody.runtime.provider, 'local-hash');
+  assert.equal(statusBody.runtime.model, 'local-hash-v1');
+  assert.equal('api_key' in statusBody.runtime, false);
+
+  const testRes = await request('/api/knowledge/embedding/test', { method: 'POST', body: '{}' });
+  assert.equal(testRes.status, 200);
+  const testBody = await testRes.json() as { ok: boolean; dimensions: number | null };
+  assert.equal(testBody.ok, true);
+  assert.equal(typeof testBody.dimensions, 'number');
+
+  const rebuildRes = await request('/api/knowledge/embedding/rebuild', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId: project.id }),
+  });
+  assert.equal(rebuildRes.status, 200);
+  const rebuildBody = await rebuildRes.json() as { project_id: string; scanned_chunks: number };
+  assert.equal(rebuildBody.project_id, project.id);
+});
+
+test('knowledge embedding status counts missing and embedded chunks', async () => {
+  const project = createProject('embedding-status-counts');
+  const source = knowledgeRepo.ensureSource({
+    project_id: project.id,
+    source_type: 'manual',
+    source_id: 'manual-embedding-status-counts',
+    title: 'Embedding Status Counts',
+    status: 'ready',
+  });
+  knowledgeRepo.replaceChunks(source.id, [
+    { chunk_type: 'body', content: 'embedded chunk', project_id: project.id, enabled: 1 },
+    { chunk_type: 'body', content: 'missing chunk', project_id: project.id, enabled: 1 },
+  ]);
+
+  const beforeRes = await request(`/api/knowledge/embedding/status?projectId=${project.id}`);
+  assert.equal(beforeRes.status, 200);
+  const before = await beforeRes.json() as {
+    total_enabled_chunks: number;
+    embedded_chunks: number;
+    missing_chunks: number;
+    stale_chunks: number;
+  };
+  assert.equal(before.total_enabled_chunks, 2);
+  assert.equal(before.embedded_chunks, 0);
+  assert.equal(before.missing_chunks, 2);
+  assert.equal(before.stale_chunks, 0);
+
+  await rebuildKnowledgeEmbeddings({ projectId: project.id, sourceId: source.id, limit: 1 });
+  const afterRes = await request(`/api/knowledge/embedding/status?projectId=${project.id}`);
+  assert.equal(afterRes.status, 200);
+  const after = await afterRes.json() as {
+    total_enabled_chunks: number;
+    embedded_chunks: number;
+    missing_chunks: number;
+    stale_chunks: number;
+  };
+  assert.equal(after.total_enabled_chunks, 2);
+  assert.equal(after.embedded_chunks, 1);
+  assert.equal(after.missing_chunks, 1);
+  assert.equal(after.stale_chunks, 0);
+});
+
+test('knowledge embedding status treats imported local embeddings as fresh', async () => {
+  const project = createProject('embedding-status-import');
+  const importRes = await request(`/api/projects/${project.id}/knowledge/manual`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: 'Embedding Import Freshness',
+      content: 'Imported local embedding should not become stale immediately.',
+    }),
+  });
+  assert.equal(importRes.status, 201);
+
+  const statusRes = await request(`/api/knowledge/embedding/status?projectId=${project.id}`);
+  assert.equal(statusRes.status, 200);
+  const status = await statusRes.json() as {
+    total_enabled_chunks: number;
+    embedded_chunks: number;
+    missing_chunks: number;
+    stale_chunks: number;
+  };
+
+  assert.equal(status.total_enabled_chunks, 1);
+  assert.equal(status.embedded_chunks, 1);
+  assert.equal(status.missing_chunks, 0);
+  assert.equal(status.stale_chunks, 0);
+});
+
+test('knowledge embedding routes reject empty project status and invalid source rebuild scope', async () => {
+  const project = createProject('embedding-route-validation');
+  const otherProject = createProject('embedding-route-validation-other');
+  const otherSource = knowledgeRepo.ensureSource({
+    project_id: otherProject.id,
+    source_type: 'manual',
+    source_id: 'manual-other-source',
+    title: 'Other Source',
+    status: 'ready',
+  });
+
+  const emptyProjectRes = await request('/api/knowledge/embedding/status?projectId=');
+  assert.equal(emptyProjectRes.status, 400);
+
+  const missingSourceRes = await request('/api/knowledge/embedding/rebuild', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId: project.id, sourceId: 'missing-source' }),
+  });
+  assert.equal(missingSourceRes.status, 404);
+
+  const crossProjectSourceRes = await request('/api/knowledge/embedding/rebuild', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId: project.id, sourceId: otherSource.id }),
+  });
+  assert.equal(crossProjectSourceRes.status, 404);
 });
 
 test('knowledge list query matches source summary and tags', async () => {

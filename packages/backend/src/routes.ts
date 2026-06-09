@@ -80,6 +80,7 @@ import { extractCreateTaskTitle, routeMessage } from './task-router.js';
 import { workflowRepo } from './repos/workflows.js';
 import { runRegistry } from './run-registry.js';
 import { sessionRouter } from './session.routes.js';
+import { normalizeEmbeddingBaseUrl } from './knowledge-embedding-provider.js';
 import { knowledgeService } from './knowledge-service.js';
 import {
   MAX_MESSAGE_FILES,
@@ -411,6 +412,25 @@ const aiConfigTestSchema = z.object({
   prompt: nullableTrimmedStringSchema,
 });
 
+const knowledgeEmbeddingSettingsSchema = z.object({
+  provider: z.enum(['local-hash', 'openai-compatible']),
+  model: z.string().trim().min(1).max(120).nullable().optional(),
+  dimensions: z.number().int().min(1).max(8192).nullable().optional(),
+  baseUrl: z.string().trim().max(2048).transform((value, ctx) => {
+    if (!value) return null;
+    try {
+      return normalizeEmbeddingBaseUrl(value);
+    } catch (error) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: error instanceof Error ? error.message : 'base_url is invalid',
+      });
+      return z.NEVER;
+    }
+  }).nullable().optional(),
+  apiKeyEnvVar: z.string().trim().max(120).nullable().optional(),
+}).strict();
+
 const agentToolCapabilitySchema = z.enum([
   'read_files',
   'write_files',
@@ -713,6 +733,18 @@ router.patch('/settings/system', (req, res) => {
   }));
 });
 
+router.patch('/settings/system/knowledge-embedding', (req, res) => {
+  const parsed = knowledgeEmbeddingSettingsSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  res.json(settingsRepo.updateSystem({
+    knowledge_embedding_provider: parsed.data.provider,
+    knowledge_embedding_model: parsed.data.model,
+    knowledge_embedding_dimensions: parsed.data.dimensions,
+    knowledge_embedding_base_url: parsed.data.baseUrl,
+    knowledge_embedding_api_key_env_var: parsed.data.apiKeyEnvVar,
+  }));
+});
+
 router.get('/settings/ai-configs', (_req, res) => {
   res.json({
     active_ai_config_id: settingsRepo.getSystem().active_ai_config_id,
@@ -990,6 +1022,14 @@ const knowledgeSearchQuerySchema = z.object({
   sourceType: knowledgeSourceTypeSchema.optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
 });
+const knowledgeEmbeddingStatusSchema = z.object({
+  projectId: z.string().min(1).optional(),
+});
+const knowledgeEmbeddingRebuildSchema = z.object({
+  projectId: z.string().min(1),
+  sourceId: z.string().min(1).optional(),
+  limit: z.number().int().min(1).max(500).optional(),
+}).strict();
 const knowledgeInsightsQuerySchema = z.object({
   projectId: z.string().min(1),
   roomId: z.string().optional(),
@@ -1083,7 +1123,7 @@ router.get('/knowledge/insights', (req, res) => {
   res.json(knowledgeService.getInsights({ projectId, roomId }));
 });
 
-router.get('/knowledge/search', (req, res) => {
+router.get('/knowledge/search', async (req, res) => {
   const parsed = knowledgeSearchQuerySchema.safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { projectId, roomId, q, mode, status, sourceType, limit } = parsed.data;
@@ -1093,7 +1133,38 @@ router.get('/knowledge/search', (req, res) => {
     if (!room) return res.status(404).json({ error: 'room not found' });
     if (room.project_id !== projectId) return res.status(400).json({ error: 'room does not belong to project' });
   }
-  res.json(knowledgeService.search({ projectId, roomId, query: q, mode, status, sourceType, limit }));
+  try {
+    res.json(await knowledgeService.search({ projectId, roomId, query: q, mode, status, sourceType, limit }));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'knowledge search failed';
+    res.status(message.includes('requires model, base URL, and API key') ? 400 : 503).json({ error: message });
+  }
+});
+
+router.get('/knowledge/embedding/status', (req, res) => {
+  const parsed = knowledgeEmbeddingStatusSchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    res.json(knowledgeService.getEmbeddingStatus(parsed.data));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'embedding status failed';
+    res.status(message === 'project not found' ? 404 : 400).json({ error: message });
+  }
+});
+
+router.post('/knowledge/embedding/test', async (_req, res) => {
+  res.json(await knowledgeService.testEmbeddingProvider());
+});
+
+router.post('/knowledge/embedding/rebuild', async (req, res) => {
+  const parsed = knowledgeEmbeddingRebuildSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    res.json(await knowledgeService.rebuildEmbeddings(parsed.data));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'embedding rebuild failed';
+    res.status(message === 'project not found' || message === 'knowledge source not found' ? 404 : 400).json({ error: message });
+  }
 });
 
 router.get('/knowledge/sources/:sourceId', (req, res) => {

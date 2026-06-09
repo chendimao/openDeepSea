@@ -1,11 +1,11 @@
-import { hashText } from './knowledge-extraction.js';
+import { buildKnowledgeEmbeddingText, hashKnowledgeEmbeddingText } from './knowledge-embedding.js';
 import {
   getKnowledgeEmbeddingProvider,
   getKnowledgeEmbeddingRuntime,
   sanitizeEmbeddingProviderError,
   type FetchLike,
 } from './knowledge-embedding-provider.js';
-import type { KnowledgeChunk, KnowledgeSource } from './knowledge-types.js';
+import type { KnowledgeSource } from './knowledge-types.js';
 import { db } from './db.js';
 import { knowledgeRepo } from './repos/knowledge.js';
 import { projectRepo } from './repos/projects.js';
@@ -61,8 +61,8 @@ export async function rebuildKnowledgeEmbeddings(
       if (attemptedChunks >= limit) return result;
       result.scanned_chunks += 1;
 
-      const embeddingText = buildEmbeddingText(source, chunk);
-      const contentHash = hashText(embeddingText);
+      const embeddingText = buildKnowledgeEmbeddingText(source.title, chunk);
+      const contentHash = hashKnowledgeEmbeddingText(source.title, chunk);
       const existing = knowledgeRepo.getChunkEmbedding(chunk.id);
       if (
         existing
@@ -137,10 +137,6 @@ function listReadySources(projectId: string, sourceId?: string): KnowledgeSource
   return rows
     .map((row) => knowledgeRepo.getSource(row.id))
     .filter((source): source is KnowledgeSource => Boolean(source));
-}
-
-function buildEmbeddingText(source: KnowledgeSource, chunk: KnowledgeChunk): string {
-  return [source.title, chunk.heading, chunk.content].filter(Boolean).join('\n');
 }
 
 function clampRebuildLimit(value: number | undefined): number {
