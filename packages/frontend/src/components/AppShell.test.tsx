@@ -62,6 +62,8 @@ test('AppShell renders macOS window controls before brand identity', () => {
   assert.match(html, /desktop-window-controls desktop-window-controls--mac/);
   assert.match(html, /aria-label="最小化窗口"/);
   assert.match(html, /aria-label="最大化窗口"/);
+  assert.ok(html.indexOf('aria-label="关闭窗口"') < html.indexOf('aria-label="最小化窗口"'));
+  assert.ok(html.indexOf('aria-label="最小化窗口"') < html.indexOf('aria-label="最大化窗口"'));
   assert.ok(html.indexOf('desktop-window-controls--mac') < html.indexOf('deepsea-brand'));
 });
 
@@ -74,14 +76,19 @@ test('AppShell renders Windows window controls after action icons', () => {
   assert.match(html, /aria-label="最小化窗口"/);
   assert.match(html, /aria-label="最大化窗口"/);
   assert.match(html, /aria-label="关闭窗口"/);
+  assert.ok(html.indexOf('aria-label="最小化窗口"') < html.indexOf('aria-label="最大化窗口"'));
+  assert.ok(html.indexOf('aria-label="最大化窗口"') < html.indexOf('aria-label="关闭窗口"'));
   assert.ok(html.indexOf('deepsea-action-icons') < html.indexOf('desktop-window-controls--system'));
 });
 
-test('AppShell labels maximized state as restore action', () => {
+test('AppShell uses native window control glyph classes', () => {
   const source = readFileSync(new URL('./AppShell.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /windowState\.isMaximized \? '还原窗口' : '最大化窗口'/);
-  assert.match(source, /windowState\.isMaximized \? Copy : Square/);
+  assert.match(source, /const maximizeKind = windowState\.isMaximized \? 'restore' : 'maximize'/);
+  assert.match(source, /desktop-window-control__glyph/);
+  assert.doesNotMatch(source, /\bCopy\b/);
+  assert.doesNotMatch(source, /\bSquare\b/);
+  assert.doesNotMatch(source, /\bMinus\b/);
 });
 
 test('AppShell omits profile avatar on non-session routes', () => {
@@ -149,6 +156,9 @@ test('desktop window controls CSS defines drag and no-drag regions', () => {
   assert.match(css, /\.deepsea-topbar :where\([\s\S]*-webkit-app-region: no-drag/);
   assert.match(css, /\.desktop-window-controls[\s\S]*-webkit-app-region: no-drag/);
   assert.match(css, /\.desktop-window-control--close:hover/);
+  assert.match(css, /\.desktop-window-controls--mac \.desktop-window-control--close[\s\S]*#ff5f57/);
+  assert.match(css, /\.desktop-window-controls--mac \.desktop-window-control--close:hover[\s\S]*background: #ff5f57/);
+  assert.match(css, /\.desktop-window-controls--system \.desktop-window-control--maximize/);
 });
 
 function installDesktopApi({

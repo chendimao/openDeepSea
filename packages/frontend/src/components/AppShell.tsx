@@ -5,19 +5,15 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
   Bot,
-  Copy,
   Database,
   FileText,
   History,
   Image as ImageIcon,
   Menu,
   MessageCircle,
-  Minus,
   Search,
   Settings,
   ShieldCheck,
-  Square,
-  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../lib/api';
@@ -201,7 +197,22 @@ function DesktopWindowControls({ placement }: { placement: 'mac' | 'system' }): 
   if (!desktopApi) return null;
 
   const maximizeLabel = windowState.isMaximized ? '还原窗口' : '最大化窗口';
-  const MaximizeIcon = windowState.isMaximized ? Copy : Square;
+  const maximizeKind = windowState.isMaximized ? 'restore' : 'maximize';
+  const controls: Array<{
+    kind: 'close' | 'minimize' | 'maximize' | 'restore';
+    label: string;
+    onClick: () => void;
+  }> = placement === 'mac'
+    ? [
+      { kind: 'close', label: '关闭窗口', onClick: () => void desktopApi.closeWindow() },
+      { kind: 'minimize', label: '最小化窗口', onClick: () => void desktopApi.minimizeWindow() },
+      { kind: maximizeKind, label: maximizeLabel, onClick: () => void desktopApi.toggleMaximizeWindow() },
+    ]
+    : [
+      { kind: 'minimize', label: '最小化窗口', onClick: () => void desktopApi.minimizeWindow() },
+      { kind: maximizeKind, label: maximizeLabel, onClick: () => void desktopApi.toggleMaximizeWindow() },
+      { kind: 'close', label: '关闭窗口', onClick: () => void desktopApi.closeWindow() },
+    ];
 
   return (
     <div
@@ -209,30 +220,17 @@ function DesktopWindowControls({ placement }: { placement: 'mac' | 'system' }): 
       role="group"
       aria-label="窗口控制"
     >
-      <button
-        type="button"
-        className="desktop-window-control"
-        aria-label="最小化窗口"
-        onClick={() => void desktopApi.minimizeWindow()}
-      >
-        <Minus aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        className="desktop-window-control"
-        aria-label={maximizeLabel}
-        onClick={() => void desktopApi.toggleMaximizeWindow()}
-      >
-        <MaximizeIcon aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        className="desktop-window-control desktop-window-control--close"
-        aria-label="关闭窗口"
-        onClick={() => void desktopApi.closeWindow()}
-      >
-        <X aria-hidden="true" />
-      </button>
+      {controls.map((control) => (
+        <button
+          key={control.kind}
+          type="button"
+          className={cn('desktop-window-control', `desktop-window-control--${control.kind}`)}
+          aria-label={control.label}
+          onClick={control.onClick}
+        >
+          <span className="desktop-window-control__glyph" aria-hidden="true" />
+        </button>
+      ))}
     </div>
   );
 }
