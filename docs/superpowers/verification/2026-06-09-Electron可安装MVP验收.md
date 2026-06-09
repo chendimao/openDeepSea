@@ -232,3 +232,53 @@ node -e "const pty=require('node-pty'); console.log(typeof pty.spawn === 'functi
 - 当前使用默认 Electron 图标。
 - `npm install` 报告 11 个 vulnerability（10 moderate，1 high），本次未执行 `npm audit fix --force`，避免破坏性升级。
 - Electron 打包链路使用 `build:prod` 排除测试文件；普通 workspace `build` 仍保留给 Web/后端开发验证。
+
+## 2026-06-09 无边框窗口与内嵌窗口控制
+
+本轮新增 Electron 无边框窗口与应用内窗口控制，覆盖：
+
+- Electron 主窗口启用 `frame: false`，去掉系统原生标题栏。
+- Electron main 进程新增最小化、最大化/还原、关闭、窗口状态查询和状态广播 IPC。
+- preload 在 `window.openDeepSeaDesktop` 暴露 `platform`、窗口控制方法和窗口状态订阅。
+- AppShell 仅在 Electron 窗口控制 API 存在时渲染窗口按钮。
+- macOS 窗口按钮位于顶部栏左侧品牌前，Windows/Linux 位于右侧 actions 后。
+- 顶部栏声明 `-webkit-app-region: drag`，顶部栏交互元素和窗口按钮声明 `no-drag`。
+
+验证命令：
+
+```bash
+cd packages/frontend && node --import tsx --test src/components/AppShell.test.tsx
+npm run build -w @openclaw-room/frontend
+npm run build -w @openclaw-room/desktop
+```
+
+结果：三条命令均通过。`AppShell.test.tsx` 共 13 个测试通过，0 失败；Vite build 仍只有 chunk size warning。
+
+桌面启动 smoke：
+
+```bash
+npm run dev:desktop
+```
+
+结果：Vite 和 Electron 启动链路可进入运行态，但本机 5173 已被已有服务占用，Vite 自动切换到 5174，因此该命令不能证明 Electron 加载的是本轮新前端。
+
+随后使用固定空闲端口复测：
+
+```bash
+OPENDEEPSEA_LOCAL_TOKEN=openclaw-room-dev-token \
+OPENDEEPSEA_DESKTOP_FRONTEND_URL=http://localhost:5178 \
+OPENDEEPSEA_DESKTOP_BACKEND_PORT=7339 \
+VITE_BACKEND_URL=http://localhost:7339 \
+./node_modules/.bin/concurrently -n frontend,desktop -c magenta,cyan \
+  "npm run dev -w @openclaw-room/frontend -- --host 127.0.0.1 --port 5178 --strictPort" \
+  "npm run dev -w @openclaw-room/desktop"
+```
+
+结果：
+
+- Vite 监听 `127.0.0.1:5178`。
+- Electron desktop 构建完成并启动，60 秒内无启动错误。
+- Electron backend sidecar 监听 `localhost:7339`。
+- smoke 结束后已停止本轮启动的 Vite、Electron 和 7339 backend 进程。
+
+说明：当前自动化流程未逐项手动确认窗口拖动、最小化、最大化/还原、关闭按钮点击；这些交互由源码实现、类型构建和 AppShell/CSS 结构测试覆盖，仍建议在最终安装包验收时做一次真实 GUI 点击验收。
