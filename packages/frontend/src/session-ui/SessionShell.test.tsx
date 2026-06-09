@@ -1454,6 +1454,15 @@ test('SessionShell CSS makes only chat body text one size smaller and defines st
   assert.match(sessionOsCss, /@keyframes deepsea-cursor-blink/);
 });
 
+test('SessionShell groups message actions and markdown switch in one compact toolbar', () => {
+  assert.match(sessionOsCss, /\.deepsea-message-tools\s*\{[^}]*display:\s*inline-flex/s);
+  assert.match(sessionOsCss, /\.deepsea-message-tools\s*\{[^}]*margin-left:\s*auto/s);
+  assert.match(sessionOsCss, /\.deepsea-message-tools\s*\{[^}]*flex-wrap:\s*wrap/s);
+  assert.match(sessionOsCss, /\.deepsea-message__action\[data-action="copy"\]\s*\{[^}]*color:\s*var\(--deepsea-primary-bright\)/s);
+  assert.match(sessionOsCss, /\.deepsea-message__action\[data-state="copied"\]\s*\{[^}]*background:\s*var\(--deepsea-primary-bright\)/s);
+  assert.doesNotMatch(sessionOsCss, /\.deepsea-message__action \+ \.deepsea-markdown-switch/);
+});
+
 test('SessionShell renders a concise active session title with the full title available', () => {
   const payload = createPayload();
   payload.activeSession.session.title = '用户在当前会话第一次发送消息的时候要同时修改当前会话名称并避免超长溢出';

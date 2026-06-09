@@ -80,6 +80,31 @@ export function buildSessionKnowledgeActionKey(
   return `${kind}:${id}`;
 }
 
+async function writeTranscriptTextToClipboard(content: string): Promise<void> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(content);
+      return;
+    }
+  } catch {
+    // Fall back to a selection-based copy path for restricted browser contexts.
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = content;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '-1000px';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, content.length);
+  const copied = document.execCommand('copy');
+  document.body.removeChild(textarea);
+  if (!copied) throw new Error('Clipboard copy failed');
+}
+
 export function SessionShellView({
   payload,
   onSendMessage,
@@ -816,7 +841,7 @@ function TranscriptCanvas({
   };
   const copyTranscriptText = async (content: string, key: string) => {
     try {
-      await navigator.clipboard.writeText(content);
+      await writeTranscriptTextToClipboard(content);
       setCopiedActionKey(key);
       window.setTimeout(() => {
         setCopiedActionKey((current) => (current === key ? null : current));
@@ -924,6 +949,8 @@ function TranscriptCanvas({
                     <button
                       type="button"
                       className="deepsea-message__action"
+                      data-action="copy"
+                      data-state={runCopied ? 'copied' : undefined}
                       aria-label="复制智能体输出"
                       onClick={() => void copyTranscriptText(output, runCopyActionKey)}
                     >
@@ -934,6 +961,8 @@ function TranscriptCanvas({
                       <button
                         type="button"
                         className="deepsea-message__action"
+                        data-action="knowledge"
+                        data-state={savingRunKnowledge ? 'saving' : undefined}
                         aria-label="保存智能体输出为知识"
                         disabled={savingRunKnowledge}
                         onClick={() => onSaveKnowledge?.({
@@ -1093,6 +1122,8 @@ function TranscriptMessage({
             <button
               type="button"
               className="deepsea-message__action"
+              data-action="copy"
+              data-state={copied ? 'copied' : undefined}
               aria-label="复制消息内容"
               onClick={() => onCopyText(message.content, copyActionKey)}
             >
@@ -1103,6 +1134,8 @@ function TranscriptMessage({
               <button
                 type="button"
                 className="deepsea-message__action"
+                data-action="knowledge"
+                data-state={savingKnowledge ? 'saving' : undefined}
                 aria-label="保存消息为知识"
                 disabled={savingKnowledge}
                 onClick={() => onSaveKnowledge?.({ kind: 'message', key: knowledgeActionKey, message })}
