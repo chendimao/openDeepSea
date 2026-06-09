@@ -209,6 +209,17 @@ test('knowledge chunks and search routes expose citations', async () => {
   assert.equal(results[0]?.chunk_id, chunks[0]?.id);
   assert.equal(results[0]?.citation.source_id, source.id);
   assert.equal(results[0]?.citation.room_id, room.id);
+
+  const hybridRes = await request(`/api/knowledge/search?projectId=${project.id}&q=A12&roomId=${room.id}&mode=hybrid`);
+  assert.equal(hybridRes.status, 200);
+  const hybridResults = await hybridRes.json() as Array<{
+    chunk_id: string;
+    retrieval_mode: string;
+    ranking: { finalScore: number };
+  }>;
+  assert.equal(hybridResults[0]?.chunk_id, chunks[0]?.id);
+  assert.equal(hybridResults[0]?.retrieval_mode, 'hybrid');
+  assert.ok(hybridResults[0]!.ranking.finalScore > 0);
 });
 
 test('knowledge list query matches source summary and tags', async () => {

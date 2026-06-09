@@ -1,10 +1,12 @@
 import { ingestProjectFileIntoKnowledge } from './knowledge-ingestion.js';
+import { searchKnowledge } from './knowledge-search.js';
 import { fileRepo } from './repos/files.js';
 import { knowledgeRepo } from './repos/knowledge.js';
 import { projectRepo } from './repos/projects.js';
 import { roomRepo } from './repos/rooms.js';
 import type {
   KnowledgeExtractionResponse,
+  KnowledgeRetrievalMode,
   KnowledgeSearchResult,
   KnowledgeSource,
   KnowledgeSourceDetail,
@@ -82,14 +84,16 @@ export const knowledgeService = {
     query: string;
     status?: KnowledgeStatus;
     sourceType?: KnowledgeSourceType;
+    mode?: KnowledgeRetrievalMode;
     limit?: number;
   }): KnowledgeSearchResult[] {
-    return knowledgeRepo.search({
+    return searchKnowledge({
       projectId: input.projectId,
       roomId: input.roomId,
       query: input.query,
-      statuses: input.status ? [input.status] : undefined,
-      sourceTypes: input.sourceType ? [input.sourceType] : undefined,
+      status: input.status,
+      sourceType: input.sourceType,
+      mode: input.mode,
       limit: input.limit,
     });
   },

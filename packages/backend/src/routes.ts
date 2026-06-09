@@ -951,6 +951,7 @@ router.get('/projects/:id', (req, res) => {
 });
 
 const knowledgeStatusSchema = z.enum(['pending', 'processing', 'ready', 'failed', 'stale', 'disabled']);
+const knowledgeRetrievalModeSchema = z.enum(['keyword', 'vector_preview', 'hybrid']);
 const knowledgeSourceTypeSchema = z.enum([
   'resource_asset',
   'uploaded_file',
@@ -984,6 +985,7 @@ const knowledgeSearchQuerySchema = z.object({
   projectId: z.string().min(1),
   roomId: z.string().optional(),
   q: z.string().trim().min(1),
+  mode: knowledgeRetrievalModeSchema.optional(),
   status: knowledgeStatusSchema.optional(),
   sourceType: knowledgeSourceTypeSchema.optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
@@ -1040,14 +1042,14 @@ router.get('/knowledge', (req, res) => {
 router.get('/knowledge/search', (req, res) => {
   const parsed = knowledgeSearchQuerySchema.safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { projectId, roomId, q, status, sourceType, limit } = parsed.data;
+  const { projectId, roomId, q, mode, status, sourceType, limit } = parsed.data;
   if (!projectRepo.get(projectId)) return res.status(404).json({ error: 'project not found' });
   if (roomId) {
     const room = roomRepo.get(roomId);
     if (!room) return res.status(404).json({ error: 'room not found' });
     if (room.project_id !== projectId) return res.status(400).json({ error: 'room does not belong to project' });
   }
-  res.json(knowledgeService.search({ projectId, roomId, query: q, status, sourceType, limit }));
+  res.json(knowledgeService.search({ projectId, roomId, query: q, mode, status, sourceType, limit }));
 });
 
 router.get('/knowledge/sources/:sourceId', (req, res) => {

@@ -133,6 +133,16 @@ export interface KnowledgeCitation {
   room_id: string | null;
 }
 
+export interface KnowledgeRankingSignals {
+  keywordScore?: number;
+  vectorScore?: number;
+  titleMatch: boolean;
+  tagMatch: boolean;
+  summaryMatch: boolean;
+  recencyBoost: number;
+  finalScore: number;
+}
+
 export interface KnowledgeSearchResult {
   chunk_id: string;
   source_id: string;
@@ -147,6 +157,8 @@ export interface KnowledgeSearchResult {
   content: string;
   snippet: string;
   score: number;
+  retrieval_mode?: KnowledgeRetrievalMode;
+  ranking?: KnowledgeRankingSignals;
   metadata: Record<string, unknown>;
   citation: KnowledgeCitation;
 }
