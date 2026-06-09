@@ -339,6 +339,158 @@ test('execute node starts independent ready implementation children in parallel'
   assert.equal(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length, 2);
 });
 
+test('execute node settles parallel batch when one agent throws and another completes', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-execute-parallel-throw-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Execute Parallel Throw', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Execute Parallel Throw Room' });
+  const backend = createAcpExecutor(room.id, 'parallel-throw-backend', ['packages/backend']);
+  const frontend = createAcpExecutor(room.id, 'parallel-throw-frontend', ['packages/frontend']);
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Parallel throw parent task',
+  });
+  const backendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Throwing backend child',
+    description: 'Backend agent crashes.',
+    assigned_agent_id: backend.id,
+    created_from: 'workflow_assignment',
+  });
+  const frontendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Completing frontend child',
+    description: 'Frontend agent completes.',
+    assigned_agent_id: frontend.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+  const started: string[] = [];
+  const nodes = createGraphNodes(createGraphTools({
+    runAcpAgent: async (input) => {
+      started.push(input.agent.id);
+      if (input.agent.id === backend.id) {
+        throw new Error('backend agent crashed');
+      }
+      return createCompletedGraphAgentRun(room.id, input, 'frontend implementation done');
+    },
+  }));
+
+  const nextState = await nodes.executeNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Settle parallel children despite thrown agent error',
+      assumptions: [],
+      tasks: [
+        {
+          title: backendChild.title,
+          description: backendChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Backend failure is captured'],
+          scopeRead: ['packages/backend/src/routes.ts'],
+          scopeWrite: ['packages/backend/src/routes.ts'],
+          dependsOn: [],
+        },
+        {
+          title: frontendChild.title,
+          description: frontendChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Frontend implementation reaches review'],
+          scopeRead: ['packages/frontend/src/pages/FilesPage.tsx'],
+          scopeWrite: ['packages/frontend/src/pages/FilesPage.tsx'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    workflowPlan: {
+      workflow_name: parentTask.title,
+      source_message_id: parentTask.id,
+      goal: parentTask.title,
+      summary: 'Settle parallel children despite thrown agent error',
+      tasks: [
+        {
+          id: 'task-1-throwing-backend-child',
+          title: backendChild.title,
+          description: backendChild.description ?? '',
+          role: 'executor',
+          agent_id: backend.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+        {
+          id: 'task-2-completing-frontend-child',
+          title: frontendChild.title,
+          description: frontendChild.description ?? '',
+          role: 'executor',
+          agent_id: frontend.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+      ],
+    },
+    currentNode: 'dispatch',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [backendChild.id, frontendChild.id],
+    childTaskPlanIndexes: {
+      [backendChild.id]: 0,
+      [frontendChild.id]: 1,
+    },
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  });
+  const steps = workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute');
+  const backendStep = steps.find((step) => step.task_id === backendChild.id);
+  const frontendStep = steps.find((step) => step.task_id === frontendChild.id);
+
+  assert.deepEqual([...started].sort(), [backend.id, frontend.id].sort());
+  assert.equal(nextState.status, 'blocked');
+  assert.equal(workflowRepo.getRun(run.id)?.status, 'blocked');
+  assert.equal(taskRepo.get(backendChild.id)?.status, 'failed');
+  assert.equal(taskRepo.get(frontendChild.id)?.status, 'review');
+  assert.equal(backendStep?.status, 'failed');
+  assert.match(backendStep?.error ?? '', /backend agent crashed/);
+  assert.equal(frontendStep?.status, 'completed');
+  assert.deepEqual(nextState.workflowPlan?.tasks.map((task) => task.status), ['failed', 'completed']);
+  assert.equal(nextState.workflowPlan?.tasks[1]?.progress, 100);
+});
+
 test('execute node does not parallelize implementation children with conflicting write scopes', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-execute-conflict-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });

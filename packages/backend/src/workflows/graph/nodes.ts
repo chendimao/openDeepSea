@@ -1852,24 +1852,110 @@ async function runParallelImplementationChildren(input: {
   });
   if (updatedRun) input.tools.broadcastWorkflowUpdated(updatedRun);
 
-  const results = await Promise.all(prepared.map(async (item) => ({
-    item,
-    runResult: await input.tools.runAcpAgent({
-      agent: item.executor,
-      projectPath: input.context.project.path,
-      roomId: input.context.room.id,
-      prompt: item.prompt,
-      taskId: item.child.id,
-      workflowRunId: input.context.run.id,
-      workflowStepId: item.step.id,
-      workflowStage: 'implementation',
-    }),
-  })));
+  type ParallelBatchRunResult =
+    | {
+      item: typeof prepared[number];
+      runResult: Awaited<ReturnType<GraphTools['runAcpAgent']>>;
+      runError: null;
+    }
+    | {
+      item: typeof prepared[number];
+      runResult: null;
+      runError: Error;
+    };
+
+  const results: ParallelBatchRunResult[] = await Promise.all(prepared.map(async (item) => {
+    try {
+      return {
+        item,
+        runResult: await input.tools.runAcpAgent({
+          agent: item.executor,
+          projectPath: input.context.project.path,
+          roomId: input.context.room.id,
+          prompt: item.prompt,
+          taskId: item.child.id,
+          workflowRunId: input.context.run.id,
+          workflowStepId: item.step.id,
+          workflowStage: 'implementation',
+        }),
+        runError: null,
+      };
+    } catch (err) {
+      return {
+        item,
+        runResult: null,
+        runError: err instanceof Error ? err : new Error(String(err)),
+      };
+    }
+  }));
 
   let nextWorkflowPlan = runningWorkflowPlan;
   let lastAgentRunId: string | null = null;
   let failedState: AgentWorkflowState | null = null;
-  for (const { item, runResult } of results) {
+  for (const { item, runResult, runError } of results) {
+    if (runError) {
+      const error = runError.message || 'Agent run failed';
+      const failedStep = input.tools.updateGraphStep(item.step.id, {
+        status: 'failed',
+        result: error,
+        error,
+      });
+      if (failedStep) input.tools.broadcastStepUpdated(input.context.room.id, failedStep);
+      createContextEntrySafely(input.tools, input.context, {
+        task: item.child,
+        workflowStepId: item.step.id,
+        roomAgentId: item.executor.id,
+        agentRunId: null,
+        sourceType: 'workflow_step',
+        sourceId: `${item.step.id}:implementation-error`,
+        entryType: 'handoff',
+        title: `执行失败：${item.child.title}`,
+        content: buildImplementationHandoff(item.child, error, error),
+        rawCharCount: error.length,
+        metadata: {
+          graph_node: 'execute',
+          workflow_stage: 'implementation',
+          status: 'failed',
+          error,
+        },
+      });
+      const failedChild = input.tools.updateTaskStatus(item.child.id, 'failed');
+      if (failedChild) input.tools.broadcastTaskUpdated(failedChild);
+      const blockedRun = input.tools.updateRun(input.context.run.id, {
+        status: 'blocked',
+        current_stage: 'implementation',
+        error,
+      });
+      if (blockedRun) input.tools.broadcastWorkflowUpdated(blockedRun);
+      nextWorkflowPlan = updateWorkflowPlanTaskByIndex(nextWorkflowPlan, item.originalPlanTaskIndex, {
+        status: 'failed',
+        progress: 35,
+        agentId: item.executor.id,
+      });
+      recordEventSafely(input.tools, input.context, {
+        eventType: 'workflow_blocked',
+        task: item.child,
+        workflowStepId: item.step.id,
+        content: `子任务「${item.child.title}」执行失败：${error}`,
+        metadata: {
+          graph_node: 'execute',
+          workflow_stage: 'implementation',
+          error,
+        },
+      });
+      failedState = {
+        ...input.state,
+        workflowPlan: nextWorkflowPlan,
+        childTaskPlanIndexes: input.childTaskPlanIndexes,
+        currentNode: 'execute',
+        currentStepId: item.step.id,
+        activeAgentRunId: null,
+        status: 'blocked',
+        error,
+      };
+      continue;
+    }
+
     lastAgentRunId = runResult.run.id;
     const output = runResult.run.stdout || runResult.message.content;
     if (runResult.status !== 'completed') {
