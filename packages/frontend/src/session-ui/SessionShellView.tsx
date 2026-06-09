@@ -12,6 +12,7 @@ import {
   FolderOpen,
   FolderPlus,
   GitFork,
+  Info,
   MessageSquare,
   Minimize2,
   Pin,
@@ -1250,8 +1251,19 @@ function buildAgentNamesById(
 }
 
 export type SessionRunTranscriptItem =
-  | { type: 'text'; id: string; text: string }
-  | { type: 'event'; id: string; label: string; detail: string | null; created_at: number };
+  | { type: 'text'; id: string; text: string; events: SessionRunTranscriptEvent[] }
+  | ({ type: 'event' } & SessionRunTranscriptEvent);
+
+export interface SessionRunTranscriptEvent {
+  id: string;
+  label: string;
+  detail: string | null;
+  created_at: number;
+  event_type: string;
+  channel: SessionAgentEvent['channel'];
+  content: string;
+  payloadJson: string | null;
+}
 
 function SessionRunTimeline({
   events,
@@ -1264,6 +1276,7 @@ function SessionRunTimeline({
 }): JSX.Element {
   const items = buildSessionRunTranscriptItems(events, fallbackText);
   const lastTextItemId = [...items].reverse().find((item) => item.type === 'text')?.id ?? null;
+  const [selectedEvents, setSelectedEvents] = useState<SessionRunTranscriptEvent[] | null>(null);
   return (
     <div className="deepsea-run-timeline">
       {items.map((item) => item.type === 'text' ? (
@@ -1274,6 +1287,21 @@ function SessionRunTimeline({
             streaming={streaming && item.id === lastTextItemId}
             suppressTraceEvents
           />
+          {item.events.length > 0 ? (
+            <div className="deepsea-run-timeline__text-footer">
+              <button
+                type="button"
+                className="deepsea-run-timeline__details-button"
+                aria-label="查看本段调用详情"
+                title={item.events.map((event) => event.label).join(' / ')}
+                data-event-labels={item.events.map((event) => event.label).join(' / ')}
+                onClick={() => setSelectedEvents(item.events)}
+              >
+                <Info aria-hidden="true" />
+                <span>期间 {item.events.length} 个调用</span>
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div key={item.id} className="deepsea-run-timeline__event">
@@ -1281,6 +1309,9 @@ function SessionRunTimeline({
           {item.detail && <small>{item.detail}</small>}
         </div>
       ))}
+      {selectedEvents ? (
+        <SessionRunEventDetailDialog events={selectedEvents} onClose={() => setSelectedEvents(null)} />
+      ) : null}
     </div>
   );
 }
@@ -1298,22 +1329,54 @@ export function buildSessionRunTranscriptItems(
     const text = textBuffer.trim();
     textBuffer = '';
     if (!text) return;
-    items.push({ type: 'text', id: `text-${textIndex}`, text });
+    items.push({ type: 'text', id: `text-${textIndex}`, text, events: [] });
     textIndex += 1;
+  };
+
+  const appendMarker = (event: SessionAgentEvent, marker: { label: string; detail: string | null }) => {
+    flushText();
+    const transcriptEvent = buildSessionRunTranscriptEvent(event, marker);
+    const previousText = [...items].reverse().find((item) => item.type === 'text');
+    if (previousText?.type === 'text') {
+      previousText.events.push(transcriptEvent);
+      return;
+    }
+    items.push({ type: 'event', ...transcriptEvent });
   };
 
   for (const event of sortedEvents) {
     if (isAnswerTextEvent(event)) {
       textBuffer += event.content;
+      continue;
+    }
+    const marker = runEventMarker(event);
+    if (marker) {
+      appendMarker(event, marker);
     }
   }
 
   flushText();
   if (items.length === 0) {
     const text = fallbackText.trim();
-    return text ? [{ type: 'text', id: 'text-fallback', text }] : [];
+    return text ? [{ type: 'text', id: 'text-fallback', text, events: [] }] : [];
   }
   return items;
+}
+
+function buildSessionRunTranscriptEvent(
+  event: SessionAgentEvent,
+  marker: { label: string; detail: string | null },
+): SessionRunTranscriptEvent {
+  return {
+    id: event.id,
+    label: marker.label,
+    detail: marker.detail,
+    created_at: event.created_at,
+    event_type: event.event_type,
+    channel: event.channel,
+    content: event.content,
+    payloadJson: event.payload_json,
+  };
 }
 
 function isAnswerTextEvent(event: SessionAgentEvent): boolean {
@@ -1328,16 +1391,16 @@ function firstAnswerEvent(events: SessionAgentEvent[]): SessionAgentEvent | null
 }
 
 function runEventMarker(event: SessionAgentEvent): { label: string; detail: string | null } | null {
-  if (event.channel === 'thinking' && event.content.trim()) {
-    return { label: 'Thinking', detail: trimTimelineDetail(event.content) };
-  }
-
-  if (event.channel === 'command' || /command/i.test(event.event_type)) {
+  if (event.channel === 'command' || event.event_type === 'command' || event.event_type === 'command_output') {
     return { label: 'Run Command', detail: eventCommandDetail(event) };
   }
 
   if (/file_diff|patch/i.test(event.event_type)) {
     return { label: 'Patch', detail: eventCommandDetail(event) };
+  }
+
+  if (/plan_update|update_plan/i.test(event.event_type)) {
+    return { label: 'Update Plan', detail: eventCommandDetail(event) };
   }
 
   if (event.event_type === 'tool_call' || event.channel === 'tool') {
@@ -1432,6 +1495,105 @@ function trimTimelineDetail(value: string | null | undefined): string | null {
   const text = value?.replace(/\s+/g, ' ').trim() ?? '';
   if (!text) return null;
   return text.length > 120 ? `${text.slice(0, 120).trimEnd()}...` : text;
+}
+
+function SessionRunEventDetailDialog({
+  events,
+  onClose,
+}: {
+  events: SessionRunTranscriptEvent[];
+  onClose: () => void;
+}): JSX.Element | null {
+  const [selectedEventId, setSelectedEventId] = useState(events[0]?.id ?? null);
+  const selectedEvent = events.find((event) => event.id === selectedEventId) ?? events[0] ?? null;
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  if (!selectedEvent) return null;
+
+  const payload = formatAgentEventPayloadJson(selectedEvent.payloadJson);
+  const eventDetail = selectedEvent.detail ?? trimTimelineDetail(selectedEvent.content);
+
+  return (
+    <div className="deepsea-tool-detail-overlay" onClick={onClose}>
+      <div
+        className="deepsea-tool-detail-dialog deepsea-run-event-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="调用事件详情"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="deepsea-tool-detail-dialog__header">
+          <div>
+            <span>期间 {events.length} 个调用</span>
+            <h3>{selectedEvent.label}</h3>
+          </div>
+          <button type="button" aria-label="关闭调用事件详情" onClick={onClose} autoFocus>
+            <X aria-hidden="true" />
+          </button>
+        </div>
+        <div className="deepsea-run-event-dialog__body">
+          <div className="deepsea-run-event-dialog__list" aria-label="调用事件列表">
+            {events.map((event, index) => (
+              <button
+                type="button"
+                key={event.id}
+                data-active={event.id === selectedEvent.id}
+                onClick={() => setSelectedEventId(event.id)}
+              >
+                <span>{index + 1}</span>
+                <strong>{event.label}</strong>
+                {event.detail ? <small>{event.detail}</small> : null}
+              </button>
+            ))}
+          </div>
+          <div className="deepsea-run-event-dialog__detail">
+            <div className="deepsea-tool-detail-dialog__execution">
+              <span>事件摘要</span>
+              {eventDetail ? <pre>{eventDetail}</pre> : <p>暂无事件摘要</p>}
+            </div>
+            {payload ? (
+              <div className="deepsea-tool-detail-dialog__execution">
+                <span>原始 Payload</span>
+                <pre>{payload}</pre>
+              </div>
+            ) : null}
+            <dl className="deepsea-tool-detail-grid">
+              <div>
+                <dt>类型</dt>
+                <dd>{selectedEvent.event_type}</dd>
+              </div>
+              <div>
+                <dt>通道</dt>
+                <dd>{selectedEvent.channel}</dd>
+              </div>
+              <div>
+                <dt>Event ID</dt>
+                <dd>{selectedEvent.id}</dd>
+              </div>
+              <div>
+                <dt>记录时间</dt>
+                <dd>{formatToolTimestamp(selectedEvent.created_at)}</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatAgentEventPayloadJson(payloadJson: string | null): string | null {
+  if (!payloadJson) return null;
+  const payload = parseAgentEventPayload(payloadJson);
+  if (payload === null) return payloadJson;
+  return JSON.stringify(payload, null, 2);
 }
 
 function ThinkingDurationBadge({

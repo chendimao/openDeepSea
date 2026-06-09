@@ -1128,7 +1128,7 @@ test('SessionShell keeps run status chips aligned with the thinking chip', () =>
   assert.match(sessionOsCss, /\.deepsea-thinking-duration,\s*\.deepsea-run-status\s*\{[^}]*padding:\s*0 6px;[^}]*font-size:\s*8px;[^}]*line-height:\s*1;/s);
 });
 
-test('SessionShell hides ACP tool records from chat transcript', () => {
+test('SessionShell separates ACP tool records from answer text in chat transcript', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
   run.stdout = '我会先分析当前项目。找到入口和脚本。已完成。';
@@ -1168,13 +1168,43 @@ test('SessionShell hides ACP tool records from chat transcript', () => {
   assert.match(html, /找到入口和脚本。/);
   assert.match(html, /已完成。/);
   assert.doesNotMatch(html, /Thinking/);
-  assert.doesNotMatch(html, /Read File/);
-  assert.doesNotMatch(html, /Run Command/);
+  assert.match(html, /Read File/);
+  assert.match(html, /Run Command/);
   assert.ok(thoughtTextIndex >= 0);
   assert.ok(thoughtTextIndex > runLogIndex);
   assert.ok(thoughtTextIndex < runLogBodyIndex);
   assert.ok(runLogIndex < html.indexOf('找到入口和脚本。'));
   assert.ok(html.indexOf('找到入口和脚本。') < html.indexOf('已完成。'));
+});
+
+test('SessionShell renders a details icon for tool calls after an answer segment', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'completed';
+  run.stdout = '准备修改。修改完成。';
+  run.activity_log = '';
+  payload.activeSession.agentEvents = [
+    createAgentEvent({ id: 'answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '准备修改。' }),
+    createAgentEvent({
+      id: 'event-edit',
+      seq: 2,
+      channel: 'event',
+      event_type: 'tool_call',
+      payload_json: JSON.stringify({ trace: { name: 'Edit', input: '{"path":"SessionShellView.tsx"}' } }),
+    }),
+    createAgentEvent({ id: 'answer-2', seq: 3, channel: 'answer', event_type: 'agent_message_chunk', content: '修改完成。' }),
+  ];
+
+  const html = renderSessionShell(payload);
+  const firstTextIndex = html.indexOf('准备修改。');
+  const detailsIndex = html.indexOf('查看本段调用详情');
+  const secondTextIndex = html.indexOf('修改完成。');
+
+  assert.match(html, /期间 1 个调用/);
+  assert.match(html, /aria-label="查看本段调用详情"/);
+  assert.ok(firstTextIndex >= 0);
+  assert.ok(detailsIndex > firstTextIndex);
+  assert.ok(secondTextIndex > detailsIndex);
 });
 
 test('buildSessionRunTranscriptItems keeps only answer text in chat transcript', () => {
@@ -1190,7 +1220,7 @@ test('buildSessionRunTranscriptItems keeps only answer text in chat transcript',
   ]);
 });
 
-test('buildSessionRunTranscriptItems drops ACP tool markers from chat transcript', () => {
+test('buildSessionRunTranscriptItems separates answer text around ACP tool markers', () => {
   const items = buildSessionRunTranscriptItems([
     createAgentEvent({ id: 'answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '准备修改。' }),
     createAgentEvent({
@@ -1203,8 +1233,55 @@ test('buildSessionRunTranscriptItems drops ACP tool markers from chat transcript
     createAgentEvent({ id: 'answer-2', seq: 3, channel: 'answer', event_type: 'agent_message_chunk', content: '修改完成。' }),
   ], 'fallback');
 
+  assert.deepEqual(items.map((item) => item.type === 'text' ? {
+    text: item.text,
+    events: item.events.map((event) => event.label),
+  } : {
+    text: `[${item.label}]`,
+    events: [],
+  }), [
+    { text: '准备修改。', events: ['Edit'] },
+    { text: '修改完成。', events: [] },
+  ]);
+});
+
+test('buildSessionRunTranscriptItems groups plan update markers after the previous answer text', () => {
+  const items = buildSessionRunTranscriptItems([
+    createAgentEvent({ id: 'answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '先给出计划。' }),
+    createAgentEvent({
+      id: 'plan-update',
+      seq: 2,
+      channel: 'event',
+      event_type: 'plan_update',
+      payload_json: JSON.stringify({ entries: [{ title: '补充验证', status: 'pending' }] }),
+    }),
+    createAgentEvent({ id: 'answer-2', seq: 3, channel: 'answer', event_type: 'agent_message_chunk', content: '继续说明。' }),
+  ], 'fallback');
+
+  assert.deepEqual(items.map((item) => item.type === 'text' ? {
+    text: item.text,
+    events: item.events.map((event) => event.label),
+  } : {
+    text: `[${item.label}]`,
+    events: [],
+  }), [
+    { text: '先给出计划。', events: ['Update Plan'] },
+    { text: '继续说明。', events: [] },
+  ]);
+});
+
+test('buildSessionRunTranscriptItems ignores ACP protocol noise events', () => {
+  const items = buildSessionRunTranscriptItems([
+    createAgentEvent({ id: 'answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '第一段。' }),
+    createAgentEvent({ id: 'available', seq: 2, channel: 'event', event_type: 'available_commands_update' }),
+    createAgentEvent({ id: 'wrapped-token', seq: 3, channel: 'event', event_type: 'agent_message_chunk' }),
+    createAgentEvent({ id: 'usage', seq: 4, channel: 'event', event_type: 'usage_update' }),
+    createAgentEvent({ id: 'done', seq: 5, channel: 'event', event_type: 'run_completed' }),
+    createAgentEvent({ id: 'answer-2', seq: 6, channel: 'answer', event_type: 'agent_message_chunk', content: '第二段。' }),
+  ], 'fallback');
+
   assert.deepEqual(items.map((item) => item.type === 'text' ? item.text : `[${item.label}]`), [
-    '准备修改。修改完成。',
+    '第一段。第二段。',
   ]);
 });
 
@@ -1368,7 +1445,7 @@ test('buildSessionRunTranscriptItems keeps tokenized answer text literally', () 
     text,
   );
 
-  assert.deepEqual(items, [{ type: 'text', id: 'text-0', text }]);
+  assert.deepEqual(items, [{ type: 'text', id: 'text-0', text, events: [] }]);
 });
 
 test('SessionShell keeps process-looking answer text in run body', () => {

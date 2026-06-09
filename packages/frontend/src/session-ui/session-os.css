@@ -3015,6 +3015,42 @@ button.deepsea-message-attachment {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+.deepsea-run-timeline__text-footer {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 6px;
+}
+.deepsea-run-timeline__details-button {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  border-radius: 6px;
+  background: rgba(37, 99, 235, 0.06);
+  color: var(--deepsea-primary);
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+.deepsea-run-timeline__details-button:hover,
+.deepsea-run-timeline__details-button:focus-visible {
+  border-color: rgba(37, 99, 235, 0.26);
+  background: rgba(37, 99, 235, 0.1);
+}
+.deepsea-run-timeline__details-button svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+.deepsea-run-timeline__details-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .deepsea-run-log-body .streaming-cursor {
   display: inline-block;
   width: 7px;
@@ -4349,6 +4385,72 @@ button.deepsea-message-attachment {
 .deepsea-tool-detail-grid dd[data-status="failed"] {
   color: var(--deepsea-danger);
 }
+.deepsea-run-event-dialog {
+  width: min(760px, 100%);
+}
+.deepsea-run-event-dialog__body {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  gap: 0;
+}
+.deepsea-run-event-dialog__list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  border-right: 1px solid rgba(15, 23, 42, 0.08);
+  padding: 16px;
+}
+.deepsea-run-event-dialog__list button {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 8px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.62);
+  padding: 9px;
+  text-align: left;
+}
+.deepsea-run-event-dialog__list button[data-active="true"] {
+  border-color: rgba(37, 99, 235, 0.24);
+  background: rgba(37, 99, 235, 0.08);
+}
+.deepsea-run-event-dialog__list button > span {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.08);
+  color: rgba(15, 23, 42, 0.7);
+  font-family: var(--deepsea-mono);
+  font-size: 10px;
+  font-weight: 900;
+}
+.deepsea-run-event-dialog__list strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--deepsea-text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deepsea-run-event-dialog__list small {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--deepsea-muted);
+  font-family: var(--deepsea-mono);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deepsea-run-event-dialog__detail {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  padding-top: 16px;
+}
 @media (max-width: 640px) {
   .deepsea-run-table > div {
     grid-template-columns: auto minmax(0, 1fr) auto;
@@ -4371,6 +4473,13 @@ button.deepsea-message-attachment {
   }
   .deepsea-tool-detail-grid {
     grid-template-columns: 1fr;
+  }
+  .deepsea-run-event-dialog__body {
+    grid-template-columns: 1fr;
+  }
+  .deepsea-run-event-dialog__list {
+    border-right: 0;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
   }
 }
 .deepsea-plan-list {
