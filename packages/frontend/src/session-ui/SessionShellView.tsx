@@ -63,6 +63,20 @@ import type { SessionCenterWorkspacePane } from './SessionCenterWorkspace';
 import type { SessionComposerSubmit } from './session-file-composer-model';
 import { GeneratedImageEvidencePanel } from './GeneratedImageEvidencePanel';
 
+export type SessionKnowledgeActionKind = 'message' | 'run';
+export type SessionKnowledgeActionKey = `${SessionKnowledgeActionKind}:${string}`;
+
+export type SessionKnowledgeSaveInput =
+  | { kind: 'message'; key: SessionKnowledgeActionKey; message: SessionMessage }
+  | { kind: 'run'; key: SessionKnowledgeActionKey; run: SessionRun; title: string; content: string };
+
+export function buildSessionKnowledgeActionKey(
+  kind: SessionKnowledgeActionKind,
+  id: string,
+): SessionKnowledgeActionKey {
+  return `${kind}:${id}`;
+}
+
 export function SessionShellView({
   payload,
   onSendMessage,
@@ -77,7 +91,7 @@ export function SessionShellView({
   onReorderProjects,
   onToggleSessionPin,
   onSaveKnowledge,
-  savingKnowledgeMessageId,
+  savingKnowledgeKey,
 }: {
   payload: SessionWorkspacePayload;
   onSendMessage: (message: SessionComposerSubmit) => void;
@@ -91,8 +105,8 @@ export function SessionShellView({
   onRemoveProject?: (project: ProjectSwitcherProject) => void;
   onReorderProjects?: (input: { ids: string[]; pinned: boolean }) => void;
   onToggleSessionPin?: (session: ActiveSessionSummary) => void;
-  onSaveKnowledge?: (message: SessionMessage) => void;
-  savingKnowledgeMessageId?: string | null;
+  onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
+  savingKnowledgeKey?: SessionKnowledgeActionKey | null;
 }): JSX.Element {
   const activeRun = getActiveRun(payload.activeSession);
   const forkTarget = payload.historyRecords[0]?.id;
@@ -126,7 +140,7 @@ export function SessionShellView({
               projectId={payload.project.id}
               onSendMessage={onSendMessage}
               onSaveKnowledge={onSaveKnowledge}
-              savingKnowledgeMessageId={savingKnowledgeMessageId}
+              savingKnowledgeKey={savingKnowledgeKey}
             />
           )}
         />
@@ -761,14 +775,14 @@ function TranscriptCanvas({
   projectId,
   onSendMessage,
   onSaveKnowledge,
-  savingKnowledgeMessageId,
+  savingKnowledgeKey,
 }: {
   detail: SessionDetail;
   evidence: SessionEvidenceEvent[];
   projectId: string;
   onSendMessage: (message: SessionComposerSubmit) => void;
-  onSaveKnowledge?: (message: SessionMessage) => void;
-  savingKnowledgeMessageId?: string | null;
+  onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
+  savingKnowledgeKey?: SessionKnowledgeActionKey | null;
 }): JSX.Element {
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
@@ -863,7 +877,7 @@ function TranscriptCanvas({
                 displayMode={displayMode}
                 onDisplayModeChange={(mode) => setDisplayModeFor(item.key, mode)}
                 onSaveKnowledge={onSaveKnowledge}
-                savingKnowledgeMessageId={savingKnowledgeMessageId}
+                savingKnowledgeKey={savingKnowledgeKey}
               />
             );
           }
@@ -990,19 +1004,20 @@ function TranscriptMessage({
   displayMode,
   onDisplayModeChange,
   onSaveKnowledge,
-  savingKnowledgeMessageId,
+  savingKnowledgeKey,
 }: {
   projectId: string;
   message: SessionMessage;
   displayMode: SessionMessageDisplayMode;
   onDisplayModeChange: (mode: SessionMessageDisplayMode) => void;
-  onSaveKnowledge?: (message: SessionMessage) => void;
-  savingKnowledgeMessageId?: string | null;
+  onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
+  savingKnowledgeKey?: SessionKnowledgeActionKey | null;
 }): JSX.Element {
   const metadata = parseMessageMetadata(message.metadata);
   const imageJobId = metadata.image_generation_job_id;
-  const savingKnowledge = savingKnowledgeMessageId === message.id;
-  const canSaveKnowledge = Boolean(onSaveKnowledge && message.role !== 'system' && message.content.trim());
+  const knowledgeActionKey = buildSessionKnowledgeActionKey('message', message.id);
+  const savingKnowledge = savingKnowledgeKey === knowledgeActionKey;
+  const canSaveKnowledge = Boolean(onSaveKnowledge && message.role === 'assistant' && message.content.trim());
   return (
     <>
       <SessionMessageBubble
@@ -1020,7 +1035,7 @@ function TranscriptMessage({
             className="deepsea-message__action"
             aria-label="保存消息为知识"
             disabled={savingKnowledge}
-            onClick={() => onSaveKnowledge?.(message)}
+            onClick={() => onSaveKnowledge?.({ kind: 'message', key: knowledgeActionKey, message })}
           >
             <BookOpen aria-hidden="true" />
             <span>{savingKnowledge ? '保存中' : '保存为知识'}</span>

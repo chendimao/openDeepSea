@@ -1,6 +1,6 @@
 import React from 'react';
-import type { ActiveSessionSummary, SessionMessage, SessionWorkspacePayload } from '../lib/types';
-import { SessionShellView } from './SessionShellView';
+import type { ActiveSessionSummary, SessionWorkspacePayload } from '../lib/types';
+import { SessionShellView, type SessionKnowledgeActionKey, type SessionKnowledgeSaveInput } from './SessionShellView';
 import type { SessionComposerSubmit } from './session-file-composer-model';
 
 type SessionShellProject = SessionWorkspacePayload['projectSwitcher']['projects'][number];
@@ -19,7 +19,7 @@ export function SessionShell({
   onReorderProjects,
   onToggleSessionPin,
   onSaveKnowledge,
-  savingKnowledgeMessageId,
+  savingKnowledgeKey,
 }: {
   payload: SessionWorkspacePayload;
   onSendMessage: (message: SessionComposerSubmit) => void;
@@ -33,8 +33,8 @@ export function SessionShell({
   onRemoveProject?: (project: SessionShellProject) => void;
   onReorderProjects?: (input: { ids: string[]; pinned: boolean }) => void;
   onToggleSessionPin?: (session: ActiveSessionSummary) => void;
-  onSaveKnowledge?: (message: SessionMessage) => void;
-  savingKnowledgeMessageId?: string | null;
+  onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
+  savingKnowledgeKey?: SessionKnowledgeActionKey | null;
 }): JSX.Element {
   return (
     <SessionShellView
@@ -51,7 +51,7 @@ export function SessionShell({
       onReorderProjects={onReorderProjects}
       onToggleSessionPin={onToggleSessionPin}
       onSaveKnowledge={onSaveKnowledge}
-      savingKnowledgeMessageId={savingKnowledgeMessageId}
+      savingKnowledgeKey={savingKnowledgeKey}
     />
   );
 }

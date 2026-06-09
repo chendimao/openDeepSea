@@ -18,6 +18,8 @@ import {
   isTranscriptNearBottom,
   shouldIgnoreProjectDragStart,
   syncExpandedProjectIds,
+  type SessionKnowledgeActionKey,
+  type SessionKnowledgeSaveInput,
 } from './SessionShellView';
 
 const sessionOsCss = readFileSync(new URL('./session-os.css', import.meta.url), 'utf8');
@@ -250,6 +252,14 @@ test('SessionShell renders copy action on user system and assistant messages', (
 
 test('SessionShell disables the save knowledge action while saving a message action key', () => {
   const payload = createPayload();
+  payload.activeSession.messages[0] = {
+    ...payload.activeSession.messages[0]!,
+    role: 'assistant',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: '保存中的智能体回复',
+  };
+  payload.activeSession.runs = [];
 
   const html = renderSessionShell(payload, {
     onSaveKnowledge: () => undefined,
@@ -1799,8 +1809,8 @@ function renderSessionShell(
   payload: SessionWorkspacePayload,
   options: {
     projectAgents?: ProjectUsedAgentsPayload;
-    onSaveKnowledge?: (message: SessionWorkspacePayload['activeSession']['messages'][number]) => void;
-    savingKnowledgeMessageId?: string | null;
+    onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
+    savingKnowledgeKey?: SessionKnowledgeActionKey | null;
   } = {},
 ): string {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -1815,7 +1825,7 @@ function renderSessionShell(
           onSendMessage={() => undefined}
           onCommand={() => undefined}
           onSaveKnowledge={options.onSaveKnowledge}
-          savingKnowledgeMessageId={options.savingKnowledgeMessageId}
+          savingKnowledgeKey={options.savingKnowledgeKey}
         />
       </QueryClientProvider>
     </I18nProvider>,

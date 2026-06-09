@@ -17,13 +17,13 @@ import type {
   PlatformSkillRef,
   Session,
   SessionCompaction,
-  SessionMessage,
   SessionMode,
   SessionWorkspacePayload,
 } from '../lib/types';
 import { sessionSocket, type WsServerEvent } from '../lib/ws';
 import { CompactPreviewSurface } from '../session-ui/CompactPreviewSurface';
 import { SessionShell } from '../session-ui/SessionShell';
+import type { SessionKnowledgeSaveInput } from '../session-ui/SessionShellView';
 import { applySessionWorkspaceEvent } from '../session-ui/session-workspace-events';
 import type { SessionComposerSubmit } from '../session-ui/session-file-composer-model';
 
@@ -425,9 +425,15 @@ export function SessionWorkspacePage({
   });
 
   const saveKnowledgeMutation = useMutation({
-    mutationFn: (message: SessionMessage) => {
+    mutationFn: (input: SessionKnowledgeSaveInput) => {
       if (!workspacePayload) throw new Error('Session 未加载');
-      return api.createSessionKnowledgeNote(workspacePayload.activeSession.session.id, { messageId: message.id });
+      if (input.kind === 'message') {
+        return api.createSessionKnowledgeNote(workspacePayload.activeSession.session.id, { messageId: input.message.id });
+      }
+      return api.createSessionKnowledgeNote(workspacePayload.activeSession.session.id, {
+        title: input.title,
+        content: input.content,
+      });
     },
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: ['knowledge-sources'] });
@@ -534,8 +540,8 @@ export function SessionWorkspacePage({
       onRemoveProject={(project) => setRemoveProject(project)}
       onReorderProjects={(input) => reorderProjectsMutation.mutate(input)}
       onToggleSessionPin={(session) => toggleSessionPinMutation.mutate(session)}
-      onSaveKnowledge={(message) => saveKnowledgeMutation.mutate(message)}
-      savingKnowledgeMessageId={saveKnowledgeMutation.isPending ? saveKnowledgeMutation.variables?.id ?? null : null}
+      onSaveKnowledge={(input) => saveKnowledgeMutation.mutate(input)}
+      savingKnowledgeKey={saveKnowledgeMutation.isPending ? saveKnowledgeMutation.variables?.key ?? null : null}
     />
     <Dialog
       open={renameProject !== null}
