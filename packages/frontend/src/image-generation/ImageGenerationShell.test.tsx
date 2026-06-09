@@ -39,6 +39,12 @@ test('image workbench shell does not duplicate the Stitch private header', () =>
   assert.doesNotMatch(html, /32,680 \/ 50,000 tokens/);
 });
 
+test('image workbench shell omits the local icon navigation rail', () => {
+  const html = renderImageGenerationShell('project-1');
+
+  assert.doesNotMatch(html, /aria-label="图片工作台导航"/);
+});
+
 function renderImageGenerationShell(projectId: string): string {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 

@@ -2,12 +2,9 @@ import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
-  BarChart3,
   BookOpen,
   Download,
-  Home,
   Image as ImageIcon,
-  Layers,
   ListFilter,
   Loader2,
   Maximize2,
@@ -251,7 +248,6 @@ export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.
       data-purpose="image-workbench-shell"
     >
       <main className="flex min-h-0 flex-1 overflow-hidden max-lg:flex-col max-lg:overflow-y-auto">
-        <IconRail />
         <ModelConfigPanel
           projectId={projectId}
           profile={activeProfile}
@@ -282,34 +278,6 @@ export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.
       </main>
       <StatusFooter projectId={projectId} />
     </div>
-  );
-}
-
-function IconRail(): JSX.Element {
-  const items = [
-    { label: '总览', icon: Home },
-    { label: '图片', icon: ImageIcon, active: true },
-    { label: '批量', icon: Layers },
-    { label: '统计', icon: BarChart3 },
-    { label: '上传', icon: Upload },
-  ];
-  return (
-    <aside className="hidden w-12 shrink-0 flex-col items-center gap-6 border-r border-[#e5e7eb] bg-white py-4 lg:flex" aria-label="图片工作台导航">
-      {items.map(({ label, icon: Icon, active }) => (
-        <button
-          key={label}
-          type="button"
-          className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-lg text-[#9ca3af] transition-colors hover:bg-[#eff6ff] hover:text-[#2563eb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]',
-            active && 'bg-[#eff6ff] text-[#2563eb]',
-          )}
-          aria-label={label}
-          aria-pressed={active ? true : undefined}
-        >
-          <Icon className="h-5 w-5" aria-hidden="true" />
-        </button>
-      ))}
-    </aside>
   );
 }
 
