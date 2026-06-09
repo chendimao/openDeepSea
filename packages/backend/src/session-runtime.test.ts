@@ -170,9 +170,64 @@ test('retrySessionAgentRun asks the provider to continue a failed partial answer
   assert.equal(capturedSessionId, 'acp-continuation-retry');
   assert.notEqual(capturedPrompt, 'a');
   assert.match(capturedPrompt, /从中断点继续/u);
+  assert.match(capturedPrompt, /## 原始用户请求/u);
+  assert.match(capturedPrompt, /a/u);
   assert.match(capturedPrompt, /已确认第二个选择/u);
   assert.match(capturedPrompt, /listen EPERM/u);
   assert.match(capturedPrompt, /不要重新回答原始用户请求/u);
+});
+
+test('retrySessionAgentRun keeps tail context when a failed partial answer is long', async () => {
+  const project = projectRepo.create({
+    name: 'runtime continuation retry tail project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-continuation-retry-tail-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Continuation Retry Tail',
+    mode: 'ask',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const earlyText = `开头-${'x'.repeat(9000)}`;
+  const tailText = '断点附近：接下来应该继续布局选择。';
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onSession, onChunk }) => {
+      onSession?.('acp-continuation-retry-tail');
+      onChunk({ stream: 'stdout', channel: 'answer', text: `${earlyText}\n${tailText}` });
+      return { exitCode: 1, sessionId: 'acp-continuation-retry-tail', stderr: 'failed after long answer' };
+    },
+  });
+
+  const failed = await runSessionAgent({
+    sessionId: session.id,
+    prompt: '请选择底部栏布局',
+    provider: 'codex',
+  });
+  assert.equal(failed.status, 'failed');
+
+  let capturedPrompt = '';
+  const retryInvoked = new Promise<void>((resolve) => {
+    setSessionRuntimeAdapterForTest({
+      backend: 'codex',
+      listSessions: async () => [],
+      invoke: async ({ prompt }) => {
+        capturedPrompt = prompt;
+        resolve();
+        return { exitCode: 0, sessionId: 'acp-continuation-retry-tail', stderr: '' };
+      },
+    });
+  });
+
+  retrySessionAgentRun(failed.id);
+  await retryInvoked;
+
+  assert.match(capturedPrompt, /请选择底部栏布局/u);
+  assert.match(capturedPrompt, /断点附近：接下来应该继续布局选择/u);
+  assert.doesNotMatch(capturedPrompt, new RegExp(`开头-${'x'.repeat(1000)}`, 'u'));
 });
 
 test('runSessionAgent passes knowledge usage env overrides to session adapter', async () => {

@@ -31,6 +31,8 @@ import type {
 
 const STREAM_PAYLOAD_LIMIT = 8000;
 const MAX_EVIDENCE_LINES = 200;
+const RETRY_CONTEXT_LIMIT = STREAM_PAYLOAD_LIMIT;
+const MAX_RETRY_CONTEXT_LINES = MAX_EVIDENCE_LINES;
 const MAX_SESSION_TOOL_BRIDGE_CALLS = 3;
 const MAX_SESSION_RUNTIME_AUTO_RETRIES = 1;
 const SESSION_TOOL_BRIDGE_OPEN_TAG = '<opendeepsea-tool-call';
@@ -421,13 +423,26 @@ function buildSessionRunRetryPrompt(run: SessionRun): string {
     '把下面的“已输出内容”视为已经发送给用户，只从中断点继续完成同一轮回复。',
     '如果失败来自工具、权限或本地环境，请简短说明降级处理，然后继续推进原本的下一步。',
     '',
+    '## 原始用户请求',
+    trimRetryContinuationContext(run.prompt),
+    '',
     '## 已输出内容',
-    trimEvidenceText(partialAnswer),
+    trimRetryContinuationContext(partialAnswer),
     '',
     '## 失败信息',
     failure ? trimEvidenceText(failure) : '未记录失败信息。',
     '',
     '请从中断点继续。',
+  ].join('\n');
+}
+
+function trimRetryContinuationContext(text: string): string {
+  const byLines = text.split('\n').slice(-MAX_RETRY_CONTEXT_LINES).join('\n');
+  const chars = Array.from(byLines);
+  if (chars.length <= RETRY_CONTEXT_LIMIT) return byLines;
+  return [
+    '...（前文已截断，以下保留末尾上下文）',
+    chars.slice(-RETRY_CONTEXT_LIMIT).join(''),
   ].join('\n');
 }
 
