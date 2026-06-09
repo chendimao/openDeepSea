@@ -13,6 +13,7 @@ const {
   createUrlKnowledgeSource,
   importWorkspaceDocuments,
 } = await import('./knowledge-imports.js');
+const { WORKSPACE_PREVIEW_TEXT_LIMIT } = await import('./workspace-files.js');
 
 test('createManualKnowledgeSource stores searchable manual knowledge', () => {
   const project = createProject('manual');
@@ -87,6 +88,27 @@ test('importWorkspaceDocuments records per-path failures from workspace safety c
   assert.equal(result.failed.length, 1);
   assert.equal(result.failed[0]?.path, '../outside.md');
   assert.match(result.failed[0]?.error ?? '', /WORKSPACE_PATH_TRAVERSAL/);
+});
+
+test('importWorkspaceDocuments rejects absolute, ignored, binary, and oversized files', async () => {
+  const project = createProjectWithFile('workspace-safety', 'docs/spec.md', '# A12 Workspace Doc');
+  writeFileSync(join(project.path, '.env.local'), 'SECRET=1\n');
+  writeFileSync(join(project.path, 'binary.bin'), Buffer.from([0, 255, 4, 8, 13]));
+  writeFileSync(join(project.path, 'huge.md'), 'a'.repeat(WORKSPACE_PREVIEW_TEXT_LIMIT + 1));
+
+  const result = await importWorkspaceDocuments({
+    projectId: project.id,
+    paths: ['/etc/passwd', '../outside.md', '.env.local', 'binary.bin', 'huge.md', 'docs/spec.md'],
+  });
+  const failures = new Map(result.failed.map((item) => [item.path, item.error]));
+
+  assert.equal(result.created.length, 1);
+  assert.equal(result.failed.length, 5);
+  assert.match(failures.get('/etc/passwd') ?? '', /WORKSPACE_PATH_ABSOLUTE/);
+  assert.match(failures.get('../outside.md') ?? '', /WORKSPACE_PATH_TRAVERSAL/);
+  assert.match(failures.get('.env.local') ?? '', /WORKSPACE_PATH_IGNORED/);
+  assert.match(failures.get('binary.bin') ?? '', /WORKSPACE_FILE_BINARY/);
+  assert.match(failures.get('huge.md') ?? '', /WORKSPACE_FILE_TOO_LARGE/);
 });
 
 function createProject(name: string) {

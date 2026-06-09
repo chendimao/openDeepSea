@@ -133,6 +133,7 @@ export async function importWorkspaceDocuments(
   for (const path of input.paths) {
     try {
       const preview = await readWorkspaceFilePreview(project.path, path);
+      if (preview.truncated) throw new Error('WORKSPACE_FILE_TOO_LARGE');
       const result = createContentKnowledgeSource({
         projectId: project.id,
         roomId: input.roomId,

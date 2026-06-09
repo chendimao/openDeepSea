@@ -11349,6 +11349,32 @@
       overflow: visible;
     }
 
+    .knowledge-main-shell {
+      padding: 14px;
+    }
+
+    .knowledge-main-header {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .knowledge-main-title {
+      width: 100%;
+    }
+
+    .knowledge-main-actions {
+      width: 100%;
+      min-width: 0;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: none;
+    }
+
+    .knowledge-main-actions::-webkit-scrollbar {
+      display: none;
+    }
+
     .knowledge-stat-card {
       padding: 10px;
     }
@@ -11366,11 +11392,18 @@
     }
 
     .knowledge-action-group {
-      flex-wrap: wrap;
+      flex: 0 0 auto;
+      flex-wrap: nowrap;
+      overflow: visible;
     }
 
     .knowledge-action-group button {
-      min-width: 0;
+      min-width: max-content;
+      white-space: nowrap;
+    }
+
+    .knowledge-view-toggle {
+      flex: 0 0 auto;
     }
 
     .knowledge-filter-button,

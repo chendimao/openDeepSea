@@ -21,7 +21,7 @@ export function createLocalHashEmbeddingProvider(input: { dimensions?: number } 
       for (const token of tokenizeEmbeddingText(text)) {
         const digest = createHash('sha256').update(token).digest();
         const index = digest.readUInt16BE(0) % dimensions;
-        vector[index] += 1;
+        vector[index] = (vector[index] ?? 0) + 1;
       }
       return normalizeVector(vector);
     },

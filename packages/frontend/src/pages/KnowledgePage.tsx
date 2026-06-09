@@ -44,6 +44,7 @@ import {
   summarizeKnowledgeStats,
   type KnowledgeChunk,
   type KnowledgeExtraction,
+  type KnowledgeImportResult,
   type KnowledgeInsightsSummary,
   type KnowledgeLocale,
   type KnowledgeMetadataPatch,
@@ -54,6 +55,7 @@ import {
   type KnowledgeSourceFilters,
   type KnowledgeSourceStatus,
   type KnowledgeSourceType,
+  type WorkspaceKnowledgeImportResult,
 } from '../lib/knowledgeDisplay';
 import type { ProjectFile, ResourceType } from '../lib/types';
 
@@ -113,6 +115,7 @@ const SOURCE_TYPE_FILTERS: Array<{ value: KnowledgeSourceType | ''; label: strin
   { value: 'workspace_file', label: '工作区文件' },
   { value: 'workspace_doc', label: '工作区文档' },
   { value: 'web_page', label: '网页导入' },
+  { value: 'url', label: 'URL 导入' },
   { value: 'manual', label: '手动条目' },
 ];
 
@@ -387,7 +390,7 @@ export function KnowledgePage(): JSX.Element {
     onError: (err) => toast.error((err as Error).message),
   });
 
-  const createImport = useMutation({
+  const createImport = useMutation<KnowledgeImportResult | WorkspaceKnowledgeImportResult, Error, KnowledgeImportKind>({
     mutationFn: (kind: KnowledgeImportKind) => {
       if (!selectedProjectId) throw new Error('请选择项目后再导入知识。');
       const roomId = activeRoomId || undefined;
@@ -498,13 +501,13 @@ export function KnowledgePage(): JSX.Element {
         />
 
         <main className="knowledge-main knowledge-scrollbar">
-          <div className="flex min-h-0 flex-1 flex-col p-4">
-            <div className="mb-4 flex items-center justify-between gap-4">
-              <div className="min-w-0">
+          <div className="knowledge-main-shell flex min-h-0 flex-1 flex-col p-4">
+            <div className="knowledge-main-header mb-4 flex items-center justify-between gap-4">
+              <div className="knowledge-main-title min-w-0">
                 <h1 className="m-0 text-[18px] font-bold leading-tight text-slate-950">全部资源</h1>
                 <p className="mt-0.5 text-[11px] text-slate-500">管理和检索项目中的所有知识资源</p>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="knowledge-main-actions flex shrink-0 items-center gap-2">
                 <div className="knowledge-action-group">
                   <button type="button" onClick={() => void refetchSources()}>
                     <RefreshCcw className="h-3 w-3 text-slate-500" strokeWidth={2} />
