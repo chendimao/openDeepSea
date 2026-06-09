@@ -20,7 +20,7 @@ export function getDefaultAcpAgentServers(): AcpAgentServerConfig[] {
     {
       provider: 'codex',
       command: 'npx',
-      args: ['@zed-industries/codex-acp'],
+      args: ['--yes', '--loglevel=error', '@zed-industries/codex-acp'],
       transport: 'stdio',
       enabled: true,
     },

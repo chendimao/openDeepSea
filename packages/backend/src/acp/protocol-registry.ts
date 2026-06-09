@@ -15,7 +15,7 @@ export interface AcpServerConfig {
 type AcpProtocolEnv = Partial<Record<string, string | undefined>>;
 
 export const DEFAULT_COMMANDS: Record<AcpBackend, string> = {
-  codex: 'npx @zed-industries/codex-acp',
+  codex: 'npx --yes --loglevel=error @zed-industries/codex-acp',
   claudecode: 'npx @agentclientprotocol/claude-agent-acp',
   opencode: 'opencode acp',
 };

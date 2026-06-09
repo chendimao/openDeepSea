@@ -36,6 +36,13 @@ test('filterProtocolStderr hides Claude ACP system-role prompt role validation n
   assert.equal(filterProtocolStderr('codex', input), input);
 });
 
+test('filterProtocolStderr hides npm exec install notice for Codex ACP', () => {
+  const input = 'npm warn exec The following package was not found and will be installed: @zed-industries/codex-acp@0.16.0\n';
+
+  assert.equal(filterProtocolStderr('codex', input), '');
+  assert.equal(filterProtocolStderr('opencode', input), input);
+});
+
 test('invokeProtocolSession streams ACP session updates as raw protocol events and answer text', async () => {
   const chunks: Array<{
     channel?: string;

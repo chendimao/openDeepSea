@@ -23,6 +23,7 @@ const ACP_STREAM_DISCONNECTED_PATTERN = /ResponseStreamDisconnected|stream disco
 const ACP_HANDLED_RECONNECT_PATTERN = /Handled error during turn:\s*Reconnecting\.\.\.\s*(\d+)\/(\d+)/i;
 const CLAUDE_CODE_MISSING_POST_TOOL_HOOK_PATTERN = /^No onPostToolUseHook found for tool use ID: call_[A-Za-z0-9_-]+$/;
 const CLAUDE_ACP_SYSTEM_ROLE_DESERIALIZE_PATTERN = /messages\[\d+\]\.role(?:[^\n]*unknown variant `system`[^\n]*expected `user` or `assistant`|[^\n]*must be either ['"`]user['"`] or ['"`]assistant['"`][^\n]*got ['"`]system['"`])/i;
+const CODEX_NPM_EXEC_INSTALL_NOTICE_PATTERN = /^npm\s+warn\s+exec\s+The following package was not found and will be installed:\s+@zed-industries\/codex-acp@[^\r\n]+$/i;
 
 export interface InvokeProtocolSessionArgs {
   backend: AcpBackend;
@@ -357,13 +358,20 @@ async function promptActiveSession(args: {
 }
 
 export function filterProtocolStderr(backend: AcpBackend, data: string): string {
+  if (backend === 'codex') {
+    return filterStderrLines(data, (line) => !CODEX_NPM_EXEC_INSTALL_NOTICE_PATTERN.test(line.trim()));
+  }
   if (backend !== 'claudecode') return data;
   if (CLAUDE_ACP_SYSTEM_ROLE_DESERIALIZE_PATTERN.test(data)) return '';
+  return filterStderrLines(data, (line) => !CLAUDE_CODE_MISSING_POST_TOOL_HOOK_PATTERN.test(line.trim()));
+}
+
+function filterStderrLines(data: string, keepLine: (line: string) => boolean): string {
   const newline = data.includes('\r\n') ? '\r\n' : '\n';
   const endsWithNewline = data.endsWith('\n');
   const lines = data.split(/\r?\n/);
   if (endsWithNewline) lines.pop();
-  const kept = lines.filter((line) => !CLAUDE_CODE_MISSING_POST_TOOL_HOOK_PATTERN.test(line.trim()));
+  const kept = lines.filter(keepLine);
   if (kept.length === 0) return '';
   return `${kept.join(newline)}${endsWithNewline ? newline : ''}`;
 }
