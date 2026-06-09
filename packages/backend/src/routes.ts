@@ -95,6 +95,11 @@ import {
   roomProjectFileUpload,
 } from './uploads.js';
 import {
+  createWorkspaceDirectory,
+  createWorkspaceFile,
+  deleteWorkspaceEntry,
+  renameWorkspaceEntry,
+  saveWorkspaceTextFile,
   type WorkspaceFileErrorCode,
   WorkspaceFileError,
   listWorkspaceDirectory,
@@ -301,6 +306,12 @@ const WORKSPACE_FILE_NOT_FOUND_CODES: WorkspaceFileErrorCode[] = [
 function workspaceFileErrorStatus(error: WorkspaceFileError): number {
   if (WORKSPACE_FILE_NOT_FOUND_CODES.includes(error.code)) {
     return 404;
+  }
+  if (error.code === 'WORKSPACE_PATH_EXISTS' || error.code === 'WORKSPACE_FILE_CONFLICT') {
+    return 409;
+  }
+  if (error.code === 'WORKSPACE_ENTRY_NAME_INVALID') {
+    return 400;
   }
   return 400;
 }
@@ -1501,6 +1512,114 @@ router.get('/projects/:projectId/workspace/file', async (req, res, next) => {
   try {
     const preview = await readWorkspaceFilePreview(project.path, parsed.data.path);
     return res.json(preview);
+  } catch (error) {
+    if (error instanceof WorkspaceFileError) {
+      return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });
+    }
+    next(error);
+  }
+});
+
+router.post('/projects/:projectId/workspace/file', async (req, res, next) => {
+  if (!requireLocalAccess(req, res)) return;
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const parsed = z.object({
+    parentPath: z.string().optional(),
+    name: z.string(),
+    content: z.string().optional(),
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const extraIgnoredDirs = settingsRepo.resolveWorkspaceExcludedDirs(project.id);
+
+  try {
+    const entry = await createWorkspaceFile(project.path, parsed.data, extraIgnoredDirs);
+    return res.status(201).json({ entry });
+  } catch (error) {
+    if (error instanceof WorkspaceFileError) {
+      return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });
+    }
+    next(error);
+  }
+});
+
+router.post('/projects/:projectId/workspace/directory', async (req, res, next) => {
+  if (!requireLocalAccess(req, res)) return;
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const parsed = z.object({
+    parentPath: z.string().optional(),
+    name: z.string(),
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const extraIgnoredDirs = settingsRepo.resolveWorkspaceExcludedDirs(project.id);
+
+  try {
+    const entry = await createWorkspaceDirectory(project.path, parsed.data, extraIgnoredDirs);
+    return res.status(201).json({ entry });
+  } catch (error) {
+    if (error instanceof WorkspaceFileError) {
+      return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });
+    }
+    next(error);
+  }
+});
+
+router.put('/projects/:projectId/workspace/file', async (req, res, next) => {
+  if (!requireLocalAccess(req, res)) return;
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const parsed = z.object({
+    path: z.string().min(1),
+    content: z.string(),
+    expectedMtimeMs: z.number().optional().nullable(),
+    force: z.boolean().optional(),
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  try {
+    const preview = await saveWorkspaceTextFile(project.path, parsed.data);
+    return res.json(preview);
+  } catch (error) {
+    if (error instanceof WorkspaceFileError) {
+      return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });
+    }
+    next(error);
+  }
+});
+
+router.patch('/projects/:projectId/workspace/entry', async (req, res, next) => {
+  if (!requireLocalAccess(req, res)) return;
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const parsed = z.object({
+    path: z.string().min(1),
+    name: z.string(),
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const extraIgnoredDirs = settingsRepo.resolveWorkspaceExcludedDirs(project.id);
+
+  try {
+    const result = await renameWorkspaceEntry(project.path, parsed.data, extraIgnoredDirs);
+    return res.json(result);
+  } catch (error) {
+    if (error instanceof WorkspaceFileError) {
+      return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });
+    }
+    next(error);
+  }
+});
+
+router.delete('/projects/:projectId/workspace/entry', async (req, res, next) => {
+  if (!requireLocalAccess(req, res)) return;
+  const project = projectRepo.get(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project not found' });
+  const parsed = z.object({ path: z.string().min(1) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  try {
+    await deleteWorkspaceEntry(project.path, parsed.data);
+    return res.status(204).end();
   } catch (error) {
     if (error instanceof WorkspaceFileError) {
       return res.status(workspaceFileErrorStatus(error)).json({ error: error.code });

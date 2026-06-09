@@ -1,22 +1,65 @@
 import Editor, { type Monaco } from '@monaco-editor/react';
 import { useQuery } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
-import { RefreshCcw } from 'lucide-react';
+import { RefreshCcw, Save } from 'lucide-react';
 import { api } from '../lib/api';
 import type { WorkspaceFilePreview } from '../lib/types';
 import type { WorkspaceFileTab } from './workspace-file-model';
+
+export interface WorkspaceFileDirtyState {
+  path: string;
+  savedContent: string;
+  draftContent: string;
+  mtimeMs: number | null;
+  saving: boolean;
+  saveError: string | null;
+}
 
 function languageForMonaco(preview: WorkspaceFilePreview, tab: WorkspaceFileTab): string {
   return preview.language ?? tab.language ?? 'plaintext';
 }
 
-export function FileViewer({ projectId, tab }: { projectId: string; tab: WorkspaceFileTab }): JSX.Element {
-  if (tab.viewerKind === 'text') return <MonacoTextViewer projectId={projectId} tab={tab} />;
+export function FileViewer({
+  projectId,
+  tab,
+  dirtyState = null,
+  onDraftChange,
+  onSave,
+}: {
+  projectId: string;
+  tab: WorkspaceFileTab;
+  dirtyState?: WorkspaceFileDirtyState | null;
+  onDraftChange?: (path: string, savedContent: string, draftContent: string, mtimeMs: number | null) => void;
+  onSave?: (path: string, options?: { force?: boolean }) => Promise<boolean>;
+}): JSX.Element {
+  if (tab.viewerKind === 'text') {
+    return (
+      <MonacoTextViewer
+        projectId={projectId}
+        tab={tab}
+        dirtyState={dirtyState}
+        onDraftChange={onDraftChange}
+        onSave={onSave}
+      />
+    );
+  }
   if (tab.viewerKind === 'image') return <ImageViewer projectId={projectId} tab={tab} />;
   return <UnsupportedViewer tab={tab} />;
 }
 
-function MonacoTextViewer({ projectId, tab }: { projectId: string; tab: WorkspaceFileTab }): JSX.Element {
+function MonacoTextViewer({
+  projectId,
+  tab,
+  dirtyState,
+  onDraftChange,
+  onSave,
+}: {
+  projectId: string;
+  tab: WorkspaceFileTab;
+  dirtyState: WorkspaceFileDirtyState | null;
+  onDraftChange?: (path: string, savedContent: string, draftContent: string, mtimeMs: number | null) => void;
+  onSave?: (path: string, options?: { force?: boolean }) => Promise<boolean>;
+}): JSX.Element {
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['workspace-file-preview', projectId, tab.path],
     queryFn: () => api.getWorkspaceFilePreview(projectId, tab.path),
@@ -36,32 +79,57 @@ function MonacoTextViewer({ projectId, tab }: { projectId: string; tab: Workspac
 
   return (
     <div className="deepsea-monaco-viewer">
-      <Editor
-        height="100%"
-        path={tab.path}
-        language={languageForMonaco(data, tab)}
-        value={data.content}
-        theme="deepsea-command-light"
-        loading={<CodePreviewFallback content={data.content} />}
-        beforeMount={defineDeepseaCommandLightTheme}
-        options={{
-          readOnly: true,
-          minimap: { enabled: false },
-          fontFamily: '"JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-          fontSize: 13,
-          lineHeight: 20,
-          scrollBeyondLastLine: false,
-          wordWrap: 'on',
-          automaticLayout: true,
-          renderLineHighlight: 'line',
-          overviewRulerBorder: false,
-          glyphMargin: false,
-          folding: false,
-          lineDecorationsWidth: 0,
-          lineNumbersMinChars: 3,
-          padding: { top: 14, bottom: 14 },
-        }}
-      />
+      <div className="deepsea-file-editor-toolbar">
+        <span title={tab.path}>{tab.path}</span>
+        {data.truncated ? (
+          <strong data-variant="warning">已截断</strong>
+        ) : dirtyState ? (
+          <strong>未保存</strong>
+        ) : (
+          <em>已保存</em>
+        )}
+        {dirtyState?.saveError ? <small>{dirtyState.saveError}</small> : null}
+        <button
+          type="button"
+          onClick={() => void onSave?.(tab.path)}
+          disabled={!dirtyState || dirtyState.saving || data.truncated}
+        >
+          <Save aria-hidden="true" />
+          保存
+        </button>
+      </div>
+      <div className="deepsea-monaco-viewer__editor">
+        <Editor
+          height="100%"
+          path={tab.path}
+          language={languageForMonaco(data, tab)}
+          value={dirtyState?.draftContent ?? data.content}
+          theme="deepsea-command-light"
+          loading={<CodePreviewFallback content={data.content} />}
+          beforeMount={defineDeepseaCommandLightTheme}
+          onChange={(value) => {
+            if (data.truncated) return;
+            onDraftChange?.(tab.path, data.content, value ?? '', data.mtimeMs);
+          }}
+          options={{
+            readOnly: data.truncated,
+            minimap: { enabled: false },
+            fontFamily: '"JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            fontSize: 13,
+            lineHeight: 20,
+            scrollBeyondLastLine: false,
+            wordWrap: 'on',
+            automaticLayout: true,
+            renderLineHighlight: 'line',
+            overviewRulerBorder: false,
+            glyphMargin: false,
+            folding: false,
+            lineDecorationsWidth: 0,
+            lineNumbersMinChars: 3,
+            padding: { top: 14, bottom: 14 },
+          }}
+        />
+      </div>
       {data.truncated ? (
         <div className="deepsea-file-viewer-badge" title="文件内容已按预览上限截断">
           truncated

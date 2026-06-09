@@ -1,6 +1,6 @@
 import { Actions, Layout, Model, type TabNode } from 'flexlayout-react';
 import React, { useMemo, useRef } from 'react';
-import { FileViewer } from './FileViewers';
+import { FileViewer, type WorkspaceFileDirtyState } from './FileViewers';
 import { useHideFlexLayoutArtifacts } from './flexlayout-accessibility';
 import type { WorkspaceFileTab } from './workspace-file-model';
 
@@ -10,16 +10,24 @@ export function WorkspaceFileTabs({
   projectId,
   tabs,
   activePath,
+  dirtyPaths,
+  dirtyByPath,
   onClose,
   onReorder,
   onFocus,
+  onDraftChange,
+  onSave,
 }: {
   projectId: string;
   tabs: WorkspaceFileTab[];
   activePath: string | null;
+  dirtyPaths: Set<string>;
+  dirtyByPath: Record<string, WorkspaceFileDirtyState>;
   onClose: (path: string) => void;
   onReorder: (ids: string[]) => void;
   onFocus: (path: string) => void;
+  onDraftChange: (path: string, savedContent: string, draftContent: string, mtimeMs: number | null) => void;
+  onSave: (path: string, options?: { force?: boolean }) => Promise<boolean>;
 }): JSX.Element {
   const canUseFlexLayout = typeof document !== 'undefined';
   const model = useMemo(
@@ -46,7 +54,15 @@ export function WorkspaceFileTabs({
         <div className="deepsea-file-tabs__ssr-tabs" aria-hidden="true">
           {tabs.map((tab) => <span key={tab.id}>{tab.name}</span>)}
         </div>
-        {activeTab ? <FileViewer projectId={projectId} tab={activeTab} /> : null}
+        {activeTab ? (
+          <FileViewer
+            projectId={projectId}
+            tab={activeTab}
+            dirtyState={dirtyByPath[activeTab.path] ?? null}
+            onDraftChange={onDraftChange}
+            onSave={onSave}
+          />
+        ) : null}
       </div>
     );
   }
@@ -58,7 +74,13 @@ export function WorkspaceFileTabs({
         factory={(node) => {
           const tab = tabsById.get(node.getId());
           return tab ? (
-            <FileViewer projectId={projectId} tab={tab} />
+            <FileViewer
+              projectId={projectId}
+              tab={tab}
+              dirtyState={dirtyByPath[tab.path] ?? null}
+              onDraftChange={onDraftChange}
+              onSave={onSave}
+            />
           ) : (
             <div className="deepsea-file-viewer-state">文件已关闭</div>
           );
@@ -93,11 +115,13 @@ export function WorkspaceFileTabs({
           renderValues.content = (
             <span
               className="deepsea-file-tab-title"
+              data-dirty={tab && dirtyPaths.has(tab.path) ? 'true' : undefined}
               data-extension={getFileExtension(tab?.name ?? node.getName()) || undefined}
               title={tab?.path ?? node.getName()}
             >
               <span className="deepsea-file-tab-title__icon" aria-hidden="true" />
               <span>{node.getName()}</span>
+              {tab && dirtyPaths.has(tab.path) ? <span className="deepsea-file-tab-title__dirty" aria-hidden="true" /> : null}
             </span>
           );
         }}

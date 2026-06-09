@@ -1,5 +1,5 @@
 import { constants as fsConstants } from 'node:fs';
-import { lstat, open, readdir, realpath, stat } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, posix, relative, sep } from 'node:path';
 import type {
   WorkspaceDirectoryEntry,
@@ -121,6 +121,9 @@ export type WorkspaceFileErrorCode =
   | 'WORKSPACE_PATH_SYMLINK'
   | 'WORKSPACE_PATH_OUTSIDE_PROJECT'
   | 'WORKSPACE_PATH_IGNORED'
+  | 'WORKSPACE_PATH_EXISTS'
+  | 'WORKSPACE_ENTRY_NAME_INVALID'
+  | 'WORKSPACE_FILE_CONFLICT'
   | 'WORKSPACE_FILE_BINARY'
   | 'WORKSPACE_FILE_TOO_LARGE'
   | 'WORKSPACE_SEARCH_QUERY_INVALID';
@@ -223,6 +226,51 @@ export function isIgnoredWorkspacePath(inputPath: string, extraIgnoredDirs: stri
   return isIgnoredFileName(baseName);
 }
 
+export function validateWorkspaceEntryName(name: string): string {
+  if (typeof name !== 'string') throw workspaceFileError('WORKSPACE_ENTRY_NAME_INVALID');
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === '.' || trimmed === '..') {
+    throw workspaceFileError('WORKSPACE_ENTRY_NAME_INVALID');
+  }
+  if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('\0')) {
+    throw workspaceFileError('WORKSPACE_ENTRY_NAME_INVALID');
+  }
+  return trimmed;
+}
+
+export interface CreateWorkspaceFileInput {
+  parentPath?: string;
+  name: string;
+  content?: string;
+}
+
+export interface CreateWorkspaceDirectoryInput {
+  parentPath?: string;
+  name: string;
+}
+
+export interface SaveWorkspaceTextFileInput {
+  path: string;
+  content: string;
+  expectedMtimeMs?: number | null;
+  force?: boolean;
+}
+
+export interface RenameWorkspaceEntryInput {
+  path: string;
+  name: string;
+}
+
+export interface DeleteWorkspaceEntryInput {
+  path: string;
+}
+
+export interface RenameWorkspaceEntryResult {
+  oldPath: string;
+  newPath: string;
+  entry: WorkspaceDirectoryEntry;
+}
+
 export async function listWorkspaceDirectory(
   projectPath: string,
   inputPath = '',
@@ -316,10 +364,119 @@ export async function readWorkspaceFilePreview(projectPath: string, inputPath: s
     if (!isTextBuffer(contentBuffer)) {
       throw workspaceFileError('WORKSPACE_FILE_BINARY');
     }
-    return buildPreviewFromBuffer(resolved.relativePath, fileSize, contentBuffer, WORKSPACE_PREVIEW_TEXT_LIMIT);
+    return {
+      ...buildPreviewFromBuffer(resolved.relativePath, fileSize, contentBuffer, WORKSPACE_PREVIEW_TEXT_LIMIT),
+      mtimeMs: fileStats.mtimeMs,
+    };
   } finally {
     await fileHandle.close();
   }
+}
+
+export async function createWorkspaceFile(
+  projectPath: string,
+  input: CreateWorkspaceFileInput,
+  extraIgnoredDirs: string[] = [],
+): Promise<WorkspaceDirectoryEntry> {
+  const parent = await resolveWorkspacePath(projectPath, input.parentPath ?? '');
+  ensureWorkspacePathAllowed(parent.relativePath, parent.symlinkTargetRelativePath);
+  const parentStats = await lstat(parent.absolutePath);
+  if (!parentStats.isDirectory()) throw workspaceFileError('WORKSPACE_PATH_NOT_DIRECTORY');
+
+  const name = validateWorkspaceEntryName(input.name);
+  const relativePath = joinRelativePath(parent.relativePath, name);
+  ensureCreatableWorkspacePath(relativePath, extraIgnoredDirs);
+  const absolutePath = join(parent.absolutePath, name);
+  await assertWorkspacePathDoesNotExist(absolutePath);
+  await writeFile(absolutePath, input.content ?? '', 'utf-8');
+  return buildWorkspaceDirectoryEntry(absolutePath, relativePath);
+}
+
+export async function createWorkspaceDirectory(
+  projectPath: string,
+  input: CreateWorkspaceDirectoryInput,
+  extraIgnoredDirs: string[] = [],
+): Promise<WorkspaceDirectoryEntry> {
+  const parent = await resolveWorkspacePath(projectPath, input.parentPath ?? '');
+  ensureWorkspacePathAllowed(parent.relativePath, parent.symlinkTargetRelativePath);
+  const parentStats = await lstat(parent.absolutePath);
+  if (!parentStats.isDirectory()) throw workspaceFileError('WORKSPACE_PATH_NOT_DIRECTORY');
+
+  const name = validateWorkspaceEntryName(input.name);
+  const relativePath = joinRelativePath(parent.relativePath, name);
+  ensureCreatableWorkspacePath(relativePath, extraIgnoredDirs);
+  const absolutePath = join(parent.absolutePath, name);
+  await assertWorkspacePathDoesNotExist(absolutePath);
+  await mkdir(absolutePath);
+  return buildWorkspaceDirectoryEntry(absolutePath, relativePath);
+}
+
+export async function saveWorkspaceTextFile(
+  projectPath: string,
+  input: SaveWorkspaceTextFileInput,
+): Promise<WorkspaceFilePreview> {
+  const resolved = await resolveWorkspacePath(projectPath, input.path);
+  ensureWorkspacePathAllowed(resolved.relativePath, resolved.symlinkTargetRelativePath);
+  if (resolved.symlinkTargetRelativePath !== null) throw workspaceFileError('WORKSPACE_PATH_SYMLINK');
+
+  const fileStats = await lstat(resolved.absolutePath);
+  if (!fileStats.isFile()) throw workspaceFileError('WORKSPACE_PATH_NOT_FILE');
+  if (!input.force && input.expectedMtimeMs !== undefined && input.expectedMtimeMs !== null) {
+    if (Math.abs(fileStats.mtimeMs - input.expectedMtimeMs) > 1) {
+      throw workspaceFileError('WORKSPACE_FILE_CONFLICT');
+    }
+  }
+
+  const existing = await readFile(resolved.absolutePath);
+  if (!isTextBuffer(existing)) throw workspaceFileError('WORKSPACE_FILE_BINARY');
+
+  await writeFile(resolved.absolutePath, input.content, 'utf-8');
+  return readWorkspaceFilePreview(projectPath, resolved.relativePath);
+}
+
+export async function renameWorkspaceEntry(
+  projectPath: string,
+  input: RenameWorkspaceEntryInput,
+  extraIgnoredDirs: string[] = [],
+): Promise<RenameWorkspaceEntryResult> {
+  const source = await resolveWorkspacePath(projectPath, input.path);
+  ensureWorkspacePathAllowed(source.relativePath, source.symlinkTargetRelativePath);
+  ensureMutableWorkspaceEntryPath(source.relativePath);
+  if (source.symlinkTargetRelativePath !== null) throw workspaceFileError('WORKSPACE_PATH_SYMLINK');
+
+  const name = validateWorkspaceEntryName(input.name);
+  const parentPath = parentWorkspacePath(source.relativePath);
+  const targetRelativePath = joinRelativePath(parentPath, name);
+  ensureCreatableWorkspacePath(targetRelativePath, extraIgnoredDirs);
+  const targetAbsolutePath = join(source.projectRealPath, ...targetRelativePath.split('/'));
+  await assertWorkspacePathDoesNotExist(targetAbsolutePath);
+  await rename(source.absolutePath, targetAbsolutePath);
+  return {
+    oldPath: source.relativePath,
+    newPath: targetRelativePath,
+    entry: await buildWorkspaceDirectoryEntry(targetAbsolutePath, targetRelativePath),
+  };
+}
+
+export async function deleteWorkspaceEntry(
+  projectPath: string,
+  input: DeleteWorkspaceEntryInput,
+): Promise<void> {
+  const resolved = await resolveWorkspacePath(projectPath, input.path);
+  ensureWorkspacePathAllowed(resolved.relativePath, resolved.symlinkTargetRelativePath);
+  ensureMutableWorkspaceEntryPath(resolved.relativePath);
+  if (resolved.symlinkTargetRelativePath !== null) throw workspaceFileError('WORKSPACE_PATH_SYMLINK');
+
+  const entryStats = await lstat(resolved.absolutePath);
+  if (entryStats.isDirectory()) {
+    await rm(resolved.absolutePath, { recursive: true, force: false });
+    return;
+  }
+  if (entryStats.isFile()) {
+    await unlink(resolved.absolutePath);
+    return;
+  }
+  throw workspaceFileError('WORKSPACE_PATH_NOT_FILE');
 }
 
 export async function readWorkspaceFileReference(projectPath: string, inputPath: string): Promise<WorkspaceFileReference> {
@@ -625,7 +782,52 @@ function buildPreviewFromBuffer(
     language: inferLanguage(relativePath),
     content: content.toString('utf-8'),
     truncated: fileSize > maxBytes,
+    mtimeMs: 0,
   };
+}
+
+function ensureCreatableWorkspacePath(relativePath: string, extraIgnoredDirs: string[] = []): void {
+  ensureWorkspacePathAllowed(relativePath, null);
+  if (isIgnoredWorkspacePath(relativePath, extraIgnoredDirs)) {
+    throw workspaceFileError('WORKSPACE_PATH_IGNORED');
+  }
+}
+
+async function assertWorkspacePathDoesNotExist(absolutePath: string): Promise<void> {
+  try {
+    await lstat(absolutePath);
+    throw workspaceFileError('WORKSPACE_PATH_EXISTS');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+}
+
+async function buildWorkspaceDirectoryEntry(
+  absolutePath: string,
+  relativePath: string,
+): Promise<WorkspaceDirectoryEntry> {
+  const entryStats = await lstat(absolutePath);
+  const name = relativePath.split('/').filter(Boolean).pop() ?? relativePath;
+  const isDirectory = entryStats.isDirectory();
+  return {
+    name,
+    path: relativePath,
+    type: isDirectory ? 'directory' : 'file',
+    size: isDirectory ? null : entryStats.size,
+    mimeType: isDirectory ? null : inferMimeType(name),
+    language: isDirectory ? null : inferLanguage(name),
+  };
+}
+
+function parentWorkspacePath(relativePath: string): string {
+  const parts = normalizeWorkspacePath(relativePath).split('/').filter(Boolean);
+  parts.pop();
+  return parts.join('/');
+}
+
+function ensureMutableWorkspaceEntryPath(relativePath: string): void {
+  if (!relativePath) throw workspaceFileError('WORKSPACE_PATH_INVALID');
 }
 
 async function openWorkspaceFileForRead(filePath: string) {

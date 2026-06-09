@@ -64,6 +64,9 @@ import type {
   ImageProviderModelsResponse,
   ImageProviderProfile,
   ImageProviderProfileInput,
+  KnowledgeEmbeddingRebuildResult,
+  KnowledgeEmbeddingSettingsPatch,
+  KnowledgeEmbeddingStatus,
   Session,
   SessionDetail,
   SessionKnowledgeNoteResponse,
@@ -87,7 +90,9 @@ import type {
   WorkflowRole,
   WorkflowRun,
   WorkspaceDirectoryResponse,
+  WorkspaceEntryMutationResponse,
   WorkspaceFilePreview,
+  WorkspaceRenameEntryResponse,
   WorkspaceSearchResponse,
 } from './types';
 import type {
@@ -339,6 +344,11 @@ export const api = {
     global_session_prompt?: string | null;
   }) =>
     request<SettingsResolution['system']>('/settings/system', {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  updateKnowledgeEmbeddingSettings: (input: KnowledgeEmbeddingSettingsPatch) =>
+    request<SettingsResolution['system']>('/settings/system/knowledge-embedding', {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
@@ -753,6 +763,18 @@ export const api = {
     })}`),
   getKnowledgeInsights: (filters: { projectId: string; roomId?: string }) =>
     request<KnowledgeInsights>(`/knowledge/insights${buildQuery(filters)}`),
+  getKnowledgeEmbeddingStatus: (projectId?: string) =>
+    request<KnowledgeEmbeddingStatus>(`/knowledge/embedding/status${buildQuery({ projectId })}`),
+  testKnowledgeEmbeddingProvider: () =>
+    request<{ ok: boolean; dimensions: number | null; error: string | null }>('/knowledge/embedding/test', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  rebuildKnowledgeEmbeddings: (input: { projectId: string; sourceId?: string; limit?: number }) =>
+    request<KnowledgeEmbeddingRebuildResult>('/knowledge/embedding/rebuild', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
   createManualKnowledge: (projectId: string, input: ManualKnowledgeInput) =>
     request<KnowledgeImportResult>(`/projects/${encodeURIComponent(projectId)}/knowledge/manual`, {
       method: 'POST',
@@ -817,6 +839,41 @@ export const api = {
       `/projects/${projectId}/workspace/file?${params.toString()}`,
     );
   },
+  createWorkspaceFile: (
+    projectId: string,
+    payload: { parentPath?: string; name: string; content?: string },
+  ) => workspaceRequest<WorkspaceEntryMutationResponse>(
+    `/projects/${projectId}/workspace/file`,
+    { method: 'POST', body: JSON.stringify(payload) },
+  ),
+  createWorkspaceDirectory: (
+    projectId: string,
+    payload: { parentPath?: string; name: string },
+  ) => workspaceRequest<WorkspaceEntryMutationResponse>(
+    `/projects/${projectId}/workspace/directory`,
+    { method: 'POST', body: JSON.stringify(payload) },
+  ),
+  saveWorkspaceFile: (
+    projectId: string,
+    payload: { path: string; content: string; expectedMtimeMs?: number | null; force?: boolean },
+  ) => workspaceRequest<WorkspaceFilePreview>(
+    `/projects/${projectId}/workspace/file`,
+    { method: 'PUT', body: JSON.stringify(payload) },
+  ),
+  renameWorkspaceEntry: (
+    projectId: string,
+    payload: { path: string; name: string },
+  ) => workspaceRequest<WorkspaceRenameEntryResponse>(
+    `/projects/${projectId}/workspace/entry`,
+    { method: 'PATCH', body: JSON.stringify(payload) },
+  ),
+  deleteWorkspaceEntry: (
+    projectId: string,
+    payload: { path: string },
+  ) => workspaceRequest<void>(
+    `/projects/${projectId}/workspace/entry`,
+    { method: 'DELETE', body: JSON.stringify(payload) },
+  ),
   getWorkspaceBlobUrl: (projectId: string, path: string) => {
     const params = new URLSearchParams({ path });
     return `/api/projects/${projectId}/workspace/blob?${params.toString()}`;

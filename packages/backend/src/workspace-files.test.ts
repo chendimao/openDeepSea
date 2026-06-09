@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -17,12 +19,17 @@ import {
   WORKSPACE_SEARCH_MAX_DIRECTORIES,
   WORKSPACE_SEARCH_MAX_FILES,
   WORKSPACE_SEARCH_TIMEOUT_MS,
+  createWorkspaceDirectory,
+  createWorkspaceFile,
+  deleteWorkspaceEntry,
   normalizeWorkspacePath,
   isIgnoredWorkspacePath,
   listWorkspaceDirectory,
   readWorkspaceFilePreview,
   readWorkspaceFileReference,
+  renameWorkspaceEntry,
   resolveWorkspacePath,
+  saveWorkspaceTextFile,
   searchWorkspaceFiles,
 } from './workspace-files.js';
 
@@ -158,6 +165,7 @@ test('workspace previews return text content and language, and reject binary fil
     assert.equal(preview.content, 'export const value = 1;\n');
     assert.equal(preview.language, 'typescript');
     assert.equal(preview.truncated, false);
+    assert.equal(typeof preview.mtimeMs, 'number');
 
     const hugeText = 'a'.repeat(WORKSPACE_PREVIEW_TEXT_LIMIT + 16);
     writeFileSync(join(projectRoot, 'huge.md'), hugeText);
@@ -168,6 +176,165 @@ test('workspace previews return text content and language, and reject binary fil
 
     await assert.rejects(() => readWorkspaceFilePreview(projectRoot, 'binary.bin'), /WORKSPACE_FILE_BINARY/);
     await assert.rejects(() => readWorkspaceFilePreview(projectRoot, 'binary.ts'), /WORKSPACE_FILE_BINARY/);
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
+test('workspace write operations create files and directories without overwriting existing entries', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-write-create-');
+
+  try {
+    mkdirSync(join(projectRoot, 'src'), { recursive: true });
+
+    const file = await createWorkspaceFile(projectRoot, {
+      parentPath: 'src',
+      name: 'new-file.ts',
+      content: 'export const value = 1;\n',
+    });
+    assert.equal(file.path, 'src/new-file.ts');
+    assert.equal(file.type, 'file');
+    assert.equal(readFileSync(join(projectRoot, 'src', 'new-file.ts'), 'utf-8'), 'export const value = 1;\n');
+
+    const directory = await createWorkspaceDirectory(projectRoot, {
+      parentPath: 'src',
+      name: 'components',
+    });
+    assert.equal(directory.path, 'src/components');
+    assert.equal(directory.type, 'directory');
+    assert.equal(existsSync(join(projectRoot, 'src', 'components')), true);
+
+    await assert.rejects(
+      () => createWorkspaceFile(projectRoot, { parentPath: 'src', name: 'new-file.ts', content: '' }),
+      /WORKSPACE_PATH_EXISTS/,
+    );
+    await assert.rejects(
+      () => createWorkspaceDirectory(projectRoot, { parentPath: 'src', name: 'components' }),
+      /WORKSPACE_PATH_EXISTS/,
+    );
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
+test('workspace write operations reject invalid names and ignored targets', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-write-invalid-');
+
+  try {
+    await assert.rejects(
+      () => createWorkspaceFile(projectRoot, { parentPath: '', name: '', content: '' }),
+      /WORKSPACE_ENTRY_NAME_INVALID/,
+    );
+    await assert.rejects(
+      () => createWorkspaceFile(projectRoot, { parentPath: '', name: '..', content: '' }),
+      /WORKSPACE_ENTRY_NAME_INVALID/,
+    );
+    await assert.rejects(
+      () => createWorkspaceFile(projectRoot, { parentPath: '', name: 'nested/file.ts', content: '' }),
+      /WORKSPACE_ENTRY_NAME_INVALID/,
+    );
+    await assert.rejects(
+      () => createWorkspaceFile(projectRoot, { parentPath: '', name: '.env', content: 'SECRET=1\n' }),
+      /WORKSPACE_PATH_IGNORED/,
+    );
+    await assert.rejects(
+      () => createWorkspaceDirectory(projectRoot, { parentPath: '', name: 'node_modules' }),
+      /WORKSPACE_PATH_IGNORED/,
+    );
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
+test('workspace save writes text files and detects external modification conflicts', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-write-save-');
+
+  try {
+    writeFileSync(join(projectRoot, 'app.ts'), 'export const value = 1;\n');
+    const preview = await readWorkspaceFilePreview(projectRoot, 'app.ts');
+    assert.equal(typeof preview.mtimeMs, 'number');
+
+    const saved = await saveWorkspaceTextFile(projectRoot, {
+      path: 'app.ts',
+      content: 'export const value = 2;\n',
+      expectedMtimeMs: preview.mtimeMs,
+    });
+    assert.equal(saved.content, 'export const value = 2;\n');
+    assert.equal(readFileSync(join(projectRoot, 'app.ts'), 'utf-8'), 'export const value = 2;\n');
+
+    writeFileSync(join(projectRoot, 'app.ts'), 'external change\n');
+    await assert.rejects(
+      () => saveWorkspaceTextFile(projectRoot, {
+        path: 'app.ts',
+        content: 'local draft\n',
+        expectedMtimeMs: saved.mtimeMs - 10_000,
+      }),
+      /WORKSPACE_FILE_CONFLICT/,
+    );
+
+    const forced = await saveWorkspaceTextFile(projectRoot, {
+      path: 'app.ts',
+      content: 'local draft\n',
+      expectedMtimeMs: saved.mtimeMs - 10_000,
+      force: true,
+    });
+    assert.equal(forced.content, 'local draft\n');
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
+test('workspace write operations rename and delete files and directories', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-write-rename-delete-');
+
+  try {
+    mkdirSync(join(projectRoot, 'src', 'nested'), { recursive: true });
+    writeFileSync(join(projectRoot, 'src', 'old.ts'), 'old\n');
+    writeFileSync(join(projectRoot, 'src', 'nested', 'child.ts'), 'child\n');
+
+    const renamedFile = await renameWorkspaceEntry(projectRoot, {
+      path: 'src/old.ts',
+      name: 'new.ts',
+    });
+    assert.equal(renamedFile.oldPath, 'src/old.ts');
+    assert.equal(renamedFile.newPath, 'src/new.ts');
+    assert.equal(existsSync(join(projectRoot, 'src', 'old.ts')), false);
+    assert.equal(existsSync(join(projectRoot, 'src', 'new.ts')), true);
+
+    const renamedDir = await renameWorkspaceEntry(projectRoot, {
+      path: 'src/nested',
+      name: 'renamed',
+    });
+    assert.equal(renamedDir.newPath, 'src/renamed');
+    assert.equal(existsSync(join(projectRoot, 'src', 'renamed', 'child.ts')), true);
+
+    await assert.rejects(
+      () => renameWorkspaceEntry(projectRoot, { path: 'src/new.ts', name: 'renamed' }),
+      /WORKSPACE_PATH_EXISTS/,
+    );
+
+    await deleteWorkspaceEntry(projectRoot, { path: 'src/renamed' });
+    assert.equal(existsSync(join(projectRoot, 'src', 'renamed')), false);
+
+    await deleteWorkspaceEntry(projectRoot, { path: 'src/new.ts' });
+    assert.equal(existsSync(join(projectRoot, 'src', 'new.ts')), false);
+  } finally {
+    cleanupWorkspaceRoot(projectRoot);
+  }
+});
+
+test('workspace write operations reject renaming or deleting the project root', async () => {
+  const projectRoot = createWorkspaceRoot('openclaw-workspace-write-root-');
+
+  try {
+    await assert.rejects(
+      () => renameWorkspaceEntry(projectRoot, { path: '', name: 'renamed-root' }),
+      /WORKSPACE_PATH_INVALID/,
+    );
+    await assert.rejects(
+      () => deleteWorkspaceEntry(projectRoot, { path: '' }),
+      /WORKSPACE_PATH_INVALID/,
+    );
   } finally {
     cleanupWorkspaceRoot(projectRoot);
   }

@@ -302,6 +302,54 @@ test('knowledge Phase 4A APIs build query URLs and import payloads', async () =>
   ]);
 });
 
+test('knowledge embedding APIs build status, test, rebuild, and settings requests', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ url: string; method: string; body: string | null }> = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push({
+      url: String(input),
+      method: init?.method ?? 'GET',
+      body: typeof init?.body === 'string' ? init.body : null,
+    });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  try {
+    await api.getKnowledgeEmbeddingStatus('project-1');
+    await api.testKnowledgeEmbeddingProvider();
+    await api.rebuildKnowledgeEmbeddings({ projectId: 'project-1', limit: 100 });
+    await api.updateKnowledgeEmbeddingSettings({
+      provider: 'openai-compatible',
+      model: 'text-embedding-3-small',
+      dimensions: 1536,
+      baseUrl: 'https://embedding.example/v1',
+      apiKeyEnvVar: 'OPENDEEPSEA_EMBEDDING_API_KEY',
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.deepEqual(requests, [
+    { url: '/api/knowledge/embedding/status?projectId=project-1', method: 'GET', body: null },
+    { url: '/api/knowledge/embedding/test', method: 'POST', body: '{}' },
+    { url: '/api/knowledge/embedding/rebuild', method: 'POST', body: JSON.stringify({ projectId: 'project-1', limit: 100 }) },
+    {
+      url: '/api/settings/system/knowledge-embedding',
+      method: 'PATCH',
+      body: JSON.stringify({
+        provider: 'openai-compatible',
+        model: 'text-embedding-3-small',
+        dimensions: 1536,
+        baseUrl: 'https://embedding.example/v1',
+        apiKeyEnvVar: 'OPENDEEPSEA_EMBEDDING_API_KEY',
+      }),
+    },
+  ]);
+});
+
 test('session knowledge note API sends message save payload', async () => {
   const originalFetch = globalThis.fetch;
   const requests: Array<{ url: string; method: string; body: string | null }> = [];
@@ -612,6 +660,76 @@ test('api exposes online skills helpers through workspaceRequest', async () => {
   assert.equal(updateRequest.url, '/api/online-skills/config');
   assert.equal(updateRequest.method, 'PATCH');
   assert.equal(updateRequest.body, '{"token":"skillsmp-token"}');
+});
+
+test('workspace write APIs encode methods and request bodies', async () => {
+  const createdFile = await captureApiRequestDetails(
+    () => api.createWorkspaceFile('project-1', {
+      parentPath: 'src',
+      name: 'new.ts',
+      content: 'hello\n',
+    }),
+    { entry: { path: 'src/new.ts', name: 'new.ts', type: 'file', size: 6, mimeType: 'text/plain', language: 'typescript' } },
+  );
+  assert.equal(createdFile.url, '/api/projects/project-1/workspace/file');
+  assert.equal(createdFile.method, 'POST');
+  assert.deepEqual(JSON.parse(createdFile.body), {
+    parentPath: 'src',
+    name: 'new.ts',
+    content: 'hello\n',
+  });
+
+  const createdDirectory = await captureApiRequestDetails(
+    () => api.createWorkspaceDirectory('project-1', {
+      parentPath: '',
+      name: 'docs',
+    }),
+    { entry: { path: 'docs', name: 'docs', type: 'directory', size: null, mimeType: null, language: null } },
+  );
+  assert.equal(createdDirectory.url, '/api/projects/project-1/workspace/directory');
+  assert.equal(createdDirectory.method, 'POST');
+
+  const saved = await captureApiRequestDetails(
+    () => api.saveWorkspaceFile('project-1', {
+      path: 'src/new.ts',
+      content: 'updated\n',
+      expectedMtimeMs: 123,
+    }),
+    {
+      path: 'src/new.ts',
+      size: 8,
+      mimeType: 'text/plain',
+      language: 'typescript',
+      content: 'updated\n',
+      truncated: false,
+      mtimeMs: 456,
+    },
+  );
+  assert.equal(saved.url, '/api/projects/project-1/workspace/file');
+  assert.equal(saved.method, 'PUT');
+
+  const renamed = await captureApiRequestDetails(
+    () => api.renameWorkspaceEntry('project-1', {
+      path: 'src/new.ts',
+      name: 'renamed.ts',
+    }),
+    {
+      oldPath: 'src/new.ts',
+      newPath: 'src/renamed.ts',
+      entry: { path: 'src/renamed.ts', name: 'renamed.ts', type: 'file', size: 8, mimeType: 'text/plain', language: 'typescript' },
+    },
+  );
+  assert.equal(renamed.url, '/api/projects/project-1/workspace/entry');
+  assert.equal(renamed.method, 'PATCH');
+
+  const deleted = await captureApiRequestDetails(
+    () => api.deleteWorkspaceEntry('project-1', {
+      path: 'src/renamed.ts',
+    }),
+    null,
+  );
+  assert.equal(deleted.url, '/api/projects/project-1/workspace/entry');
+  assert.equal(deleted.method, 'DELETE');
 });
 
 function createResourceListItem(input: Partial<ResourceListItem>): ResourceListItem {

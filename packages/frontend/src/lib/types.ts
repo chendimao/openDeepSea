@@ -944,6 +944,48 @@ export interface EffectiveSettings {
   session_planner_acp_backend: AcpBackend | null;
 }
 
+export type KnowledgeEmbeddingProviderId = 'local-hash' | 'openai-compatible';
+
+export interface KnowledgeEmbeddingRuntimeSummary {
+  provider: KnowledgeEmbeddingProviderId;
+  model: string;
+  dimensions: number | null;
+  base_url: string | null;
+  api_key_set: boolean;
+  api_key_env_var: string | null;
+  available: boolean;
+  unavailable_reason: string | null;
+}
+
+export interface KnowledgeEmbeddingStatus {
+  runtime: KnowledgeEmbeddingRuntimeSummary;
+  project_id?: string;
+  total_enabled_chunks: number;
+  embedded_chunks: number;
+  stale_chunks: number;
+  missing_chunks: number;
+  failed_sources: number;
+}
+
+export interface KnowledgeEmbeddingRebuildResult {
+  project_id: string;
+  source_id?: string;
+  provider: KnowledgeEmbeddingProviderId | string;
+  model: string;
+  scanned_chunks: number;
+  rebuilt_chunks: number;
+  skipped_chunks: number;
+  failed_chunks: Array<{ chunk_id: string; source_id: string; error: string }>;
+}
+
+export interface KnowledgeEmbeddingSettingsPatch {
+  provider: KnowledgeEmbeddingProviderId;
+  model?: string | null;
+  dimensions?: number | null;
+  baseUrl?: string | null;
+  apiKeyEnvVar?: string | null;
+}
+
 export interface WorkspaceSearchResult {
   path: string;
   name: string;
@@ -976,6 +1018,17 @@ export interface WorkspaceFilePreview {
   language: string | null;
   content: string;
   truncated: boolean;
+  mtimeMs: number;
+}
+
+export interface WorkspaceEntryMutationResponse {
+  entry: WorkspaceDirectoryEntry;
+}
+
+export interface WorkspaceRenameEntryResponse {
+  oldPath: string;
+  newPath: string;
+  entry: WorkspaceDirectoryEntry;
 }
 
 export type WorkspaceFileViewerKind = 'text' | 'image' | 'unsupported';
@@ -987,6 +1040,11 @@ export interface SystemSettings extends EffectiveSettings {
   openai_base_url: string | null;
   openai_api_key_set: boolean;
   openai_api_key_preview: string | null;
+  knowledge_embedding_provider: KnowledgeEmbeddingProviderId;
+  knowledge_embedding_model: string | null;
+  knowledge_embedding_dimensions: number | null;
+  knowledge_embedding_base_url: string | null;
+  knowledge_embedding_api_key_env_var: string | null;
   global_session_prompt: string | null;
 }
 

@@ -621,6 +621,7 @@ export interface WorkspaceFilePreview {
   language: string | null;
   content: string;
   truncated: boolean;
+  mtimeMs: number;
 }
 
 export interface WorkspaceFileReference {
