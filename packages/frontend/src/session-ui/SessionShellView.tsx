@@ -32,6 +32,7 @@ import type { LucideIcon } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { createPortal } from 'react-dom';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import type {
@@ -1286,22 +1287,19 @@ function SessionRunTimeline({
             mode="preview"
             streaming={streaming && item.id === lastTextItemId}
             suppressTraceEvents
-          />
-          {item.events.length > 0 ? (
-            <div className="deepsea-run-timeline__text-footer">
+            inlineSuffix={item.events.length > 0 ? (
               <button
                 type="button"
                 className="deepsea-run-timeline__details-button"
                 aria-label="查看本段调用详情"
-                title={item.events.map((event) => event.label).join(' / ')}
+                title={`查看本段调用详情：${item.events.map((event) => event.label).join(' / ')}`}
                 data-event-labels={item.events.map((event) => event.label).join(' / ')}
                 onClick={() => setSelectedEvents(item.events)}
               >
                 <Info aria-hidden="true" />
-                <span>期间 {item.events.length} 个调用</span>
               </button>
-            </div>
-          ) : null}
+            ) : undefined}
+          />
         </div>
       ) : (
         <div key={item.id} className="deepsea-run-timeline__event">
@@ -1503,7 +1501,7 @@ function SessionRunEventDetailDialog({
 }: {
   events: SessionRunTranscriptEvent[];
   onClose: () => void;
-}): JSX.Element | null {
+}): React.ReactPortal | JSX.Element | null {
   const [selectedEventId, setSelectedEventId] = useState(events[0]?.id ?? null);
   const selectedEvent = events.find((event) => event.id === selectedEventId) ?? events[0] ?? null;
 
@@ -1520,8 +1518,8 @@ function SessionRunEventDetailDialog({
   const payload = formatAgentEventPayloadJson(selectedEvent.payloadJson);
   const eventDetail = selectedEvent.detail ?? trimTimelineDetail(selectedEvent.content);
 
-  return (
-    <div className="deepsea-tool-detail-overlay" onClick={onClose}>
+  const dialog = (
+    <div className="deepsea-tool-detail-overlay deepsea-run-event-dialog-overlay" onClick={onClose}>
       <div
         className="deepsea-tool-detail-dialog deepsea-run-event-dialog"
         role="dialog"
@@ -1587,6 +1585,9 @@ function SessionRunEventDetailDialog({
       </div>
     </div>
   );
+
+  if (typeof document === 'undefined') return dialog;
+  return createPortal(dialog, document.body);
 }
 
 function formatAgentEventPayloadJson(payloadJson: string | null): string | null {

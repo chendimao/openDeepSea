@@ -107,6 +107,7 @@ export function MessageContent({
   suppressTaskExecutionSummary = false,
   suppressWorkflowJsonBlocks = false,
   suppressTraceEvents = false,
+  inlineSuffix,
 }: {
   content: string;
   streaming?: boolean;
@@ -118,6 +119,7 @@ export function MessageContent({
   suppressTaskExecutionSummary?: boolean;
   suppressWorkflowJsonBlocks?: boolean;
   suppressTraceEvents?: boolean;
+  inlineSuffix?: ReactNode;
 }): JSX.Element {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const { locale, t } = useI18n();
@@ -173,6 +175,7 @@ export function MessageContent({
                 taskTitleById={taskTitleById}
                 suppressTaskExecutionSummary={suppressTaskExecutionSummary}
                 suppressWorkflowJsonBlocks={suppressWorkflowJsonBlocks}
+                inlineSuffix={inlineSuffix}
               />
             ) : (
               <>
@@ -183,6 +186,7 @@ export function MessageContent({
                       <span key={`text-${index}`} className="whitespace-pre-wrap break-words">
                         {renderInlineTextReferences(part.value, agentNameById, taskTitleById)}
                         {streaming && index === lastTextPartIndex && <StreamingCursor />}
+                        {index === lastTextPartIndex ? renderInlineSuffix(inlineSuffix) : null}
                       </span>
                     );
                   }
@@ -201,6 +205,7 @@ export function MessageContent({
                   );
                 })}
                 {streaming && lastTextPartIndex === -1 && <StreamingCursor />}
+                {lastTextPartIndex === -1 ? renderInlineSuffix(inlineSuffix) : null}
               </>
             )}
           </div>
@@ -308,6 +313,7 @@ export function MarkdownPreview({
   taskTitleById,
   suppressTaskExecutionSummary = false,
   suppressWorkflowJsonBlocks = false,
+  inlineSuffix,
 }: {
   content: string;
   streaming?: boolean;
@@ -315,6 +321,7 @@ export function MarkdownPreview({
   taskTitleById?: Map<string, string>;
   suppressTaskExecutionSummary?: boolean;
   suppressWorkflowJsonBlocks?: boolean;
+  inlineSuffix?: ReactNode;
 }): JSX.Element {
   const { locale, t } = useI18n();
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -374,10 +381,12 @@ export function MarkdownPreview({
             streaming={streaming && index === lastTextPartIndex}
             agentNameById={agentNameById}
             taskTitleById={taskTitleById}
+            inlineSuffix={index === lastTextPartIndex ? inlineSuffix : undefined}
           />
         );
       })}
       {streaming && lastTextPartIndex === -1 && <StreamingCursor />}
+      {lastTextPartIndex === -1 ? renderInlineSuffix(inlineSuffix) : null}
     </div>
   );
 }
@@ -550,21 +559,66 @@ function MarkdownInlineCode({ children }: { children?: ReactNode }): JSX.Element
   return <code>{children}</code>;
 }
 
+function renderInlineSuffix(suffix: ReactNode): ReactNode {
+  if (!suffix) return null;
+  return <>{'\u2060'}{suffix}</>;
+}
+
+function countMarkdownInlineSuffixTargets(source: string): number {
+  const lines = source.split(/\r?\n/);
+  let count = 0;
+  let inParagraph = false;
+
+  const closeParagraph = () => {
+    if (!inParagraph) return;
+    count += 1;
+    inParagraph = false;
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      closeParagraph();
+      continue;
+    }
+    if (/^#{1,6}\s+\S/.test(trimmed)) {
+      closeParagraph();
+      count += 1;
+      continue;
+    }
+    if (/^(?:[-*+]|\d+\.)\s+\S/.test(trimmed)) {
+      closeParagraph();
+      count += 1;
+      continue;
+    }
+    inParagraph = true;
+  }
+  closeParagraph();
+  return count;
+}
+
 function MarkdownText({
   text,
   streaming = false,
   agentNameById,
   taskTitleById,
+  inlineSuffix,
 }: {
   text: string;
   streaming?: boolean;
   agentNameById?: Map<string, string>;
   taskTitleById?: Map<string, string>;
+  inlineSuffix?: ReactNode;
 }): JSX.Element {
   const source = streaming ? `${text}${streamingCursorToken}` : text;
-  const components = createMarkdownComponents(agentNameById, taskTitleById);
+  const suffixTargetCount = inlineSuffix ? countMarkdownInlineSuffixTargets(source) : 0;
+  const components = createMarkdownComponents(agentNameById, taskTitleById, {
+    inlineSuffix,
+    suffixTargetCount,
+  });
 
   return (
+    <>
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkBreaks]}
       components={components}
@@ -572,14 +626,25 @@ function MarkdownText({
     >
       {source}
     </ReactMarkdown>
+    {inlineSuffix && suffixTargetCount === 0 ? renderInlineSuffix(inlineSuffix) : null}
+    </>
   );
 }
 
 function createMarkdownComponents(
   agentNameById?: Map<string, string>,
   taskTitleById?: Map<string, string>,
+  suffixOptions: { inlineSuffix?: ReactNode; suffixTargetCount: number } = { suffixTargetCount: 0 },
 ): Components {
   const renderChildren = (children: ReactNode) => renderMarkdownReferenceChildren(children, agentNameById, taskTitleById);
+  let suffixTargetIndex = 0;
+
+  const renderWithOptionalSuffix = (children: ReactNode) => {
+    const content = renderChildren(children);
+    suffixTargetIndex += 1;
+    if (!suffixOptions.inlineSuffix || suffixTargetIndex !== suffixOptions.suffixTargetCount) return content;
+    return <>{content}{renderInlineSuffix(suffixOptions.inlineSuffix)}</>;
+  };
 
   return {
     a: ({ href, children }) => {
@@ -591,14 +656,14 @@ function createMarkdownComponents(
         </a>
       );
     },
-    h1: ({ children }) => <h1>{renderChildren(children)}</h1>,
-    h2: ({ children }) => <h2>{renderChildren(children)}</h2>,
-    h3: ({ children }) => <h3>{renderChildren(children)}</h3>,
-    h4: ({ children }) => <h4>{renderChildren(children)}</h4>,
-    h5: ({ children }) => <h5>{renderChildren(children)}</h5>,
-    h6: ({ children }) => <h6>{renderChildren(children)}</h6>,
-    p: ({ children }) => <p>{renderChildren(children)}</p>,
-    li: ({ children }) => <li>{renderChildren(children)}</li>,
+    h1: ({ children }) => <h1>{renderWithOptionalSuffix(children)}</h1>,
+    h2: ({ children }) => <h2>{renderWithOptionalSuffix(children)}</h2>,
+    h3: ({ children }) => <h3>{renderWithOptionalSuffix(children)}</h3>,
+    h4: ({ children }) => <h4>{renderWithOptionalSuffix(children)}</h4>,
+    h5: ({ children }) => <h5>{renderWithOptionalSuffix(children)}</h5>,
+    h6: ({ children }) => <h6>{renderWithOptionalSuffix(children)}</h6>,
+    p: ({ children }) => <p>{renderWithOptionalSuffix(children)}</p>,
+    li: ({ children }) => <li>{renderWithOptionalSuffix(children)}</li>,
     blockquote: ({ children }) => <blockquote>{renderChildren(children)}</blockquote>,
     td: ({ children }) => <td>{renderChildren(children)}</td>,
     th: ({ children }) => <th>{renderChildren(children)}</th>,

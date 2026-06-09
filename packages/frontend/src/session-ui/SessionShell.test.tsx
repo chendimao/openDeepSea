@@ -1200,11 +1200,19 @@ test('SessionShell renders a details icon for tool calls after an answer segment
   const detailsIndex = html.indexOf('查看本段调用详情');
   const secondTextIndex = html.indexOf('修改完成。');
 
-  assert.match(html, /期间 1 个调用/);
   assert.match(html, /aria-label="查看本段调用详情"/);
+  assert.match(html, /class="[^"]*deepsea-run-timeline__details-button/);
+  assert.match(html, /lucide-info/);
+  assert.doesNotMatch(html, /期间 1 个调用/);
+  assert.doesNotMatch(html, /deepsea-run-timeline__text-footer/);
   assert.ok(firstTextIndex >= 0);
   assert.ok(detailsIndex > firstTextIndex);
   assert.ok(secondTextIndex > detailsIndex);
+});
+
+test('SessionShell portals run event details outside the transcript stacking context', () => {
+  assert.match(sessionShellViewSource, /createPortal\(/);
+  assert.match(sessionShellViewSource, /document\.body/);
 });
 
 test('buildSessionRunTranscriptItems keeps only answer text in chat transcript', () => {

@@ -3015,41 +3015,39 @@ button.deepsea-message-attachment {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
-.deepsea-run-timeline__text-footer {
-  display: flex;
-  min-width: 0;
-  max-width: 100%;
-  margin-top: 6px;
+.deepsea-run-timeline__text .message-content,
+.deepsea-run-timeline__text .message-content > div,
+.deepsea-run-timeline__text .markdown-preview {
+  display: inline;
+  width: auto;
+}
+.deepsea-run-timeline__text .markdown-preview > p:last-child {
+  display: inline;
 }
 .deepsea-run-timeline__details-button {
   display: inline-flex;
-  max-width: 100%;
+  width: 18px;
+  height: 18px;
   align-items: center;
-  gap: 5px;
-  border: 1px solid rgba(37, 99, 235, 0.14);
-  border-radius: 6px;
-  background: rgba(37, 99, 235, 0.06);
+  justify-content: center;
+  margin-left: 4px;
+  transform: translateY(2px);
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
   color: var(--deepsea-primary);
-  padding: 3px 7px;
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1.25;
+  padding: 0;
+  line-height: 1;
+  vertical-align: baseline;
 }
 .deepsea-run-timeline__details-button:hover,
 .deepsea-run-timeline__details-button:focus-visible {
-  border-color: rgba(37, 99, 235, 0.26);
   background: rgba(37, 99, 235, 0.1);
 }
 .deepsea-run-timeline__details-button svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   flex: 0 0 auto;
-}
-.deepsea-run-timeline__details-button span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .deepsea-run-log-body .streaming-cursor {
   display: inline-block;
@@ -4385,8 +4383,17 @@ button.deepsea-message-attachment {
 .deepsea-tool-detail-grid dd[data-status="failed"] {
   color: var(--deepsea-danger);
 }
+.deepsea-run-event-dialog-overlay {
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
 .deepsea-run-event-dialog {
-  width: min(760px, 100%);
+  position: relative;
+  width: min(760px, calc(100vw - 48px));
+  max-height: min(680px, calc(100vh - 48px));
 }
 .deepsea-run-event-dialog__body {
   display: grid;

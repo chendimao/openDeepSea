@@ -42,6 +42,19 @@ test('renders json code fences as structured Chinese task readiness view', () =>
   assert.doesNotMatch(html, /<small>confidence<\/small>/);
 });
 
+test('keeps inline suffix inside the final markdown paragraph', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent
+        content="设计已确认，继续使用 `brainstorming`。"
+        inlineSuffix={<button type="button" aria-label="查看本段调用详情">i</button>}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /<p>设计已确认，继续使用 <code>brainstorming<\/code>。\u2060<button[^>]+aria-label="查看本段调用详情"[^>]*>i<\/button><\/p>/);
+});
+
 test('keeps generic json string values faithful while translating semantic summary fields', () => {
   const content = [
     '```json',
