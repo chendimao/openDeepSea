@@ -167,8 +167,8 @@ function getWorkspaceLocalToken(): string | null {
 }
 
 function readBuildTimeLocalToken(): string | null {
-  const meta = import.meta as ImportMeta & { env?: Record<string, string | undefined> };
-  return meta.env?.VITE_OPENDEEPSEA_LOCAL_TOKEN?.trim() || null;
+  if (!('env' in import.meta)) return null;
+  return import.meta.env.VITE_OPENDEEPSEA_LOCAL_TOKEN?.trim() || null;
 }
 
 function buildWorkspaceHeaders(headers: HeadersInit = {}): Headers {

@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { createServer, type ViteDevServer } from 'vite';
+
+const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 type Listener = () => void;
 
@@ -87,6 +92,34 @@ test('sessionSocket includes local token in websocket URL', async () => {
       value: originalWindow,
     });
     globalThis.WebSocket = originalWebSocket;
+  }
+});
+
+test('vite dev transform injects build-time local token fallback into protected client modules', async () => {
+  const originalToken = process.env.OPENDEEPSEA_LOCAL_TOKEN;
+  process.env.OPENDEEPSEA_LOCAL_TOKEN = 'ws-build-token';
+  let server: ViteDevServer | undefined;
+
+  try {
+    server = await createServer({
+      root: frontendRoot,
+      configFile: path.join(frontendRoot, 'vite.config.ts'),
+      server: { middlewareMode: true },
+      logLevel: 'silent',
+    });
+
+    const wsModule = await server.transformRequest('/src/lib/ws.ts');
+    const apiModule = await server.transformRequest('/src/lib/api.ts');
+
+    assert.match(wsModule?.code ?? '', /ws-build-token/);
+    assert.match(apiModule?.code ?? '', /ws-build-token/);
+  } finally {
+    await server?.close();
+    if (originalToken === undefined) {
+      delete process.env.OPENDEEPSEA_LOCAL_TOKEN;
+    } else {
+      process.env.OPENDEEPSEA_LOCAL_TOKEN = originalToken;
+    }
   }
 });
 
