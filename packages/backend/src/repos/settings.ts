@@ -587,6 +587,37 @@ export const settingsRepo = {
     };
   },
 
+  getSkillsMpApiToken(): string | null {
+    normalizeLegacyRouting();
+    const row = db
+      .prepare(
+        `SELECT skillsmp_api_token
+         FROM settings
+         WHERE scope = 'system' AND scope_id = ?`,
+      )
+      .get(SYSTEM_SCOPE_ID) as { skillsmp_api_token: string | null } | undefined;
+    return normalizedOptionalString(row?.skillsmp_api_token);
+  },
+
+  updateSkillsMpApiToken(token: string | null): string | null {
+    normalizeLegacyRouting();
+    const normalized = normalizedOptionalString(token);
+    const updatedAt = now();
+    db.prepare(
+      `INSERT INTO settings (
+        scope,
+        scope_id,
+        skillsmp_api_token,
+        updated_at
+      )
+       VALUES ('system', ?, ?, ?)
+       ON CONFLICT(scope, scope_id) DO UPDATE SET
+         skillsmp_api_token = excluded.skillsmp_api_token,
+         updated_at = excluded.updated_at`,
+    ).run(SYSTEM_SCOPE_ID, normalized, updatedAt);
+    return normalized;
+  },
+
   getAiConfigRuntimeSettings(id: string): LangChainPlannerSettings | null {
     const row = getAiConfigRow(id);
     if (!row) return null;

@@ -8,6 +8,8 @@ process.env.HOME = mkdtempSync(join(tmpdir(), 'opendeepsea-online-skills-routes-
 process.env.CODEX_HOME = join(process.env.HOME, '.codex');
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-online-skills-routes-db-')), 'test.db');
 process.env.OPENDEEPSEA_LOCAL_TOKEN = 'online-skills-routes-token';
+delete process.env.SKILLSMP_API_TOKEN;
+delete process.env.SKILLS_MP_API_TOKEN;
 
 const { createOnlineSkillsRouter } = await import('./routes.js');
 const express = (await import('express')).default;
@@ -111,9 +113,38 @@ test('online skills routes require local access token', async () => {
   assert.equal(res.status, 403);
 });
 
-test('online skills routes do not expose token configuration endpoints', async () => {
+test('online skills routes expose SkillsMP token configuration without leaking the secret', async () => {
   const res = await request('/api/online-skills/config');
-  assert.equal(res.status, 404);
+  assert.equal(res.status, 200);
+  const initial = await res.json() as { tokenConfigured: boolean; source: string };
+  assert.equal(initial.tokenConfigured, false);
+  assert.equal(initial.source, 'none');
+
+  const saveRes = await request('/api/online-skills/config', {
+    method: 'PATCH',
+    body: JSON.stringify({ token: '  sk_live_skillsmp_secret_1234  ' }),
+  });
+  assert.equal(saveRes.status, 200);
+  const saved = await saveRes.json() as {
+    tokenConfigured: boolean;
+    tokenPreview: string | null;
+    source: string;
+    storedTokenConfigured: boolean;
+  };
+  assert.equal(saved.tokenConfigured, true);
+  assert.equal(saved.source, 'settings');
+  assert.equal(saved.storedTokenConfigured, true);
+  assert.equal(saved.tokenPreview, 'sk_l...1234');
+  assert.equal(JSON.stringify(saved).includes('sk_live_skillsmp_secret_1234'), false);
+
+  const clearRes = await request('/api/online-skills/config', {
+    method: 'PATCH',
+    body: JSON.stringify({ token: null }),
+  });
+  assert.equal(clearRes.status, 200);
+  const cleared = await clearRes.json() as { tokenConfigured: boolean; source: string };
+  assert.equal(cleared.tokenConfigured, false);
+  assert.equal(cleared.source, 'none');
 });
 
 test('online skills routes list online SkillsMP skills with validated defaults', async () => {

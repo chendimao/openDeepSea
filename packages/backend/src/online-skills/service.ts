@@ -3,6 +3,7 @@ import type { PlatformSkillProvider } from '../platform-skills/types.js';
 import { parseRestrictedSkillsCommand } from '../terminal/restricted-skills-shell.js';
 import { TtlCache } from './cache.js';
 import { SkillsMpClient } from './client.js';
+import { resolveSkillsMpBearerToken } from './config.js';
 import type {
   OnlineSkill,
   OnlineSkillAuditResponse,
@@ -37,7 +38,7 @@ const DEFAULT_SOURCE_URL = 'https://skillsmp.com';
 const DEFAULT_SEARCH_QUERY = 'skill';
 
 export function createOnlineSkillsService(options: OnlineSkillsServiceOptions = {}): OnlineSkillsService {
-  const client = options.client ?? new SkillsMpClient();
+  const client = options.client ?? new SkillsMpClient({ tokenProvider: resolveSkillsMpBearerToken });
   const now = options.now ?? Date.now;
   const cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
   const listCache = new TtlCache<string, CachedList>({ now });

@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS settings (
   openai_base_url TEXT,
   active_ai_config_id TEXT,
   global_session_prompt TEXT,
+  skillsmp_api_token TEXT,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (scope, scope_id)
 );
@@ -1841,6 +1842,9 @@ if (!settingsColumnNames.has('session_planner_acp_backend')) {
 }
 if (!settingsColumnNames.has('global_session_prompt')) {
   db.exec('ALTER TABLE settings ADD COLUMN global_session_prompt TEXT');
+}
+if (!settingsColumnNames.has('skillsmp_api_token')) {
+  db.exec('ALTER TABLE settings ADD COLUMN skillsmp_api_token TEXT');
 }
 
 if (!roomAgentColumnNames.has('memory_max_context_chars')) {

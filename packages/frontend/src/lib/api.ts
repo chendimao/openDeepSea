@@ -31,6 +31,7 @@ import type {
   OnlineSkillAuditResponse,
   OnlineSkillDetailResponse,
   OnlineSkillListResponse,
+  OnlineSkillsTokenConfig,
   OnlineSkillView,
   PlatformSkill,
   PlatformSkillAggregate,
@@ -549,6 +550,13 @@ export const api = {
     workspaceRequest<OnlineSkillDetailResponse>(`/online-skills/${encodeURIComponent(id)}`),
   getOnlineSkillAudit: (id: string) =>
     workspaceRequest<OnlineSkillAuditResponse>(`/online-skills/${encodeURIComponent(id)}/audit`),
+  getOnlineSkillsTokenConfig: () =>
+    workspaceRequest<OnlineSkillsTokenConfig>('/online-skills/config'),
+  updateOnlineSkillsTokenConfig: (input: { token: string | null }) =>
+    workspaceRequest<OnlineSkillsTokenConfig>('/online-skills/config', {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
   createTerminalSession: (input: CreateTerminalSessionInput) =>
     workspaceRequest<TerminalSessionInfo>('/terminals', {
       method: 'POST',

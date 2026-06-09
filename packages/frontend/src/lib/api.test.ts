@@ -566,9 +566,10 @@ test('api exposes online skills helpers through workspaceRequest', async () => {
   assert.match(source, /listOnlineSkills/);
   assert.match(source, /searchOnlineSkills/);
   assert.match(source, /getOnlineSkillAudit/);
-  assert.doesNotMatch(source, /getOnlineSkillsTokenConfig/);
-  assert.doesNotMatch(source, /updateOnlineSkillsTokenConfig/);
+  assert.match(source, /getOnlineSkillsTokenConfig/);
+  assert.match(source, /updateOnlineSkillsTokenConfig/);
   assert.match(source, /workspaceRequest<OnlineSkillListResponse>\(`\/online-skills/);
+  assert.match(source, /workspaceRequest<OnlineSkillsTokenConfig>\('\/online-skills\/config'\)/);
 
   const listUrl = await captureApiRequest(
     () => api.listOnlineSkills({ view: 'trending', page: 2, limit: 20 }),
@@ -581,6 +582,36 @@ test('api exposes online skills helpers through workspaceRequest', async () => {
     { skills: [], total: 0, page: 0, pages: 0, limit: 10, stale: false, updatedAt: 1 },
   );
   assert.equal(searchUrl, '/api/online-skills/search?q=browser&page=0&limit=10');
+
+  const configUrl = await captureApiRequest(
+    () => api.getOnlineSkillsTokenConfig(),
+    {
+      tokenConfigured: false,
+      tokenPreview: null,
+      source: 'none',
+      storedTokenConfigured: false,
+      storedTokenPreview: null,
+      environmentTokenConfigured: false,
+      environmentTokenPreview: null,
+    },
+  );
+  assert.equal(configUrl, '/api/online-skills/config');
+
+  const updateRequest = await captureApiRequestDetails(
+    () => api.updateOnlineSkillsTokenConfig({ token: 'skillsmp-token' }),
+    {
+      tokenConfigured: true,
+      tokenPreview: 'skil...oken',
+      source: 'settings',
+      storedTokenConfigured: true,
+      storedTokenPreview: 'skil...oken',
+      environmentTokenConfigured: false,
+      environmentTokenPreview: null,
+    },
+  );
+  assert.equal(updateRequest.url, '/api/online-skills/config');
+  assert.equal(updateRequest.method, 'PATCH');
+  assert.equal(updateRequest.body, '{"token":"skillsmp-token"}');
 });
 
 function createResourceListItem(input: Partial<ResourceListItem>): ResourceListItem {
@@ -645,6 +676,32 @@ async function captureApiRequest<T>(call: () => Promise<T>, responseBody: unknow
   try {
     await call();
     return requestedUrl;
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+async function captureApiRequestDetails<T>(
+  call: () => Promise<T>,
+  responseBody: unknown,
+): Promise<{ url: string; method: string; body: string }> {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = '';
+  let requestedMethod = '';
+  let requestedBody = '';
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    requestedUrl = String(input);
+    requestedMethod = init?.method ?? 'GET';
+    requestedBody = typeof init?.body === 'string' ? init.body : '';
+    return new Response(JSON.stringify(responseBody), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  try {
+    await call();
+    return { url: requestedUrl, method: requestedMethod, body: requestedBody };
   } finally {
     globalThis.fetch = originalFetch;
   }

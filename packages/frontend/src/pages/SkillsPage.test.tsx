@@ -19,27 +19,31 @@ test('SkillsPage defaults to online skills APIs and refreshes local status after
 
   assert.match(source, /api\.listOnlineSkills/);
   assert.match(source, /api\.searchOnlineSkills/);
-  assert.doesNotMatch(source, /api\.getOnlineSkillsTokenConfig/);
-  assert.doesNotMatch(source, /api\.updateOnlineSkillsTokenConfig/);
+  assert.match(source, /api\.getOnlineSkillsTokenConfig/);
+  assert.match(source, /api\.updateOnlineSkillsTokenConfig/);
   assert.match(source, /\['online-skills'/);
   assert.match(source, /useState\(false\)/);
   assert.match(source, /platform-skills', 'platforms'/);
   assert.match(source, /platform-skills', 'aggregate'/);
   assert.match(source, /queryKey: \['online-skills'\]/);
+  assert.match(source, /queryKey: \['online-skills', 'token-config'\]/);
   assert.match(source, /onRefreshRequested=\{refreshPlatformSkills\}/);
 });
 
-test('SkillsPage uses SkillsMP anonymous source and keeps terminal below the app header', () => {
+test('SkillsPage supports SkillsMP API Key configuration and keeps terminal below the app header', () => {
   const source = readFileSync(sourceUrl, 'utf8');
   const css = readFileSync(cssUrl, 'utf8');
 
-  assert.match(source, /SkillsMP 在线源/);
+  assert.match(source, /SkillsMP API Key/);
   assert.match(source, /skillsmp\.com/);
   assert.match(source, /匿名 REST/);
-  assert.doesNotMatch(source, /SkillsTokenSettingsPanel/);
-  assert.doesNotMatch(source, /配置 Token/);
+  assert.match(source, /SkillsMpTokenSettingsPanel/);
+  assert.match(source, /SKILLSMP_API_TOKEN/);
+  assert.match(source, /完整 API Key 只提交给本地后端保存/);
+  assert.doesNotMatch(source, /skills\.sh API Token/);
   assert.doesNotMatch(source, /Vercel OIDC/);
   assert.match(css, /--skills-shell-top-offset: 48px/);
+  assert.match(css, /skills-token-panel/);
   assert.match(css, /inset: var\(--skills-shell-top-offset\) 0 0/);
   assert.match(css, /height: calc\(100dvh - var\(--skills-shell-top-offset\)\)/);
 });

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   SkillsMpClient,
+  getSkillsMpBearerTokenFromEnv,
   type SkillsMpFetch,
 } from './client.js';
 
@@ -72,6 +73,26 @@ test('SkillsMpClient includes optional SkillsMP filters', async () => {
   );
 });
 
+test('SkillsMpClient sends bearer token when token provider is configured', async () => {
+  let authorization: string | null = null;
+  const fetchImpl: SkillsMpFetch = async (_url, init) => {
+    authorization = new Headers(init?.headers).get('Authorization');
+    return new Response(JSON.stringify({ success: true, data: { skills: [], pagination: { page: 1, limit: 5, total: 0, totalPages: 0 } } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  };
+  const client = new SkillsMpClient({
+    baseUrl: 'https://skillsmp.test',
+    fetchImpl,
+    tokenProvider: () => 'skillsmp-token',
+  });
+
+  await client.searchSkills({ q: 'browser', page: 1, limit: 5, sortBy: 'stars' });
+
+  assert.equal(authorization, 'Bearer skillsmp-token');
+});
+
 test('SkillsMpClient maps upstream rate limits', async () => {
   const client = new SkillsMpClient({
     baseUrl: 'https://skillsmp.test',
@@ -85,4 +106,10 @@ test('SkillsMpClient maps upstream rate limits', async () => {
       return true;
     },
   );
+});
+
+test('getSkillsMpBearerTokenFromEnv reads SkillsMP token env vars and trims values', () => {
+  assert.equal(getSkillsMpBearerTokenFromEnv({ SKILLSMP_API_TOKEN: '  direct-token  ' }), 'direct-token');
+  assert.equal(getSkillsMpBearerTokenFromEnv({ SKILLS_MP_API_TOKEN: '  legacy-token  ' }), 'legacy-token');
+  assert.equal(getSkillsMpBearerTokenFromEnv({ SKILLSMP_API_TOKEN: '   ' }), null);
 });

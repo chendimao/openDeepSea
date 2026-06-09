@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Bot,
@@ -15,11 +15,13 @@ import {
   FileCode2,
   GitBranch,
   Grid2X2,
+  KeyRound,
   Layers3,
   Loader2,
   MoreVertical,
   PackagePlus,
   RefreshCcw,
+  Save,
   Search,
   Settings,
   Star,
@@ -34,6 +36,7 @@ import { TerminalPanel } from '../components/TerminalPanel';
 import type {
   OnlineSkill,
   OnlineSkillView,
+  OnlineSkillsTokenConfig,
   PlatformSkill,
   PlatformSkillAggregate,
   PlatformSkillInstallMode,
@@ -260,6 +263,8 @@ export function SkillsPage(): JSX.Element {
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
   const [initialInstallCommand, setInitialInstallCommand] = useState<string | undefined>(undefined);
   const [installerOpen, setInstallerOpen] = useState(false);
+  const [tokenSettingsOpen, setTokenSettingsOpen] = useState(false);
+  const [tokenDraft, setTokenDraft] = useState('');
   const trimmedSearchQuery = searchQuery.trim();
 
   const summariesQuery = useQuery({
@@ -276,6 +281,18 @@ export function SkillsPage(): JSX.Element {
       ? api.searchOnlineSkills({ q: trimmedSearchQuery, page: 0, limit: ONLINE_PAGE_SIZE })
       : api.listOnlineSkills({ view: onlineView, page: 0, limit: ONLINE_PAGE_SIZE }),
     retry: false,
+  });
+  const tokenConfigQuery = useQuery({
+    queryKey: ['online-skills', 'token-config'],
+    queryFn: api.getOnlineSkillsTokenConfig,
+    retry: false,
+  });
+  const tokenConfigMutation = useMutation({
+    mutationFn: api.updateOnlineSkillsTokenConfig,
+    onSuccess: () => {
+      setTokenDraft('');
+      void queryClient.invalidateQueries({ queryKey: ['online-skills'] });
+    },
   });
   const refreshPlatformSkills = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['platform-skills', 'platforms'] });
@@ -325,6 +342,17 @@ export function SkillsPage(): JSX.Element {
     setInitialInstallCommand(record?.online.installCommand || undefined);
     setInstallerOpen(true);
   }, []);
+  const saveSkillsMpToken = useCallback(() => {
+    const nextToken = tokenDraft.trim();
+    if (!nextToken) return;
+    tokenConfigMutation.mutate({ token: nextToken });
+  }, [tokenConfigMutation, tokenDraft]);
+  const clearSkillsMpToken = useCallback(() => {
+    tokenConfigMutation.mutate({ token: null });
+  }, [tokenConfigMutation]);
+  const refreshTokenConfig = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['online-skills', 'token-config'] });
+  }, [queryClient]);
 
   return (
     <div className="skills-command-center">
@@ -335,11 +363,22 @@ export function SkillsPage(): JSX.Element {
           sourceFilter={sourceFilter}
           categoryFilter={categoryFilter}
           summaries={summaries}
+          tokenConfig={tokenConfigQuery.data}
+          tokenConfigLoading={tokenConfigQuery.isLoading}
+          tokenSettingsOpen={tokenSettingsOpen}
+          tokenDraft={tokenDraft}
+          tokenSaving={tokenConfigMutation.isPending}
+          tokenError={tokenConfigMutation.error as Error | null}
           onStatusChange={setStatusFilter}
           onSourceChange={setSourceFilter}
           onCategoryChange={setCategoryFilter}
           onOpenInstaller={() => openInstallerForRecord(selectedRecord)}
           onRefreshOnline={refreshOnlineSkills}
+          onToggleTokenSettings={() => setTokenSettingsOpen((open) => !open)}
+          onTokenDraftChange={setTokenDraft}
+          onSaveToken={saveSkillsMpToken}
+          onClearToken={clearSkillsMpToken}
+          onRefreshTokenConfig={refreshTokenConfig}
         />
         <SkillsMarketPanel
           records={filteredRecords}
@@ -368,7 +407,7 @@ export function SkillsPage(): JSX.Element {
           onOpenInstaller={() => openInstallerForRecord(selectedRecord)}
         />
       </main>
-      <SkillsStatusBar metrics={metrics} />
+      <SkillsStatusBar metrics={metrics} tokenConfig={tokenConfigQuery.data} />
       {installerOpen ? (
         <SkillsInstallerDrawer
           initialInstallCommand={initialInstallCommand}
@@ -386,22 +425,44 @@ function SkillsSidebar({
   sourceFilter,
   categoryFilter,
   summaries,
+  tokenConfig,
+  tokenConfigLoading,
+  tokenSettingsOpen,
+  tokenDraft,
+  tokenSaving,
+  tokenError,
   onStatusChange,
   onSourceChange,
   onCategoryChange,
   onOpenInstaller,
   onRefreshOnline,
+  onToggleTokenSettings,
+  onTokenDraftChange,
+  onSaveToken,
+  onClearToken,
+  onRefreshTokenConfig,
 }: {
   activeStatus: MarketStatusFilter;
   metrics: ReturnType<typeof getMetrics>;
   sourceFilter: SourceFilter;
   categoryFilter: CategoryFilter;
   summaries: PlatformSkillSummary[];
+  tokenConfig?: OnlineSkillsTokenConfig;
+  tokenConfigLoading: boolean;
+  tokenSettingsOpen: boolean;
+  tokenDraft: string;
+  tokenSaving: boolean;
+  tokenError: Error | null;
   onStatusChange: (status: MarketStatusFilter) => void;
   onSourceChange: (source: SourceFilter) => void;
   onCategoryChange: (category: CategoryFilter) => void;
   onOpenInstaller: () => void;
   onRefreshOnline: () => void;
+  onToggleTokenSettings: () => void;
+  onTokenDraftChange: (value: string) => void;
+  onSaveToken: () => void;
+  onClearToken: () => void;
+  onRefreshTokenConfig: () => void;
 }): JSX.Element {
   const sourceCounts = getSourceCounts(metrics, summaries);
   const categoryRows: Array<{ key: CategoryFilter; icon: LucideIcon; count: number }> = [
@@ -423,13 +484,32 @@ function SkillsSidebar({
           <span>安装终端</span>
           <TerminalSquare aria-hidden="true" />
         </button>
-        <div className="skills-source-summary">
-          <ExternalLink aria-hidden="true" />
+        <button
+          type="button"
+          className={cn('skills-source-summary', tokenSettingsOpen && 'is-open', tokenConfig?.tokenConfigured && 'is-ready')}
+          aria-expanded={tokenSettingsOpen}
+          onClick={onToggleTokenSettings}
+        >
+          <KeyRound aria-hidden="true" />
           <span>
-            <b>SkillsMP 在线源</b>
-            <small>匿名 REST 搜索，无需认证配置</small>
+            <b>SkillsMP API Key</b>
+            <small>{tokenSourceDescription(tokenConfig, tokenConfigLoading)}</small>
           </span>
-        </div>
+          <ChevronDown className="skills-source-summary__chevron" aria-hidden="true" />
+        </button>
+        {tokenSettingsOpen ? (
+          <SkillsMpTokenSettingsPanel
+            tokenConfig={tokenConfig}
+            loading={tokenConfigLoading}
+            tokenDraft={tokenDraft}
+            saving={tokenSaving}
+            error={tokenError}
+            onTokenDraftChange={onTokenDraftChange}
+            onSaveToken={onSaveToken}
+            onClearToken={onClearToken}
+            onRefreshTokenConfig={onRefreshTokenConfig}
+          />
+        ) : null}
         <nav className="skills-sidebar-nav" aria-label="Skills 状态">
           <SidebarButton icon={Layers3} label="全部 Skills" count={metrics.total} active={activeStatus === 'all'} onClick={() => onStatusChange('all')} />
           <SidebarButton icon={CheckCircle2} label="已安装" count={metrics.installed} active={activeStatus === 'installed'} onClick={() => onStatusChange('installed')} />
@@ -468,6 +548,68 @@ function SkillsSidebar({
         <button type="button">浏览市场 <ExternalLink aria-hidden="true" /></button>
       </div>
     </aside>
+  );
+}
+
+function SkillsMpTokenSettingsPanel({
+  tokenConfig,
+  loading,
+  tokenDraft,
+  saving,
+  error,
+  onTokenDraftChange,
+  onSaveToken,
+  onClearToken,
+  onRefreshTokenConfig,
+}: {
+  tokenConfig?: OnlineSkillsTokenConfig;
+  loading: boolean;
+  tokenDraft: string;
+  saving: boolean;
+  error: Error | null;
+  onTokenDraftChange: (value: string) => void;
+  onSaveToken: () => void;
+  onClearToken: () => void;
+  onRefreshTokenConfig: () => void;
+}): JSX.Element {
+  const canClear = Boolean(tokenConfig?.storedTokenConfigured);
+  const canSave = tokenDraft.trim().length > 0 && !saving;
+
+  return (
+    <section className="skills-token-panel" aria-label="SkillsMP API Key 配置">
+      <div className="skills-token-panel__status">
+        <span className={cn('skills-token-dot', tokenConfig?.tokenConfigured && 'is-ready')} />
+        <span>
+          <b>{tokenSourceLabel(tokenConfig, loading)}</b>
+          <small>{tokenSourceHelp(tokenConfig, loading)}</small>
+        </span>
+      </div>
+      <label className="skills-token-input">
+        <span>API Key</span>
+        <input
+          type="password"
+          value={tokenDraft}
+          placeholder="粘贴 SkillsMP API Key"
+          autoComplete="off"
+          onChange={(event) => onTokenDraftChange(event.target.value)}
+        />
+      </label>
+      <div className="skills-token-actions">
+        <button type="button" disabled={!canSave} onClick={onSaveToken}>
+          {saving ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Save aria-hidden="true" />}
+          保存
+        </button>
+        <button type="button" disabled={saving || !canClear} onClick={onClearToken}>
+          <Trash2 aria-hidden="true" />
+          清空
+        </button>
+        <button type="button" disabled={saving} aria-label="刷新 SkillsMP API Key 状态" title="刷新状态" onClick={onRefreshTokenConfig}>
+          <RefreshCcw aria-hidden="true" />
+        </button>
+      </div>
+      {error ? <p className="skills-token-error">{error.message}</p> : null}
+      <p className="skills-token-hint">完整 API Key 只提交给本地后端保存；页面仅显示脱敏状态。</p>
+    </section>
   );
 }
 
@@ -789,9 +931,13 @@ function SkillsInstallerDrawer({
 
 function SkillsStatusBar({
   metrics,
+  tokenConfig,
 }: {
   metrics: ReturnType<typeof getMetrics>;
+  tokenConfig?: OnlineSkillsTokenConfig;
 }): JSX.Element {
+  const sourceChip = tokenConfig?.tokenConfigured ? `API Key ${tokenSourceLabel(tokenConfig)}` : '匿名 REST';
+
   return (
     <footer className="skills-statusbar">
       <div>
@@ -804,7 +950,7 @@ function SkillsStatusBar({
       <div>
         <span>在线源:</span>
         <b>skillsmp.com</b>
-        <span className="skills-source-chip">匿名 REST</span>
+        <span className={cn('skills-source-chip', tokenConfig?.tokenConfigured && 'is-ready')}>{sourceChip}</span>
         <span className="skills-source-meter"><i style={{ width: `${Math.min(100, Math.max(6, metrics.installed))}%` }} /></span>
         <b>{metrics.installed} 已安装</b>
         <button type="button"><Download aria-hidden="true" />导出</button>
@@ -922,6 +1068,27 @@ function SkillsPagination({ shown, total }: { shown: number; total: number }): J
 
 function StateBox({ icon: Icon, label, spinning = false }: { icon: LucideIcon; label: string; spinning?: boolean }): JSX.Element {
   return <div className="skills-state-box"><Icon className={spinning ? 'animate-spin' : undefined} aria-hidden="true" />{label}</div>;
+}
+
+function tokenSourceLabel(config?: OnlineSkillsTokenConfig, loading = false): string {
+  if (loading) return '检查中';
+  if (config?.source === 'settings') return config.tokenPreview ? `本地配置 ${config.tokenPreview}` : '本地配置';
+  if (config?.source === 'environment') return config.tokenPreview ? `环境变量 ${config.tokenPreview}` : '环境变量';
+  return '匿名访问';
+}
+
+function tokenSourceDescription(config?: OnlineSkillsTokenConfig, loading = false): string {
+  if (loading) return '正在检查在线源状态';
+  if (config?.source === 'settings') return config.tokenPreview ? `页面保存 ${config.tokenPreview}` : '页面已保存 API Key';
+  if (config?.source === 'environment') return config.tokenPreview ? `环境变量 ${config.tokenPreview}` : '后端环境变量 SKILLSMP_API_TOKEN';
+  return '匿名访问额度较低，可配置 API Key';
+}
+
+function tokenSourceHelp(config?: OnlineSkillsTokenConfig, loading = false): string {
+  if (loading) return '正在读取本地设置与后端环境变量';
+  if (config?.source === 'settings') return '后端请求 SkillsMP 时会优先使用页面保存的 API Key';
+  if (config?.source === 'environment') return '当前使用后端环境变量 SKILLSMP_API_TOKEN';
+  return '未配置 API Key 时继续使用 SkillsMP 匿名 REST 搜索';
 }
 
 function filterSkillRecords(records: SkillRecord[], filters: {
