@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bell,
   Blocks,
-  CircleHelp,
   FileText,
   FlaskConical,
   KeyRound,
@@ -139,12 +138,12 @@ export function SystemSettingsPage({
 
   return (
     <div className="system-settings-page">
-      <SettingsHeader searchText={searchText} onSearchTextChange={setSearchText} />
       <div className="system-settings-layout">
         <SettingsSidebar
           activeCategory={activeCategory}
           items={visibleSidebarItems}
           searchText={searchText}
+          onSearchTextChange={setSearchText}
           onCategoryChange={handleCategoryChange}
         />
         <main className="system-settings-main system-settings-scrollbar">
@@ -178,23 +177,26 @@ export function SystemSettingsPage({
   );
 }
 
-function SettingsHeader({
+function SettingsSidebar({
+  activeCategory,
+  items,
   searchText,
   onSearchTextChange,
+  onCategoryChange,
 }: {
+  activeCategory: SettingsCategory;
+  items: typeof sidebarItems;
   searchText: string;
   onSearchTextChange: (value: string) => void;
+  onCategoryChange: (category: SettingsCategory) => void;
 }): JSX.Element {
   return (
-    <header className="system-settings-header">
-      <div className="system-settings-brand">
-        <div className="system-settings-brand__mark">K</div>
-        <div className="system-settings-brand__copy">
-          <span>系统设置</span>
-          <small>管理全局行为与默认配置，项目内成员将遵循这些设置。</small>
+    <aside className="system-settings-sidebar">
+      <div className="system-settings-sidebar__top">
+        <div>
+          <strong>系统设置</strong>
+          <small>管理全局行为与默认配置</small>
         </div>
-      </div>
-      <div className="system-settings-header__actions">
         <label className="system-settings-search">
           <Search aria-hidden="true" />
           <input
@@ -204,28 +206,7 @@ function SettingsHeader({
             aria-label="搜索设置项"
           />
         </label>
-        <button type="button" className="system-settings-icon-button" aria-label="帮助">
-          <CircleHelp aria-hidden="true" />
-        </button>
-        <div className="system-settings-user" aria-label="当前用户">U</div>
       </div>
-    </header>
-  );
-}
-
-function SettingsSidebar({
-  activeCategory,
-  items,
-  searchText,
-  onCategoryChange,
-}: {
-  activeCategory: SettingsCategory;
-  items: typeof sidebarItems;
-  searchText: string;
-  onCategoryChange: (category: SettingsCategory) => void;
-}): JSX.Element {
-  return (
-    <aside className="system-settings-sidebar">
       <nav className="system-settings-sidebar__nav" aria-label="系统设置分类">
         {items.map((item) => {
           const Icon = item.icon;

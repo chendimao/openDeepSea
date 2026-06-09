@@ -3,12 +3,10 @@
     color: #1e293b;
   }
 
-  .app-shell--settings .liquid-backdrop,
-  .app-shell--settings .app-header {
+  .app-shell--settings .liquid-backdrop {
     display: none;
   }
 
-  .app-shell--settings .app-grid,
   .app-shell--settings .app-main {
     padding: 0;
   }
@@ -59,68 +57,10 @@
     display: none;
   }
 
-  .system-settings-header {
-    display: flex;
-    height: 64px;
-    flex: 0 0 64px;
-    align-items: center;
-    justify-content: space-between;
-    gap: 24px;
-    border-bottom: 1px solid #f3f4f6;
-    background: #ffffff;
-    padding: 0 24px;
-  }
-
-  .system-settings-brand {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .system-settings-brand__mark {
-    display: grid;
-    width: 32px;
-    height: 32px;
-    place-items: center;
-    border-radius: 8px;
-    background: #2563eb;
-    color: #ffffff;
-    font-size: 13px;
-    font-weight: 800;
-    line-height: 1;
-  }
-
-  .system-settings-brand__copy {
-    display: grid;
-    min-width: 0;
-    gap: 4px;
-  }
-
-  .system-settings-brand__copy span {
-    color: #111827;
-    font-size: 14px;
-    font-weight: 800;
-    line-height: 1;
-  }
-
-  .system-settings-brand__copy small {
-    color: #9ca3af;
-    font-size: 10px;
-    line-height: 1;
-    white-space: nowrap;
-  }
-
-  .system-settings-header__actions {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-
   .system-settings-search {
     position: relative;
     display: flex;
-    width: 256px;
+    width: 100%;
     height: 34px;
     align-items: center;
   }
@@ -151,40 +91,6 @@
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
   }
 
-  .system-settings-icon-button {
-    display: grid;
-    width: 36px;
-    height: 36px;
-    place-items: center;
-    border: 0;
-    border-radius: 999px;
-    background: transparent;
-    color: #9ca3af;
-  }
-
-  .system-settings-icon-button:hover {
-    background: #f8fafc;
-    color: #4b5563;
-  }
-
-  .system-settings-icon-button svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .system-settings-user {
-    display: grid;
-    width: 32px;
-    height: 32px;
-    place-items: center;
-    border-radius: 999px;
-    background: #2563eb;
-    box-shadow: 0 0 0 2px #dbeafe, 0 0 0 4px #ffffff;
-    color: #ffffff;
-    font-size: 12px;
-    font-weight: 800;
-  }
-
   .system-settings-layout {
     display: flex;
     flex: 1;
@@ -200,6 +106,32 @@
     border-right: 1px solid #f3f4f6;
     background: rgba(249, 250, 251, 0.58);
     padding: 16px;
+  }
+
+  .system-settings-sidebar__top {
+    display: grid;
+    gap: 12px;
+    border-bottom: 1px solid #f3f4f6;
+    margin: -2px -2px 14px;
+    padding: 2px 2px 14px;
+  }
+
+  .system-settings-sidebar__top > div {
+    display: grid;
+    gap: 4px;
+  }
+
+  .system-settings-sidebar__top strong {
+    color: #111827;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+
+  .system-settings-sidebar__top small {
+    color: #9ca3af;
+    font-size: 11px;
+    line-height: 1.35;
   }
 
   .system-settings-sidebar__nav {
@@ -850,19 +782,6 @@
   }
 
   @media (max-width: 900px) {
-    .system-settings-header {
-      height: auto;
-      flex: 0 0 auto;
-      align-items: flex-start;
-      flex-direction: column;
-      padding: 14px 16px;
-    }
-
-    .system-settings-header__actions,
-    .system-settings-search {
-      width: 100%;
-    }
-
     .system-settings-layout {
       flex-direction: column;
       overflow-y: auto;
