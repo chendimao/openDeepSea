@@ -489,8 +489,48 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         .map((id) => childTasks.find((task) => task.id === id))
         .filter((task): task is NonNullable<typeof task> => Boolean(task));
       const executionCandidates = state.childTaskIds.length > 0 ? pendingChildren : childTasks;
-      const nextChild = executionCandidates
-        .find((child) => child.status === 'todo' || child.status === 'in_progress');
+      const orderedChildIds = state.childTaskIds.length > 0 ? state.childTaskIds : childTasks.map((item) => item.id);
+      const childTaskPlanIndexes = normalizeChildTaskPlanIndexes(state, orderedChildIds);
+      const activeImplementationRun = findActiveImplementationRunForChildren(
+        tools,
+        context.run.id,
+        executionCandidates.map((child) => child.id),
+      );
+      if (activeImplementationRun) {
+        const nextState: AgentWorkflowState = {
+          ...state,
+          currentNode: 'execute',
+          currentStepId: activeImplementationRun.workflow_step_id ?? state.currentStepId,
+          activeAgentRunId: activeImplementationRun.id,
+          status: 'running',
+          error: null,
+        };
+        tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+        return nextState;
+      }
+
+      const parallelBatch = selectParallelImplementationBatch({
+        state,
+        childTasks: executionCandidates,
+        childTaskPlanIndexes,
+        projectPath: context.project.path,
+      });
+      if (parallelBatch.length > 1) {
+        return runParallelImplementationChildren({
+          tools,
+          context,
+          state,
+          childTasks,
+          batch: parallelBatch,
+          childTaskPlanIndexes,
+        });
+      }
+
+      const nextChild = selectNextImplementationChild({
+        state,
+        childTasks: executionCandidates,
+        childTaskPlanIndexes,
+      });
       if (!nextChild) {
         const nextState: AgentWorkflowState = {
           ...state,
@@ -514,9 +554,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         return nextState;
       }
 
-      const orderedChildIds = state.childTaskIds.length > 0 ? state.childTaskIds : childTasks.map((item) => item.id);
       const plannedTaskIndex = orderedChildIds.indexOf(nextChild.id);
-      const childTaskPlanIndexes = normalizeChildTaskPlanIndexes(state, orderedChildIds);
       const mappedPlanTaskIndex = childTaskPlanIndexes[nextChild.id] ?? -1;
       const matchingPlanTaskIndex = mappedPlanTaskIndex >= 0
         ? mappedPlanTaskIndex
@@ -1708,6 +1746,346 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
   };
 }
 
+async function runParallelImplementationChildren(input: {
+  tools: GraphTools;
+  context: ReturnType<GraphTools['readWorkflowContext']>;
+  state: AgentWorkflowState;
+  childTasks: Task[];
+  batch: Task[];
+  childTaskPlanIndexes: Record<string, number>;
+}): Promise<AgentWorkflowState> {
+  const resolvedBatch = resolveParallelImplementationExecutors({
+    tools: input.tools,
+    context: input.context,
+    state: input.state,
+    batch: input.batch,
+    childTaskPlanIndexes: input.childTaskPlanIndexes,
+  });
+  if (!resolvedBatch.ok) {
+    return blockImplementationChildWithoutExecutor({
+      tools: input.tools,
+      context: input.context,
+      state: input.state,
+      child: resolvedBatch.child,
+      childTaskPlanIndexes: input.childTaskPlanIndexes,
+      originalPlanTaskIndex: resolvedBatch.originalPlanTaskIndex,
+    });
+  }
+
+  const executionAgents = resolvedBatch.executionAgents;
+  let runningWorkflowPlan = input.state.workflowPlan ?? null;
+  const prepared: Array<{
+    child: Task;
+    executor: RoomAgent;
+    originalPlanTaskIndex: number;
+    prompt: string;
+    step: ReturnType<GraphTools['createGraphStep']>;
+  }> = [];
+  const baseSortOrder = input.tools.nextStepSortOrder(input.context.run.id);
+
+  for (const [batchIndex, item] of resolvedBatch.items.entries()) {
+    const { child, executor, originalPlanTaskIndex, scopeRead, scopeWrite } = item;
+    const inProgressChild = child.status === 'in_progress' ? child : input.tools.updateTaskStatus(child.id, 'in_progress');
+    if (inProgressChild) input.tools.broadcastTaskUpdated(inProgressChild);
+
+    const prompt = buildStagePrompt('implementation', {
+      projectName: input.context.project.name,
+      projectPath: input.context.project.path,
+      room: input.context.room,
+      task: child,
+      agents: executionAgents,
+      workflowContext: input.context.workflowContext,
+      childTasks: input.childTasks,
+      memoryContext: input.context.memories,
+    });
+    const step = input.tools.createGraphStep({
+      workflow_run_id: input.context.run.id,
+      task_id: child.id,
+      stage: 'implementation',
+      node_name: 'execute',
+      status: 'running',
+      room_agent_id: executor.id,
+      assigned_room_agent_id: child.assigned_agent_id ?? executor.id,
+      scope_read: scopeRead,
+      scope_write: scopeWrite,
+      prompt,
+      sort_order: baseSortOrder + batchIndex,
+    });
+    input.tools.broadcastStepCreated(input.context.room.id, step);
+    runningWorkflowPlan = updateWorkflowPlanTaskByIndex(runningWorkflowPlan, originalPlanTaskIndex, {
+      status: 'running',
+      progress: 35,
+      agentId: executor.id,
+    });
+    recordEventSafely(input.tools, input.context, {
+      eventType: 'workflow_stage_changed',
+      task: child,
+      workflowStepId: step.id,
+      content: `子任务「${child.title}」进入 implementation 阶段。`,
+      metadata: {
+        graph_node: 'execute',
+        workflow_stage: 'implementation',
+        room_agent_id: executor.id,
+        parallel_batch_size: input.batch.length,
+      },
+    });
+    prepared.push({ child, executor, originalPlanTaskIndex, prompt, step });
+  }
+
+  input.tools.updateGraphState(input.context.run.id, serializeGraphState({
+    ...input.state,
+    workflowPlan: runningWorkflowPlan,
+    childTaskPlanIndexes: input.childTaskPlanIndexes,
+    currentNode: 'execute',
+    currentStepId: prepared.at(-1)?.step.id ?? input.state.currentStepId,
+    activeAgentRunId: null,
+    error: null,
+  }));
+  const updatedRun = input.tools.updateRun(input.context.run.id, {
+    status: 'running',
+    current_stage: 'implementation',
+    error: null,
+  });
+  if (updatedRun) input.tools.broadcastWorkflowUpdated(updatedRun);
+
+  const results = await Promise.all(prepared.map(async (item) => ({
+    item,
+    runResult: await input.tools.runAcpAgent({
+      agent: item.executor,
+      projectPath: input.context.project.path,
+      roomId: input.context.room.id,
+      prompt: item.prompt,
+      taskId: item.child.id,
+      workflowRunId: input.context.run.id,
+      workflowStepId: item.step.id,
+      workflowStage: 'implementation',
+    }),
+  })));
+
+  let nextWorkflowPlan = runningWorkflowPlan;
+  let lastAgentRunId: string | null = null;
+  let failedState: AgentWorkflowState | null = null;
+  for (const { item, runResult } of results) {
+    lastAgentRunId = runResult.run.id;
+    const output = runResult.run.stdout || runResult.message.content;
+    if (runResult.status !== 'completed') {
+      const error = runResult.run.error ?? (runResult.status === 'cancelled' ? 'Agent run cancelled' : 'Agent run failed');
+      const failedStep = input.tools.updateGraphStep(item.step.id, {
+        status: runResult.status === 'cancelled' ? 'cancelled' : 'failed',
+        agent_run_id: runResult.run.id,
+        result: output,
+        result_message_id: runResult.message.id,
+        error,
+      });
+      if (failedStep) input.tools.broadcastStepUpdated(input.context.room.id, failedStep);
+      createContextEntrySafely(input.tools, input.context, {
+        task: item.child,
+        workflowStepId: item.step.id,
+        roomAgentId: item.executor.id,
+        agentRunId: runResult.run.id,
+        sourceType: 'agent_run',
+        sourceId: `${runResult.run.id}:implementation-failed`,
+        entryType: 'handoff',
+        title: `执行失败：${item.child.title}`,
+        content: buildImplementationHandoff(item.child, output, error),
+        rawCharCount: output.length,
+        metadata: {
+          graph_node: 'execute',
+          workflow_stage: 'implementation',
+          status: runResult.status,
+          error,
+        },
+      });
+      const failedChild = input.tools.updateTaskStatus(item.child.id, 'failed');
+      if (failedChild) input.tools.broadcastTaskUpdated(failedChild);
+      const blockedRun = input.tools.updateRun(input.context.run.id, {
+        status: runResult.status === 'cancelled' ? 'cancelled' : 'blocked',
+        current_stage: 'implementation',
+        error,
+      });
+      if (blockedRun) input.tools.broadcastWorkflowUpdated(blockedRun);
+      nextWorkflowPlan = updateWorkflowPlanTaskByIndex(nextWorkflowPlan, item.originalPlanTaskIndex, {
+        status: runResult.status === 'cancelled' ? 'blocked' : 'failed',
+        progress: 35,
+        agentId: item.executor.id,
+      });
+      recordEventSafely(input.tools, input.context, {
+        eventType: runResult.status === 'cancelled' ? 'workflow_cancelled' : 'workflow_blocked',
+        task: item.child,
+        workflowStepId: item.step.id,
+        content: runResult.status === 'cancelled'
+          ? `子任务「${item.child.title}」执行已取消。`
+          : `子任务「${item.child.title}」执行失败：${error}`,
+        metadata: {
+          graph_node: 'execute',
+          workflow_stage: 'implementation',
+          agent_run_id: runResult.run.id,
+          error,
+        },
+      });
+      failedState = {
+        ...input.state,
+        workflowPlan: nextWorkflowPlan,
+        childTaskPlanIndexes: input.childTaskPlanIndexes,
+        currentNode: 'execute',
+        currentStepId: item.step.id,
+        activeAgentRunId: runResult.run.id,
+        status: runResult.status === 'cancelled' ? 'cancelled' : 'blocked',
+        error,
+      };
+      continue;
+    }
+
+    const implementationArtifact = input.tools.createArtifact({
+      task_id: item.child.id,
+      workflow_run_id: input.context.run.id,
+      workflow_step_id: item.step.id,
+      artifact_type: 'implementation_summary',
+      title: `执行结果：${item.child.title}`,
+      content: output,
+      metadata: {
+        graph_node: 'execute',
+        workflow_stage: 'implementation',
+        child_task_id: item.child.id,
+        agent_run_id: runResult.run.id,
+        result_message_id: runResult.message.id,
+      },
+    });
+    input.tools.broadcastArtifactCreated(input.context.room.id, implementationArtifact);
+    const completedStep = input.tools.updateGraphStep(item.step.id, {
+      status: 'completed',
+      agent_run_id: runResult.run.id,
+      result: output,
+      result_message_id: runResult.message.id,
+      error: runResult.run.error,
+    });
+    if (completedStep) input.tools.broadcastStepUpdated(input.context.room.id, completedStep);
+    createContextEntrySafely(input.tools, input.context, {
+      task: item.child,
+      workflowStepId: item.step.id,
+      roomAgentId: item.executor.id,
+      agentRunId: runResult.run.id,
+      sourceType: 'agent_run',
+      sourceId: `${runResult.run.id}:implementation`,
+      entryType: 'handoff',
+      title: `执行交接：${item.child.title}`,
+      content: buildImplementationHandoff(item.child, output),
+      rawCharCount: output.length,
+      metadata: {
+        graph_node: 'execute',
+        workflow_stage: 'implementation',
+        status: 'completed',
+        result_message_id: runResult.message.id,
+      },
+    });
+    const reviewedChild = input.tools.updateTaskStatus(item.child.id, 'review');
+    if (reviewedChild) input.tools.broadcastTaskUpdated(reviewedChild);
+    recordEventSafely(input.tools, input.context, {
+      eventType: 'workflow_stage_changed',
+      task: item.child,
+      workflowStepId: item.step.id,
+      content: `子任务「${item.child.title}」的 implementation 阶段已完成，进入 review。`,
+      metadata: {
+        graph_node: 'execute',
+        workflow_stage: 'implementation',
+        agent_run_id: runResult.run.id,
+        status: 'completed',
+      },
+    });
+    nextWorkflowPlan = updateWorkflowPlanTaskByIndex(nextWorkflowPlan, item.originalPlanTaskIndex, {
+      status: 'completed',
+      progress: 100,
+      agentId: item.executor.id,
+      resultRefs: [implementationArtifact.id],
+    });
+  }
+
+  if (failedState) {
+    const nextState = {
+      ...failedState,
+      workflowPlan: nextWorkflowPlan,
+    };
+    input.tools.updateGraphState(input.context.run.id, serializeGraphState(nextState));
+    return nextState;
+  }
+
+  const nextState: AgentWorkflowState = {
+    ...input.state,
+    workflowPlan: nextWorkflowPlan,
+    childTaskPlanIndexes: input.childTaskPlanIndexes,
+    currentNode: 'execute',
+    currentStepId: prepared.at(-1)?.step.id ?? input.state.currentStepId,
+    activeAgentRunId: lastAgentRunId,
+    error: null,
+  };
+  input.tools.updateGraphState(input.context.run.id, serializeGraphState(nextState));
+  return nextState;
+}
+
+type ParallelImplementationExecutorResolution =
+  | {
+    ok: true;
+    executionAgents: RoomAgent[];
+    items: Array<{
+      child: Task;
+      executor: RoomAgent;
+      originalPlanTaskIndex: number;
+      scopeRead: string[];
+      scopeWrite: string[];
+    }>;
+  }
+  | {
+    ok: false;
+    child: Task;
+    originalPlanTaskIndex: number;
+  };
+
+function resolveParallelImplementationExecutors(input: {
+  tools: GraphTools;
+  context: ReturnType<GraphTools['readWorkflowContext']>;
+  state: AgentWorkflowState;
+  batch: Task[];
+  childTaskPlanIndexes: Record<string, number>;
+}): ParallelImplementationExecutorResolution {
+  let executionAgents = input.context.agents;
+  const items: Extract<ParallelImplementationExecutorResolution, { ok: true }>['items'] = [];
+
+  for (const child of input.batch) {
+    const originalPlanTaskIndex = input.childTaskPlanIndexes[child.id] ?? -1;
+    const plannedTask = originalPlanTaskIndex >= 0 ? input.state.plan?.tasks[originalPlanTaskIndex] : undefined;
+    const scopeRead = plannedTask?.scopeRead ?? [];
+    const scopeWrite = plannedTask?.scopeWrite ?? [];
+    let executor = selectExecutorForPlannedChild(executionAgents, child, plannedTask, input.tools);
+    if (!executor && plannedTask) {
+      const provisioning = ensureWorkflowAgentsForRun({
+        roomId: input.context.room.id,
+        agents: executionAgents,
+        planTasks: [plannedTask],
+      });
+      executionAgents = provisioning.agents;
+      broadcastJoinedAgents(input.tools, input.context.room.id, provisioning.joinedAgents);
+      executor = selectExecutorForPlannedChild(executionAgents, child, plannedTask, input.tools);
+    }
+    if (!executor) {
+      return {
+        ok: false,
+        child,
+        originalPlanTaskIndex,
+      };
+    }
+
+    items.push({
+      child,
+      executor,
+      originalPlanTaskIndex,
+      scopeRead,
+      scopeWrite,
+    });
+  }
+
+  return { ok: true, executionAgents, items };
+}
+
 function recordEventSafely(
   tools: GraphTools,
   context: {
@@ -2092,6 +2470,155 @@ function findActiveImplementationRunForChild(
 ): AgentRun | null {
   return tools.listActiveAgentRunsByWorkflow(workflowRunId)
     .find((run) => run.workflow_stage === 'implementation' && run.task_id === childTaskId) ?? null;
+}
+
+function findActiveImplementationRunForChildren(
+  tools: GraphTools,
+  workflowRunId: string,
+  childTaskIds: string[],
+): AgentRun | null {
+  const childTaskIdSet = new Set(childTaskIds);
+  return tools.listActiveAgentRunsByWorkflow(workflowRunId)
+    .find((run) =>
+      run.workflow_stage === 'implementation' &&
+      typeof run.task_id === 'string' &&
+      childTaskIdSet.has(run.task_id)
+    ) ?? null;
+}
+
+function selectParallelImplementationBatch(input: {
+  state: AgentWorkflowState;
+  childTasks: Task[];
+  childTaskPlanIndexes: Record<string, number>;
+  projectPath: string;
+}): Task[] {
+  const workflowPlan = input.state.workflowPlan;
+  if (!workflowPlan) return [];
+  const workflowPlanTaskById = new Map(workflowPlan.tasks.map((task) => [task.id, task]));
+  const selected: Task[] = [];
+  const selectedAgentIds = new Set<string>();
+  const selectedWrites: string[][] = [];
+
+  for (const child of input.childTasks) {
+    if (child.status !== 'todo' && child.status !== 'in_progress') continue;
+    const planIndex = input.childTaskPlanIndexes[child.id] ?? -1;
+    const workflowPlanTask = workflowPlan.tasks[planIndex];
+    const parsedPlanTask = input.state.plan?.tasks[planIndex];
+    if (
+      !workflowPlanTask ||
+      workflowPlanTask.role !== 'executor' ||
+      workflowPlanTask.mode !== 'parallel' ||
+      (workflowPlanTask.status !== 'pending' && workflowPlanTask.status !== 'running')
+    ) {
+      continue;
+    }
+    if (!workflowPlanDependenciesReady(workflowPlanTask.depends_on, workflowPlanTaskById)) continue;
+    const agentId = child.assigned_agent_id ?? workflowPlanTask.agent_id;
+    if (!agentId || selectedAgentIds.has(agentId)) continue;
+    const writes = parsedPlanTask?.scopeWrite ?? [];
+    if (selectedWrites.some((existing) => scopeWritesConflict(existing, writes, input.projectPath))) continue;
+    selected.push(child);
+    selectedAgentIds.add(agentId);
+    selectedWrites.push(writes);
+  }
+
+  return selected.length > 1 ? selected : [];
+}
+
+function selectNextImplementationChild(input: {
+  state: AgentWorkflowState;
+  childTasks: Task[];
+  childTaskPlanIndexes: Record<string, number>;
+}): Task | undefined {
+  const runnableChildren = input.childTasks.filter((child) => child.status === 'todo' || child.status === 'in_progress');
+  const workflowPlan = input.state.workflowPlan;
+  if (!workflowPlan) return runnableChildren[0];
+  const workflowPlanTaskById = new Map(workflowPlan.tasks.map((task) => [task.id, task]));
+  return runnableChildren.find((child) => {
+    const planIndex = input.childTaskPlanIndexes[child.id] ?? -1;
+    const workflowPlanTask = workflowPlan.tasks[planIndex];
+    if (!workflowPlanTask) return true;
+    if (workflowPlanTask.role !== 'executor') return false;
+    if (workflowPlanTask.status !== 'pending' && workflowPlanTask.status !== 'running') return false;
+    return workflowPlanDependenciesReady(workflowPlanTask.depends_on, workflowPlanTaskById);
+  });
+}
+
+function workflowPlanDependenciesReady(
+  dependencyIds: string[],
+  workflowPlanTaskById: Map<string, WorkflowPlanJson['tasks'][number]>,
+): boolean {
+  return dependencyIds.every((dependencyId) => {
+    const dependency = workflowPlanTaskById.get(dependencyId);
+    return dependency?.status === 'completed' || dependency?.status === 'skipped';
+  });
+}
+
+function scopeWritesConflict(left: string[], right: string[], projectPath: string): boolean {
+  if (left.length === 0 || right.length === 0) return false;
+  const normalizedLeft = left.map((scope) => normalizeScopePath(scope, projectPath)).filter((scope): scope is string => scope !== null);
+  const normalizedRight = right.map((scope) => normalizeScopePath(scope, projectPath)).filter((scope): scope is string => scope !== null);
+  return normalizedLeft.some((leftScope) =>
+    normalizedRight.some((rightScope) => scopePathConflicts(leftScope, rightScope))
+  );
+}
+
+function normalizeScopePath(scope: string, projectPath: string): string | null {
+  const trimmed = scope.trim();
+  if (!trimmed) return null;
+  const normalizedProjectPath = projectPath.replace(/\\/gu, '/').replace(/\/+$/u, '');
+  let normalized = trimmed.replace(/\\/gu, '/').replace(/\/+$/u, '');
+  if (normalizedProjectPath && normalized === normalizedProjectPath) return '.';
+  if (normalizedProjectPath && normalized.startsWith(`${normalizedProjectPath}/`)) {
+    normalized = normalized.slice(normalizedProjectPath.length + 1);
+  }
+  normalized = normalized.replace(/^\.\//u, '');
+  return normalized || '.';
+}
+
+function scopePathConflicts(left: string, right: string): boolean {
+  if (isBroadScopePath(left) || isBroadScopePath(right)) return true;
+  return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+}
+
+function isBroadScopePath(scope: string): boolean {
+  return scope === '.' || scope === '/' || scope === '*';
+}
+
+function blockImplementationChildWithoutExecutor(input: {
+  tools: GraphTools;
+  context: ReturnType<GraphTools['readWorkflowContext']>;
+  state: AgentWorkflowState;
+  child: Task;
+  childTaskPlanIndexes: Record<string, number>;
+  originalPlanTaskIndex: number;
+}): AgentWorkflowState {
+  const error = 'No executor available for implementation';
+  const updatedRun = input.tools.updateRun(input.context.run.id, {
+    status: 'blocked',
+    current_stage: 'implementation',
+    error,
+  });
+  if (updatedRun) input.tools.broadcastWorkflowUpdated(updatedRun);
+  const nextState: AgentWorkflowState = {
+    ...input.state,
+    workflowPlan: updateWorkflowPlanTaskByIndex(input.state.workflowPlan ?? null, input.originalPlanTaskIndex, {
+      status: 'blocked',
+      progress: 0,
+    }),
+    childTaskPlanIndexes: input.childTaskPlanIndexes,
+    currentNode: 'execute',
+    status: 'blocked',
+    error,
+  };
+  input.tools.updateGraphState(input.context.run.id, serializeGraphState(nextState));
+  recordEventSafely(input.tools, input.context, {
+    eventType: 'workflow_blocked',
+    task: input.child,
+    content: `子任务「${input.child.title}」没有可用执行智能体，工作流已阻塞。`,
+    metadata: { graph_node: 'execute', workflow_stage: 'implementation', error },
+  });
+  return nextState;
 }
 
 function updateWorkflowPlanAssignments(

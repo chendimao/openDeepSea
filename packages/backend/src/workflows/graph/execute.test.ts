@@ -4,7 +4,8 @@ import { mkdtempSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { WebSocket } from 'ws';
-import type { WsServerEvent } from '../../types.js';
+import type { RespondAsAgentInput } from '../../dispatcher.js';
+import type { RoomAgent, WsServerEvent } from '../../types.js';
 
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-graph-execute-')), 'test.db');
 
@@ -185,6 +186,727 @@ test('execute node starts assigned ACP agent and records completed implementatio
   assert.equal(nextState.currentNode, 'execute');
   assert.equal(nextState.currentStepId, step?.id ?? null);
   assert.equal(nextState.activeAgentRunId, fakeRunId);
+});
+
+test('execute node starts independent ready implementation children in parallel', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-execute-parallel-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Execute Parallel', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Execute Parallel Room' });
+  const backend = createAcpExecutor(room.id, 'parallel-backend', ['packages/backend']);
+  const frontend = createAcpExecutor(room.id, 'parallel-frontend', ['packages/frontend']);
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Parallel parent task',
+  });
+  const backendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Backend child',
+    description: 'Implement backend change.',
+    assigned_agent_id: backend.id,
+    created_from: 'workflow_assignment',
+  });
+  const frontendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Frontend child',
+    description: 'Implement frontend change.',
+    assigned_agent_id: frontend.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+  const started: string[] = [];
+  const release: Record<string, () => void> = {};
+  const tools = createGraphTools({
+    runAcpAgent: async (input) => {
+      started.push(input.agent.id);
+      await new Promise<void>((resolve) => {
+        release[input.agent.id] = resolve;
+      });
+      return createCompletedGraphAgentRun(room.id, input, 'parallel implementation done');
+    },
+  });
+  const nodes = createGraphNodes(tools);
+
+  const running = nodes.executeNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Run independent children in parallel',
+      assumptions: [],
+      tasks: [
+        {
+          title: backendChild.title,
+          description: backendChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Backend implementation reaches review'],
+          scopeRead: ['packages/backend/src/routes.ts'],
+          scopeWrite: ['packages/backend/src/routes.ts'],
+          dependsOn: [],
+        },
+        {
+          title: frontendChild.title,
+          description: frontendChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Frontend implementation reaches review'],
+          scopeRead: ['packages/frontend/src/pages/FilesPage.tsx'],
+          scopeWrite: ['packages/frontend/src/pages/FilesPage.tsx'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    workflowPlan: {
+      workflow_name: parentTask.title,
+      source_message_id: parentTask.id,
+      goal: parentTask.title,
+      summary: 'Run independent children in parallel',
+      tasks: [
+        {
+          id: 'task-1-backend-child',
+          title: backendChild.title,
+          description: backendChild.description ?? '',
+          role: 'executor',
+          agent_id: backend.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+        {
+          id: 'task-2-frontend-child',
+          title: frontendChild.title,
+          description: frontendChild.description ?? '',
+          role: 'executor',
+          agent_id: frontend.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+      ],
+    },
+    currentNode: 'dispatch',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [backendChild.id, frontendChild.id],
+    childTaskPlanIndexes: {
+      [backendChild.id]: 0,
+      [frontendChild.id]: 1,
+    },
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  });
+
+  await waitForExecuteTest(() => started.includes(backend.id) && started.includes(frontend.id));
+  assert.deepEqual([...started].sort(), [backend.id, frontend.id].sort());
+  release[backend.id]?.();
+  release[frontend.id]?.();
+  const nextState = await running;
+
+  assert.equal(taskRepo.get(backendChild.id)?.status, 'review');
+  assert.equal(taskRepo.get(frontendChild.id)?.status, 'review');
+  assert.deepEqual(nextState.workflowPlan?.tasks.map((task) => task.status), ['completed', 'completed']);
+  assert.equal(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length, 2);
+});
+
+test('execute node does not parallelize implementation children with conflicting write scopes', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-execute-conflict-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Execute Conflict', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Execute Conflict Room' });
+  const firstExecutor = createAcpExecutor(room.id, 'conflict-backend-a', ['packages/backend']);
+  const secondExecutor = createAcpExecutor(room.id, 'conflict-backend-b', ['packages/backend']);
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Conflicting parent task',
+  });
+  const firstChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'First backend child',
+    description: 'Modify backend route.',
+    assigned_agent_id: firstExecutor.id,
+    created_from: 'workflow_assignment',
+  });
+  const secondChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Second backend child',
+    description: 'Modify same backend route.',
+    assigned_agent_id: secondExecutor.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+  const started: string[] = [];
+  const nodes = createGraphNodes(createGraphTools({
+    runAcpAgent: async (input) => {
+      started.push(input.agent.id);
+      return createCompletedGraphAgentRun(room.id, input, 'single conflicting implementation done');
+    },
+  }));
+
+  const nextState = await nodes.executeNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Do not run conflicting writes together',
+      assumptions: [],
+      tasks: [
+        {
+          title: firstChild.title,
+          description: firstChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['First child reaches review'],
+          scopeRead: ['packages/backend/src/routes.ts'],
+          scopeWrite: ['packages/backend/src/routes.ts'],
+          dependsOn: [],
+        },
+        {
+          title: secondChild.title,
+          description: secondChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Second child waits'],
+          scopeRead: ['packages/backend/src/routes.ts'],
+          scopeWrite: ['packages/backend/src/routes.ts'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    workflowPlan: {
+      workflow_name: parentTask.title,
+      source_message_id: parentTask.id,
+      goal: parentTask.title,
+      summary: 'Do not run conflicting writes together',
+      tasks: [
+        {
+          id: 'task-1-first-backend-child',
+          title: firstChild.title,
+          description: firstChild.description ?? '',
+          role: 'executor',
+          agent_id: firstExecutor.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+        {
+          id: 'task-2-second-backend-child',
+          title: secondChild.title,
+          description: secondChild.description ?? '',
+          role: 'executor',
+          agent_id: secondExecutor.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+      ],
+    },
+    currentNode: 'dispatch',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [firstChild.id, secondChild.id],
+    childTaskPlanIndexes: {
+      [firstChild.id]: 0,
+      [secondChild.id]: 1,
+    },
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  });
+
+  assert.deepEqual(started, [firstExecutor.id]);
+  assert.equal(taskRepo.get(firstChild.id)?.status, 'review');
+  assert.equal(taskRepo.get(secondChild.id)?.status, 'todo');
+  assert.deepEqual(nextState.workflowPlan?.tasks.map((task) => task.status), ['completed', 'pending']);
+  assert.equal(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length, 1);
+});
+
+test('execute node blocks parallel batch without partial steps when a child has no executor', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-execute-parallel-missing-executor-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Execute Missing Parallel Executor', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Execute Missing Parallel Executor Room' });
+  const backend = createAcpExecutor(room.id, 'missing-backend', ['packages/backend']);
+  const legacyExecutor = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: `missing-legacy-${Date.now()}`,
+    agent_name: 'Missing Legacy Executor',
+  });
+  const legacyWithRole = roomAgentRepo.setWorkflowRole(legacyExecutor.id, 'executor') ?? legacyExecutor;
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Parallel missing executor parent task',
+  });
+  const backendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Backend ready child without partial run',
+    description: 'Would run if all batch executors were valid.',
+    assigned_agent_id: backend.id,
+    created_from: 'workflow_assignment',
+  });
+  const legacyChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Legacy child without ACP',
+    description: 'Cannot run because assigned executor has no ACP runtime.',
+    assigned_agent_id: legacyWithRole.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+  let calls = 0;
+  const nodes = createGraphNodes(createGraphTools({
+    runAcpAgent: async () => {
+      calls += 1;
+      throw new Error('runAcpAgent should not be called when a parallel batch executor is missing');
+    },
+  }));
+
+  const nextState = await nodes.executeNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Block before partially preparing a parallel batch',
+      assumptions: [],
+      tasks: [
+        {
+          title: backendChild.title,
+          description: backendChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Backend child is not partially started'],
+          scopeRead: ['packages/backend/src/routes.ts'],
+          scopeWrite: ['packages/backend/src/routes.ts'],
+          dependsOn: [],
+        },
+        {
+          title: legacyChild.title,
+          description: legacyChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Batch blocks because executor is unavailable'],
+          scopeRead: ['packages/frontend/src/pages/FilesPage.tsx'],
+          scopeWrite: ['packages/frontend/src/pages/FilesPage.tsx'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    workflowPlan: {
+      workflow_name: parentTask.title,
+      source_message_id: parentTask.id,
+      goal: parentTask.title,
+      summary: 'Block before partially preparing a parallel batch',
+      tasks: [
+        {
+          id: 'task-1-backend-ready-child-without-partial-run',
+          title: backendChild.title,
+          description: backendChild.description ?? '',
+          role: 'executor',
+          agent_id: backend.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+        {
+          id: 'task-2-legacy-child-without-acp',
+          title: legacyChild.title,
+          description: legacyChild.description ?? '',
+          role: 'executor',
+          agent_id: legacyWithRole.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+      ],
+    },
+    currentNode: 'dispatch',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [backendChild.id, legacyChild.id],
+    childTaskPlanIndexes: {
+      [backendChild.id]: 0,
+      [legacyChild.id]: 1,
+    },
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  });
+
+  assert.equal(calls, 0);
+  assert.equal(nextState.status, 'blocked');
+  assert.match(nextState.error ?? '', /No executor available/);
+  assert.equal(taskRepo.get(backendChild.id)?.status, 'todo');
+  assert.equal(taskRepo.get(legacyChild.id)?.status, 'todo');
+  assert.deepEqual(nextState.workflowPlan?.tasks.map((task) => task.status), ['pending', 'blocked']);
+  assert.equal(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length, 0);
+});
+
+test('execute node waits for workflowPlan dependencies before parallel implementation', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-execute-depends-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Execute Depends', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Execute Depends Room' });
+  const backend = createAcpExecutor(room.id, 'depends-backend', ['packages/backend']);
+  const frontend = createAcpExecutor(room.id, 'depends-frontend', ['packages/frontend']);
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Dependent parent task',
+  });
+  const backendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Backend dependency child',
+    description: 'Implement dependency first.',
+    assigned_agent_id: backend.id,
+    created_from: 'workflow_assignment',
+  });
+  const frontendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Frontend dependent child',
+    description: 'Wait for backend dependency.',
+    assigned_agent_id: frontend.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+  const started: string[] = [];
+  const nodes = createGraphNodes(createGraphTools({
+    runAcpAgent: async (input) => {
+      started.push(input.agent.id);
+      return createCompletedGraphAgentRun(room.id, input, 'dependency implementation done');
+    },
+  }));
+
+  const nextState = await nodes.executeNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Respect workflow plan dependencies',
+      assumptions: [],
+      tasks: [
+        {
+          title: backendChild.title,
+          description: backendChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Backend reaches review'],
+          scopeRead: ['packages/backend/src/routes.ts'],
+          scopeWrite: ['packages/backend/src/routes.ts'],
+          dependsOn: [],
+        },
+        {
+          title: frontendChild.title,
+          description: frontendChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Frontend waits for dependency'],
+          scopeRead: ['packages/frontend/src/pages/FilesPage.tsx'],
+          scopeWrite: ['packages/frontend/src/pages/FilesPage.tsx'],
+          dependsOn: ['Backend dependency child'],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    workflowPlan: {
+      workflow_name: parentTask.title,
+      source_message_id: parentTask.id,
+      goal: parentTask.title,
+      summary: 'Respect workflow plan dependencies',
+      tasks: [
+        {
+          id: 'task-1-backend-dependency-child',
+          title: backendChild.title,
+          description: backendChild.description ?? '',
+          role: 'executor',
+          agent_id: backend.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+        {
+          id: 'task-2-frontend-dependent-child',
+          title: frontendChild.title,
+          description: frontendChild.description ?? '',
+          role: 'executor',
+          agent_id: frontend.id,
+          mode: 'parallel',
+          depends_on: ['task-1-backend-dependency-child'],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+      ],
+    },
+    currentNode: 'dispatch',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [backendChild.id, frontendChild.id],
+    childTaskPlanIndexes: {
+      [backendChild.id]: 0,
+      [frontendChild.id]: 1,
+    },
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  });
+
+  assert.deepEqual(started, [backend.id]);
+  assert.equal(taskRepo.get(backendChild.id)?.status, 'review');
+  assert.equal(taskRepo.get(frontendChild.id)?.status, 'todo');
+  assert.deepEqual(nextState.workflowPlan?.tasks.map((task) => task.status), ['completed', 'pending']);
+  assert.equal(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length, 1);
+});
+
+test('execute node skips a dependency-blocked child and starts the next ready child', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-execute-ready-sibling-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Execute Ready Sibling', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Execute Ready Sibling Room' });
+  const backend = createAcpExecutor(room.id, 'ready-backend', ['packages/backend']);
+  const frontend = createAcpExecutor(room.id, 'ready-frontend', ['packages/frontend']);
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Ready sibling parent task',
+  });
+  const frontendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Frontend blocked child',
+    description: 'Waits for backend.',
+    assigned_agent_id: frontend.id,
+    created_from: 'workflow_assignment',
+  });
+  const backendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Backend ready child',
+    description: 'Can run first.',
+    assigned_agent_id: backend.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+  const started: string[] = [];
+  const nodes = createGraphNodes(createGraphTools({
+    runAcpAgent: async (input) => {
+      started.push(input.agent.id);
+      return createCompletedGraphAgentRun(room.id, input, 'ready sibling implementation done');
+    },
+  }));
+
+  const nextState = await nodes.executeNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Run ready sibling before dependency-blocked child',
+      assumptions: [],
+      tasks: [
+        {
+          title: frontendChild.title,
+          description: frontendChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Frontend waits'],
+          scopeRead: ['packages/frontend/src/pages/FilesPage.tsx'],
+          scopeWrite: ['packages/frontend/src/pages/FilesPage.tsx'],
+          dependsOn: ['Backend ready child'],
+        },
+        {
+          title: backendChild.title,
+          description: backendChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Backend reaches review'],
+          scopeRead: ['packages/backend/src/routes.ts'],
+          scopeWrite: ['packages/backend/src/routes.ts'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    workflowPlan: {
+      workflow_name: parentTask.title,
+      source_message_id: parentTask.id,
+      goal: parentTask.title,
+      summary: 'Run ready sibling before dependency-blocked child',
+      tasks: [
+        {
+          id: 'task-1-frontend-blocked-child',
+          title: frontendChild.title,
+          description: frontendChild.description ?? '',
+          role: 'executor',
+          agent_id: frontend.id,
+          mode: 'parallel',
+          depends_on: ['task-2-backend-ready-child'],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+        {
+          id: 'task-2-backend-ready-child',
+          title: backendChild.title,
+          description: backendChild.description ?? '',
+          role: 'executor',
+          agent_id: backend.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+      ],
+    },
+    currentNode: 'dispatch',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [frontendChild.id, backendChild.id],
+    childTaskPlanIndexes: {
+      [frontendChild.id]: 0,
+      [backendChild.id]: 1,
+    },
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  });
+
+  assert.deepEqual(started, [backend.id]);
+  assert.equal(taskRepo.get(frontendChild.id)?.status, 'todo');
+  assert.equal(taskRepo.get(backendChild.id)?.status, 'review');
+  assert.deepEqual(nextState.workflowPlan?.tasks.map((task) => task.status), ['pending', 'completed']);
 });
 
 test('execute node reuses active workflow run instead of starting duplicate ACP execution', async () => {
@@ -783,4 +1505,62 @@ function captureRoomEvents(roomId: string): { events: WsServerEvent[]; cleanup: 
     events,
     cleanup: () => wsHub.removeSocket(socket),
   };
+}
+
+function createAcpExecutor(roomId: string, agentId: string, writableDirs: string[]): RoomAgent {
+  const agent = roomAgentRepo.add({
+    room_id: roomId,
+    agent_id: `${agentId}-${Date.now()}-${Math.random()}`,
+    agent_name: agentId,
+  });
+  const withRole = roomAgentRepo.setWorkflowRole(agent.id, 'executor') ?? agent;
+  const withAcp = roomAgentRepo.setAcp(withRole.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'workspace-write',
+  }) ?? withRole;
+  return roomAgentRepo.setCapabilitiesAndRuntime(withAcp.id, {
+    capabilities: withAcp.capabilities,
+    default_runtime: withAcp.default_runtime,
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: writableDirs },
+  }) ?? withAcp;
+}
+
+function createCompletedGraphAgentRun(roomId: string, input: RespondAsAgentInput, output: string) {
+  const run = agentRunRepo.create({
+    room_id: roomId,
+    room_agent_id: input.agent.id,
+    agent_id: input.agent.agent_id,
+    backend: input.agent.acp_backend ?? 'codex',
+    task_id: input.taskId ?? null,
+    workflow_run_id: input.workflowRunId ?? null,
+    workflow_step_id: input.workflowStepId ?? null,
+    workflow_stage: input.workflowStage ?? null,
+    prompt: input.prompt,
+  });
+  const completedRun = agentRunRepo.updateStatus(run.id, 'completed', { stdout: output }) ?? run;
+  const message = messageRepo.create({
+    room_id: roomId,
+    sender_type: 'agent',
+    sender_id: input.agent.agent_id,
+    sender_name: input.agent.agent_name,
+    content: output,
+    message_type: 'agent_stream',
+  });
+  return {
+    run: completedRun,
+    message,
+    status: 'completed' as const,
+  };
+}
+
+async function waitForExecuteTest(predicate: () => boolean, attempts = 20): Promise<void> {
+  for (let index = 0; index < attempts; index += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal(predicate(), true);
 }
