@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import React from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider, useI18n } from '../lib/i18n';
+import type { SystemSettings } from '../lib/types';
 import {
   DesktopDataSectionView,
   GLOBAL_SESSION_PROMPT_LIMIT,
+  SystemSettingsForm,
   buildGlobalSessionPromptCounterLabel,
   buildGlobalSessionPromptSaveValue,
   shouldShowDesktopDataSection,
@@ -38,6 +41,19 @@ test('settings copy includes global session prompt category', () => {
   assert.match(html, /会话提示词/);
   assert.match(html, /全局会话提示词/);
   assert.match(html, /未启用全局注入/);
+});
+
+test('system chat settings hide routing fallback and project takeover controls', () => {
+  const html = renderSystemSettingsForm('chat');
+
+  assert.match(html, /聊天设置/);
+  assert.match(html, /交互策略/);
+  assert.match(html, /自动记忆/);
+  assert.match(html, /工作区排除目录/);
+  assert.doesNotMatch(html, /只响应 @/);
+  assert.doesNotMatch(html, /兜底回复/);
+  assert.doesNotMatch(html, /兜底智能体/);
+  assert.doesNotMatch(html, /项目接管/);
 });
 
 test('desktop data section is only visible when Electron desktop API exists', () => {
@@ -154,4 +170,52 @@ function SettingsPromptCopyProbe(): React.ReactElement {
       <p>{t('settings.globalSessionPromptEmpty')}</p>
     </section>
   );
+}
+
+function renderSystemSettingsForm(activeCategory: 'general' | 'sessionPrompt' | 'chat' | 'model'): string {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return renderToStaticMarkup(
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        <SystemSettingsForm
+          theme="apple-light"
+          value={createSystemSettings()}
+          aiConfigs={{ active_ai_config_id: null, items: [] }}
+          providerConfigs={null}
+          isProviderConfigsLoading={false}
+          providerConfigsError={null}
+          isSaving={false}
+          activeCategory={activeCategory}
+          hideCategoryNavigation
+          onThemeChange={() => undefined}
+          onSave={() => undefined}
+        />
+      </QueryClientProvider>
+    </I18nProvider>,
+  );
+}
+
+function createSystemSettings(): SystemSettings {
+  return {
+    message_routing_mode: 'fallback_reply',
+    fallback_agent_id: 'planner',
+    interaction_mode: 'ask_user',
+    auto_distill_enabled: true,
+    default_workflow_definition_id: null,
+    superpowers_bootstrap_owner: 'provider',
+    workspace_excluded_dirs: ['node_modules'],
+    session_planner_acp_backend: null,
+    active_ai_config_id: null,
+    ai_configs: [],
+    langchain_planner_model: null,
+    openai_base_url: null,
+    openai_api_key_set: false,
+    openai_api_key_preview: null,
+    knowledge_embedding_provider: 'local-hash',
+    knowledge_embedding_model: null,
+    knowledge_embedding_dimensions: null,
+    knowledge_embedding_base_url: null,
+    knowledge_embedding_api_key_env_var: null,
+    global_session_prompt: null,
+  };
 }
