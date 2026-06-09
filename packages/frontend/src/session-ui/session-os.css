@@ -2550,10 +2550,14 @@
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   margin-left: auto;
   flex-wrap: wrap;
   justify-content: flex-end;
+  border: 1px solid rgba(226, 232, 240, 0.76);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.05);
+  padding: 2px;
 }
 .deepsea-message-tools:empty {
   display: none;
@@ -2566,30 +2570,26 @@
   min-height: 22px;
   align-items: center;
   gap: 4px;
-  border: 1px solid rgba(226, 232, 240, 0.76);
+  border: 0;
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.05);
+  background: transparent;
   color: rgba(67, 70, 85, 0.72);
   padding: 2px 7px;
   font-size: 10px;
   font-weight: 800;
   line-height: 1;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  box-shadow: none;
   cursor: pointer;
   white-space: nowrap;
 }
 .deepsea-message__action[data-action="copy"] {
-  border-color: rgba(37, 99, 235, 0.34);
-  background: rgba(255, 255, 255, 0.72);
   color: var(--deepsea-primary-bright);
 }
 .deepsea-message__action:hover:not(:disabled) {
-  border-color: rgba(37, 99, 235, 0.32);
   background: rgba(255, 255, 255, 0.55);
   color: var(--deepsea-primary-bright);
 }
 .deepsea-message__action[data-state="copied"] {
-  border-color: transparent;
   background: var(--deepsea-primary-bright);
   color: #fff;
   box-shadow: 0 4px 10px rgba(37, 99, 235, 0.18);
@@ -2610,10 +2610,9 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  border: 1px solid rgba(226, 232, 240, 0.76);
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.05);
-  padding: 2px;
+  border: 0;
+  background: transparent;
+  padding: 0;
 }
 .deepsea-markdown-switch button {
   display: inline-flex;
