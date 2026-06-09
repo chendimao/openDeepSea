@@ -58,6 +58,8 @@ test('applySuperpowersBootstrap injects project-builtin brainstorming for matchi
   assert.match(result.prompt, /Source: project-builtin/);
   assert.match(result.prompt, /packages\/backend\/src\/project-superpowers\/skills\/brainstorming\/SKILL\.md/);
   assert.match(result.prompt, /# Brainstorming Ideas Into Designs/);
+  assert.match(result.prompt, /Match the offer language to the current system\/UI language/);
+  assert.match(result.prompt, /有些内容如果能在浏览器里展示/);
   assert.match(result.prompt, /# Writing Plans/);
   assert.match(result.prompt, /Do not call provider-native Skill\/use_skill\/activate_skill tools/);
   assert.match(result.prompt, /Do not read or invoke same-name skills from external personal\/plugin directories/);

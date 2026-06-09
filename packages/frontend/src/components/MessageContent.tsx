@@ -23,6 +23,15 @@ type JsonObject = StructuredJsonObject;
 
 const fencePattern = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
 const streamingCursorToken = '\uE000';
+const visualCompanionOfferEnglish =
+  "Some of what we're working on might be easier to explain if I can show it to you in a web browser. I can put together mockups, diagrams, comparisons, and other visuals as we go. This feature is still new and can be token-intensive. Want to try it? (Requires opening a local URL)";
+const visualCompanionOfferChinese =
+  '有些内容如果能在浏览器里展示，会更容易解释清楚。我可以在过程中为你准备 mockup、图表、方案对比和其他视觉内容。这个功能还比较新，可能会消耗较多 token。要试试看吗？（需要打开一个本地 URL）';
+
+function localizeKnownAssistantMessageText(content: string, locale: 'zh' | 'en'): string {
+  if (locale !== 'zh' || !content.includes(visualCompanionOfferEnglish)) return content;
+  return content.split(visualCompanionOfferEnglish).join(visualCompanionOfferChinese);
+}
 
 const jsonValueLabels: Record<string, string> = {
   formal_workflow: '正式工作流',
@@ -107,14 +116,15 @@ export function MessageContent({
   suppressTraceEvents?: boolean;
 }): JSX.Element {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const agentNameById = useMemo(() => buildAgentNameMap(roomAgents, globalAgents), [globalAgents, roomAgents]);
   const taskTitleById = useMemo(() => buildTaskTitleMap(tasks), [tasks]);
-  const parts = parseMessage(content);
-  const markdown = streaming ? isStableStreamingMarkdownContent(content) : isMarkdownContent(content);
   const activeMode = mode ?? 'preview';
+  const displayContent = activeMode === 'source' ? content : localizeKnownAssistantMessageText(content, locale);
+  const parts = parseMessage(displayContent);
+  const markdown = streaming ? isStableStreamingMarkdownContent(displayContent) : isMarkdownContent(displayContent);
   const lastTextPartIndex = findLastTextPartIndex(parts);
-  const transcript = activeMode !== 'source' ? buildAgentTranscript(trace, content) : null;
+  const transcript = activeMode !== 'source' ? buildAgentTranscript(trace, displayContent) : null;
 
   const copyCode = async (code: string, index: number) => {
     try {
@@ -137,6 +147,7 @@ export function MessageContent({
           suppressTaskExecutionSummary={suppressTaskExecutionSummary}
           suppressWorkflowJsonBlocks={suppressWorkflowJsonBlocks}
           suppressTraceEvents={suppressTraceEvents}
+          locale={locale}
         />
       ) : activeMode === 'source' ? (
         <CodeBlock
@@ -152,7 +163,7 @@ export function MessageContent({
           <div>
             {markdown ? (
               <MarkdownPreview
-                content={content}
+                content={displayContent}
                 streaming={streaming}
                 agentNameById={agentNameById}
                 taskTitleById={taskTitleById}
@@ -204,6 +215,7 @@ function AgentTranscriptView({
   suppressTaskExecutionSummary = false,
   suppressWorkflowJsonBlocks = false,
   suppressTraceEvents = false,
+  locale,
 }: {
   transcript: AgentTranscriptModel;
   streaming: boolean;
@@ -212,6 +224,7 @@ function AgentTranscriptView({
   suppressTaskExecutionSummary?: boolean;
   suppressWorkflowJsonBlocks?: boolean;
   suppressTraceEvents?: boolean;
+  locale: 'zh' | 'en';
 }): JSX.Element {
   return (
     <div className="agent-transcript">
@@ -221,7 +234,7 @@ function AgentTranscriptView({
         return item.type === 'text' ? (
           <div key={item.id} className="agent-transcript-text">
             <MarkdownPreview
-              content={item.text}
+              content={localizeKnownAssistantMessageText(item.text, locale)}
               streaming={streaming && index === transcript.items.length - 1}
               agentNameById={agentNameById}
               taskTitleById={taskTitleById}
@@ -299,9 +312,10 @@ export function MarkdownPreview({
   suppressTaskExecutionSummary?: boolean;
   suppressWorkflowJsonBlocks?: boolean;
 }): JSX.Element {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  const parts = parseMessage(content);
+  const displayContent = localizeKnownAssistantMessageText(content, locale);
+  const parts = parseMessage(displayContent);
   const lastTextPartIndex = findLastTextPartIndex(parts);
 
   const copyCode = async (code: string, index: number) => {

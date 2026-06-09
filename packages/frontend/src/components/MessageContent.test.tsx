@@ -244,6 +244,16 @@ test('renders known agent ids in markdown text as Chinese agent names', () => {
   assert.match(html, /<code>frontend-reviewer<\/code>/);
 });
 
+test('localizes the Superpowers visual companion offer in Chinese preview mode', () => {
+  const html = renderMessage(
+    "Some of what we're working on might be easier to explain if I can show it to you in a web browser. I can put together mockups, diagrams, comparisons, and other visuals as we go. This feature is still new and can be token-intensive. Want to try it? (Requires opening a local URL)",
+  );
+
+  assert.match(html, /如果能在浏览器里展示/);
+  assert.match(html, /要试试看吗/);
+  assert.doesNotMatch(html, /Some of what we&#x27;re working on/);
+});
+
 test('renders known agent ids in plain text as Chinese agent names', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>
