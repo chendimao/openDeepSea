@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { ChevronRight, File, Folder, FolderOpen, RefreshCcw } from 'lucide-react';
+import { ChevronRight, File, FilePlus, Folder, FolderOpen, FolderPlus, RefreshCcw } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   StaticTreeDataProvider,
@@ -16,6 +16,7 @@ type TreeItemData = WorkspaceDirectoryEntry & { title: string };
 type WorkspaceTreeItem = TreeItem<TreeItemData>;
 
 const ROOT_ITEM_ID = 'workspace-root';
+const PROJECT_ROOT_ITEM_ID = 'workspace-project-root';
 const WORKSPACE_TREE_ID = 'workspace-tree';
 
 export function WorkspaceFileTree({
@@ -32,6 +33,7 @@ export function WorkspaceFileTree({
   const [loadedDirs, setLoadedDirs] = useState<Record<string, WorkspaceDirectoryEntry[]>>({});
   const [failedDirs, setFailedDirs] = useState<Record<string, string>>({});
   const hasAutoOpenedRef = useRef(false);
+  const treeRef = useRef<HTMLDivElement | null>(null);
   const rootQuery = useQuery({
     queryKey: ['workspace-tree', projectId, ''],
     queryFn: () => api.listWorkspaceDirectory(projectId, ''),
@@ -49,6 +51,7 @@ export function WorkspaceFileTree({
   const viewState = useMemo(
     () => ({
       [WORKSPACE_TREE_ID]: {
+        expandedItems: [PROJECT_ROOT_ITEM_ID],
         selectedItems: activePath ? [activePath] : [],
       },
     }),
@@ -69,6 +72,39 @@ export function WorkspaceFileTree({
     onOpenFile(initialFile);
   }, [autoOpenRootFile, onOpenFile, rootEntries]);
 
+  useEffect(() => {
+    if (!activePath) return;
+    const scrollActiveItemIntoView = () => {
+      const activeItem = treeRef.current
+        ?.querySelector<HTMLElement>('.deepsea-workspace-tree__title[data-active="true"]');
+      const scroller = treeRef.current?.closest<HTMLElement>('.deepsea-file-browser__tree');
+      if (!activeItem || !scroller) return;
+
+      const activeTop = activeItem.offsetTop;
+      const activeBottom = activeTop + activeItem.offsetHeight;
+      if (activeTop < scroller.scrollTop) {
+        scroller.scrollTop = Math.max(0, activeTop - 12);
+      } else if (activeBottom > scroller.scrollTop + scroller.clientHeight) {
+        scroller.scrollTop = activeBottom - scroller.clientHeight + 12;
+      }
+
+      const activeRect = activeItem.getBoundingClientRect();
+      const scrollerRect = scroller.getBoundingClientRect();
+      if (activeRect.top < scrollerRect.top) {
+        scroller.scrollTop -= scrollerRect.top - activeRect.top + 12;
+      } else if (activeRect.bottom > scrollerRect.bottom) {
+        scroller.scrollTop += activeRect.bottom - scrollerRect.bottom + 12;
+      }
+    };
+
+    const frame = window.requestAnimationFrame(scrollActiveItemIntoView);
+    const timer = window.setTimeout(scrollActiveItemIntoView, 120);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [activePath]);
+
   if (rootQuery.isLoading) return <FileTreeState>正在加载目录...</FileTreeState>;
   if (rootQuery.isError) {
     return (
@@ -83,7 +119,14 @@ export function WorkspaceFileTree({
   }
 
   return (
-    <div className="deepsea-workspace-tree">
+    <div ref={treeRef} className="deepsea-workspace-tree">
+      <div className="deepsea-workspace-tree__header">
+        <span>资源管理器</span>
+        <div aria-hidden="true">
+          <FolderPlus />
+          <FilePlus />
+        </div>
+      </div>
       {Object.keys(failedDirs).length > 0 ? (
         <div className="deepsea-workspace-tree__notice">部分目录读取失败</div>
       ) : null}
@@ -103,6 +146,7 @@ export function WorkspaceFileTree({
           if (entry?.type === 'file') onOpenFile(entry);
         }}
         onExpandItem={(item) => {
+          if (item.index === PROJECT_ROOT_ITEM_ID) return;
           if (item.data.type !== 'directory' || loadedDirs[item.data.path]) return;
           void api.listWorkspaceDirectory(projectId, item.data.path)
             .then((result) => {
@@ -152,10 +196,14 @@ function WorkspaceTreeTitle({
   isActive: boolean;
 }): JSX.Element {
   const Icon = item.data.type === 'directory' ? (item.children?.length ? FolderOpen : Folder) : File;
+  const extension = item.data.type === 'file' ? getFileExtension(item.data.name || item.data.path) : '';
   return (
     <span
       className="deepsea-workspace-tree__title"
       data-active={isActive ? 'true' : undefined}
+      data-entry-type={item.data.type}
+      data-extension={extension || undefined}
+      data-root={item.index === PROJECT_ROOT_ITEM_ID ? 'true' : undefined}
       title={failedMessage ?? item.data.path}
     >
       <Icon aria-hidden="true" />
@@ -177,10 +225,25 @@ function buildTreeItems(
       index: ROOT_ITEM_ID,
       canMove: false,
       isFolder: true,
-      children: rootEntries.map((entry) => entry.path),
+      children: [PROJECT_ROOT_ITEM_ID],
       data: {
         name: 'root',
         title: 'root',
+        path: '',
+        type: 'directory',
+        size: null,
+        mimeType: null,
+        language: null,
+      },
+    },
+    [PROJECT_ROOT_ITEM_ID]: {
+      index: PROJECT_ROOT_ITEM_ID,
+      canMove: false,
+      isFolder: true,
+      children: rootEntries.map((entry) => entry.path),
+      data: {
+        name: 'openDeepSea',
+        title: 'openDeepSea',
         path: '',
         type: 'directory',
         size: null,
@@ -213,4 +276,11 @@ function findEntry(
   if (itemId === undefined) return null;
   const item = treeItems[itemId];
   return item?.data ?? null;
+}
+
+function getFileExtension(name: string): string {
+  const lastSegment = name.split(/[\\/]/u).pop() ?? name;
+  const dotIndex = lastSegment.lastIndexOf('.');
+  if (dotIndex <= 0 || dotIndex === lastSegment.length - 1) return '';
+  return lastSegment.slice(dotIndex + 1).toLowerCase();
 }

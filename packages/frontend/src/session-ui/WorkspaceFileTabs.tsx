@@ -91,8 +91,13 @@ export function WorkspaceFileTabs({
         onRenderTab={(node: TabNode, renderValues) => {
           const tab = tabsById.get(node.getId());
           renderValues.content = (
-            <span className="deepsea-file-tab-title" title={tab?.path ?? node.getName()}>
-              {node.getName()}
+            <span
+              className="deepsea-file-tab-title"
+              data-extension={getFileExtension(tab?.name ?? node.getName()) || undefined}
+              title={tab?.path ?? node.getName()}
+            >
+              <span className="deepsea-file-tab-title__icon" aria-hidden="true" />
+              <span>{node.getName()}</span>
             </span>
           );
         }}
@@ -141,4 +146,11 @@ function createFileTabsModel(tabs: WorkspaceFileTab[], activePath: string | null
 
 function areSameOrder(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function getFileExtension(name: string): string {
+  const lastSegment = name.split(/[\\/]/u).pop() ?? name;
+  const dotIndex = lastSegment.lastIndexOf('.');
+  if (dotIndex <= 0 || dotIndex === lastSegment.length - 1) return '';
+  return lastSegment.slice(dotIndex + 1).toLowerCase();
 }

@@ -1,7 +1,7 @@
-import Editor from '@monaco-editor/react';
+import Editor, { type Monaco } from '@monaco-editor/react';
 import { useQuery } from '@tanstack/react-query';
 import React, { useEffect, useState } from 'react';
-import { RefreshCcw } from 'lucide-react';
+import { ChevronDown, ChevronUp, RefreshCcw, Search, X } from 'lucide-react';
 import { api } from '../lib/api';
 import type { WorkspaceFilePreview } from '../lib/types';
 import type { WorkspaceFileTab } from './workspace-file-model';
@@ -41,21 +41,44 @@ function MonacoTextViewer({ projectId, tab }: { projectId: string; tab: Workspac
         path={tab.path}
         language={languageForMonaco(data, tab)}
         value={data.content}
-        theme="vs-dark"
+        theme="deepsea-command-light"
         loading={<CodePreviewFallback content={data.content} />}
+        beforeMount={defineDeepseaCommandLightTheme}
         options={{
           readOnly: true,
           minimap: { enabled: false },
           fontFamily: '"JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-          fontSize: 12,
-          lineHeight: 18,
+          fontSize: 13,
+          lineHeight: 20,
           scrollBeyondLastLine: false,
           wordWrap: 'on',
           automaticLayout: true,
           renderLineHighlight: 'line',
           overviewRulerBorder: false,
+          glyphMargin: false,
+          folding: false,
+          lineDecorationsWidth: 0,
+          lineNumbersMinChars: 3,
+          padding: { top: 14, bottom: 14 },
         }}
       />
+      <div className="deepsea-file-find-widget" aria-hidden="true">
+        <div className="deepsea-file-find-widget__field">
+          <Search />
+          <span>watch</span>
+          <small>Aa</small>
+          <small>ab</small>
+          <small>*</small>
+        </div>
+        <div className="deepsea-file-find-widget__meta">
+          <span>1 of 1</span>
+          <div>
+            <ChevronUp />
+            <ChevronDown />
+            <X />
+          </div>
+        </div>
+      </div>
       {data.truncated ? (
         <div className="deepsea-file-viewer-badge" title="文件内容已按预览上限截断">
           truncated
@@ -63,6 +86,35 @@ function MonacoTextViewer({ projectId, tab }: { projectId: string; tab: Workspac
       ) : null}
     </div>
   );
+}
+
+function defineDeepseaCommandLightTheme(monaco: Monaco): void {
+  monaco.editor.defineTheme('deepsea-command-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '64748B', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '003594', fontStyle: 'bold' },
+      { token: 'number', foreground: '1B55D0' },
+      { token: 'string', foreground: '006C49' },
+      { token: 'type', foreground: '751F00' },
+      { token: 'delimiter', foreground: '737685' },
+      { token: 'operator', foreground: '737685' },
+    ],
+    colors: {
+      'editor.background': '#eef3f9',
+      'editor.foreground': '#191c1e',
+      'editorGutter.background': '#edf2f8',
+      'editorLineNumber.foreground': '#a6b0bf',
+      'editorLineNumber.activeForeground': '#64748b',
+      'editor.lineHighlightBackground': '#e4ecf7',
+      'editor.lineHighlightBorder': '#d8e5f5',
+      'editor.selectionBackground': '#b8c8ff66',
+      'editor.inactiveSelectionBackground': '#dbe1ff66',
+      'editorCursor.foreground': '#004ac6',
+      'editorWhitespace.foreground': '#c3c6d6',
+    },
+  });
 }
 
 function CodePreviewFallback({ content }: { content: string }): JSX.Element {
