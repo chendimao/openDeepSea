@@ -1,3 +1,5 @@
+import type { KnowledgeEmbeddingStatus } from './types';
+
 export type KnowledgeLocale = 'zh' | 'en';
 
 export type KnowledgeTone = 'success' | 'info' | 'warning' | 'danger' | 'muted' | 'neutral';
@@ -207,6 +209,14 @@ export interface KnowledgeInsightSummaryItem {
 export interface KnowledgeInsightsSummary {
   totalIssues: number;
   items: KnowledgeInsightSummaryItem[];
+}
+
+export interface KnowledgeEmbeddingStatusSummary {
+  providerLabel: string;
+  coverageLabel: string;
+  warningLabel: string | null;
+  coveragePercent: number;
+  tone: KnowledgeTone;
 }
 
 export interface ManualKnowledgeInput {
@@ -565,6 +575,35 @@ export function summarizeKnowledgeInsights(
   return {
     totalIssues: items.reduce((sum, item) => sum + item.count, 0),
     items,
+  };
+}
+
+export function summarizeKnowledgeEmbeddingStatus(
+  status: KnowledgeEmbeddingStatus | null | undefined,
+): KnowledgeEmbeddingStatusSummary | null {
+  if (!status) return null;
+
+  const providerLabel = status.runtime.provider === 'openai-compatible'
+    ? `OpenAI-compatible · ${status.runtime.model || '未配置模型'}`
+    : `Local hash · ${status.runtime.model || 'local-hash-v1'}`;
+  const total = Math.max(0, status.total_enabled_chunks);
+  const coveragePercent = total === 0
+    ? 100
+    : Math.round((Math.max(0, status.embedded_chunks) / total) * 100);
+  const warnings: string[] = [];
+  if (status.stale_chunks > 0) warnings.push(`${status.stale_chunks} 个过期`);
+  if (status.missing_chunks > 0) warnings.push(`${status.missing_chunks} 个缺失`);
+  if (status.failed_sources > 0) warnings.push(`${status.failed_sources} 个失败源`);
+  if (!status.runtime.available && status.runtime.unavailable_reason) {
+    warnings.push(status.runtime.unavailable_reason);
+  }
+
+  return {
+    providerLabel,
+    coverageLabel: `${status.embedded_chunks} / ${status.total_enabled_chunks}`,
+    warningLabel: warnings.length > 0 ? warnings.join('，') : null,
+    coveragePercent,
+    tone: warnings.length > 0 || !status.runtime.available ? 'warning' : 'success',
   };
 }
 

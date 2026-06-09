@@ -1013,7 +1013,7 @@ git commit -m "feat(knowledge): 增加embedding运维接口"
 - Modify: `packages/frontend/src/pages/KnowledgePage.tsx`
 - Test: `packages/frontend/src/pages/KnowledgePage.test.tsx`
 
-- [ ] **Step 1: Write failing frontend API test**
+- [x] **Step 1: Write failing frontend API test**
 
 Add to `packages/frontend/src/lib/api.test.ts`:
 
@@ -1067,7 +1067,7 @@ test('knowledge embedding APIs build status, test, rebuild, and settings request
 });
 ```
 
-- [ ] **Step 2: Run failing frontend API test**
+- [x] **Step 2: Run failing frontend API test**
 
 Run:
 
@@ -1078,7 +1078,7 @@ cd packages/frontend
 
 Expected: FAIL because API helpers do not exist.
 
-- [ ] **Step 3: Add frontend types and API helpers**
+- [x] **Step 3: Add frontend types and API helpers**
 
 In `packages/frontend/src/lib/types.ts`, add:
 
@@ -1129,7 +1129,7 @@ updateKnowledgeEmbeddingSettings: (input: KnowledgeEmbeddingSettingsPatch) =>
   }),
 ```
 
-- [ ] **Step 4: Add display helper test and implementation**
+- [x] **Step 4: Add display helper test and implementation**
 
 Add to `packages/frontend/src/lib/knowledgeDisplay.test.ts`:
 
@@ -1162,7 +1162,7 @@ test('knowledge embedding status display summarizes coverage and provider', () =
 
 Implement `summarizeKnowledgeEmbeddingStatus()` in `knowledgeDisplay.ts`.
 
-- [ ] **Step 5: Wire KnowledgePage**
+- [x] **Step 5: Wire KnowledgePage**
 
 In `packages/frontend/src/pages/KnowledgePage.tsx`, add query:
 
@@ -1200,7 +1200,7 @@ const rebuildEmbedding = useMutation({
 
 Render a compact strip near `KnowledgeInsightsStrip` with provider label, coverage, test and rebuild buttons.
 
-- [ ] **Step 6: Run frontend tests**
+- [x] **Step 6: Run frontend tests**
 
 Run:
 
@@ -1211,7 +1211,7 @@ cd packages/frontend
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 6**
+- [x] **Step 7: Commit Task 6**
 
 ```bash
 git add packages/frontend/src/lib/types.ts packages/frontend/src/lib/api.ts packages/frontend/src/lib/api.test.ts packages/frontend/src/lib/knowledgeDisplay.ts packages/frontend/src/lib/knowledgeDisplay.test.ts packages/frontend/src/pages/KnowledgePage.tsx packages/frontend/src/pages/KnowledgePage.test.tsx

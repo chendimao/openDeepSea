@@ -8,6 +8,7 @@ import {
   getKnowledgeSourceTypeDisplay,
   getKnowledgeStatusDisplay,
   summarizeKnowledgeInsights,
+  summarizeKnowledgeEmbeddingStatus,
   summarizeKnowledgeStats,
   type KnowledgeRetrievalMode,
   type KnowledgeSource,
@@ -138,6 +139,60 @@ test('knowledge insights summarize actionable counts', () => {
   assert.equal(summary.totalIssues, 7);
   assert.equal(summary.items[0]?.key, 'parser_incomplete');
   assert.equal(summary.items[0]?.label, '解析待补全');
+});
+
+test('knowledge embedding status display summarizes coverage and provider', () => {
+  const summary = summarizeKnowledgeEmbeddingStatus({
+    runtime: {
+      provider: 'openai-compatible',
+      model: 'text-embedding-3-small',
+      dimensions: 1536,
+      base_url: 'https://embedding.example/v1',
+      api_key_set: true,
+      api_key_env_var: null,
+      available: true,
+      unavailable_reason: null,
+    },
+    project_id: 'project-1',
+    total_enabled_chunks: 10,
+    embedded_chunks: 7,
+    stale_chunks: 2,
+    missing_chunks: 1,
+    failed_sources: 0,
+  });
+
+  assert.ok(summary);
+  assert.equal(summary.providerLabel, 'OpenAI-compatible · text-embedding-3-small');
+  assert.equal(summary.coverageLabel, '7 / 10');
+  assert.equal(summary.warningLabel, '2 个过期，1 个缺失');
+});
+
+test('knowledge embedding status display includes unavailable provider reason with coverage warnings', () => {
+  const summary = summarizeKnowledgeEmbeddingStatus({
+    runtime: {
+      provider: 'openai-compatible',
+      model: '',
+      dimensions: null,
+      base_url: null,
+      api_key_set: false,
+      api_key_env_var: null,
+      available: false,
+      unavailable_reason: 'embedding provider requires model, base URL, and API key',
+    },
+    project_id: 'project-1',
+    total_enabled_chunks: 4,
+    embedded_chunks: 1,
+    stale_chunks: 2,
+    missing_chunks: 1,
+    failed_sources: 0,
+  });
+
+  assert.ok(summary);
+  assert.equal(
+    summary.warningLabel,
+    '2 个过期，1 个缺失，embedding provider requires model, base URL, and API key',
+  );
+  assert.equal(summary.tone, 'warning');
 });
 
 test('knowledge source filters compose keyword, status, source type, project, and room', () => {

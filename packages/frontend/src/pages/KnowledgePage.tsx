@@ -40,6 +40,7 @@ import {
   getKnowledgeRetrievalModeDisplay,
   getKnowledgeSourceTypeDisplay,
   sortKnowledgeSourcesByStatus,
+  summarizeKnowledgeEmbeddingStatus,
   summarizeKnowledgeInsights,
   summarizeKnowledgeStats,
   type KnowledgeChunk,
@@ -47,6 +48,7 @@ import {
   buildKnowledgeImportFeedback,
   type KnowledgeImportFeedback,
   type KnowledgeImportResult,
+  type KnowledgeEmbeddingStatusSummary,
   type KnowledgeInsightsSummary,
   type KnowledgeLocale,
   type KnowledgeMetadataPatch,
@@ -59,7 +61,7 @@ import {
   type KnowledgeSourceType,
   type WorkspaceKnowledgeImportResult,
 } from '../lib/knowledgeDisplay';
-import type { ProjectFile, ResourceType } from '../lib/types';
+import type { KnowledgeEmbeddingStatus, ProjectFile, ResourceType } from '../lib/types';
 
 type IconComponent = LucideIcon;
 type DetailTab = 'overview' | 'preview' | 'extraction' | 'summary' | 'chunks' | 'refs';
@@ -267,6 +269,14 @@ export function KnowledgePage(): JSX.Element {
     enabled: Boolean(selectedProjectId),
   });
   const insightSummary = useMemo(() => summarizeKnowledgeInsights(insights, locale), [insights, locale]);
+  const { data: embeddingStatus } = useQuery({
+    queryKey: ['knowledge-embedding-status', selectedProjectId],
+    queryFn: () => api.getKnowledgeEmbeddingStatus(selectedProjectId || undefined),
+  });
+  const embeddingStatusSummary = useMemo(
+    () => summarizeKnowledgeEmbeddingStatus(embeddingStatus),
+    [embeddingStatus],
+  );
 
   const searchSourceIds = useMemo(
     () => new Set(searchResults.map((result) => result.source_id)),
@@ -428,6 +438,43 @@ export function KnowledgePage(): JSX.Element {
     onError: (err) => toast.error((err as Error).message),
   });
 
+  const testEmbedding = useMutation({
+    mutationFn: api.testKnowledgeEmbeddingProvider,
+    onSuccess: (result) => {
+      if (result.ok) {
+        toast.success('Embedding provider 可用', {
+          description: result.dimensions ? `维度 ${result.dimensions}` : undefined,
+        });
+        return;
+      }
+      toast.error('Embedding provider 不可用', { description: result.error ?? undefined });
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const rebuildEmbedding = useMutation({
+    mutationFn: () => {
+      if (!selectedProjectId) throw new Error('请选择项目后再重建索引。');
+      return api.rebuildKnowledgeEmbeddings({ projectId: selectedProjectId, limit: 100 });
+    },
+    onSuccess: async (result) => {
+      await invalidateKnowledgeQueries(queryClient, selectedProjectId);
+      const description = `重建 ${result.rebuilt_chunks} 个，跳过 ${result.skipped_chunks} 个，失败 ${result.failed_chunks.length} 个。`;
+      if (result.failed_chunks.length > 0) {
+        const firstError = result.failed_chunks[0]?.error;
+        const options = { description: firstError ? `${description} ${firstError}` : description };
+        if (result.rebuilt_chunks === 0) {
+          toast.error('Embedding 索引重建失败', options);
+          return;
+        }
+        toast.warning('Embedding 索引部分重建', options);
+        return;
+      }
+      toast.success('Embedding 索引已重建', { description });
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
   const saveMetadata = useMutation({
     mutationFn: (sourceId: string) => api.updateKnowledgeSource(sourceId, {
       metadataPatch: buildMetadataPatch(metadataDraft),
@@ -557,6 +604,16 @@ export function KnowledgePage(): JSX.Element {
             </div>
 
             <KnowledgeStatsCards stats={dashboardStats} />
+
+            <KnowledgeEmbeddingStatusStrip
+              summary={embeddingStatusSummary}
+              status={embeddingStatus}
+              canRebuild={Boolean(selectedProjectId && embeddingStatus?.runtime.available)}
+              testing={testEmbedding.isPending}
+              rebuilding={rebuildEmbedding.isPending}
+              onTest={() => testEmbedding.mutate()}
+              onRebuild={() => rebuildEmbedding.mutate()}
+            />
 
             <KnowledgeInsightsStrip summary={insightSummary} onSelectSource={(sourceId) => setSelectedSourceId(sourceId)} />
 
@@ -935,6 +992,61 @@ function KnowledgeInsightsStrip({
           <strong>{item.count}</strong>
         </button>
       ))}
+    </div>
+  );
+}
+
+function KnowledgeEmbeddingStatusStrip({
+  summary,
+  status,
+  canRebuild,
+  testing,
+  rebuilding,
+  onTest,
+  onRebuild,
+}: {
+  summary: KnowledgeEmbeddingStatusSummary | null;
+  status: KnowledgeEmbeddingStatus | undefined;
+  canRebuild: boolean;
+  testing: boolean;
+  rebuilding: boolean;
+  onTest: () => void;
+  onRebuild: () => void;
+}): JSX.Element | null {
+  if (!summary || !status) return null;
+  const toneClassName = summary.tone === 'warning' ? 'is-warning' : 'is-info';
+  const warning = summary.warningLabel ?? status.runtime.unavailable_reason;
+  return (
+    <div className="knowledge-insights-strip" aria-label="Embedding 索引状态">
+      <span className="knowledge-insights-strip__summary">Embedding 索引</span>
+      <span className={`knowledge-insight-chip ${toneClassName}`}>
+        覆盖率
+        <strong>{summary.coverageLabel}</strong>
+      </span>
+      <span className="knowledge-insight-chip is-info">
+        {summary.providerLabel}
+      </span>
+      {warning ? (
+        <span className="knowledge-insight-chip is-warning">{warning}</span>
+      ) : (
+        <span className="knowledge-insight-chip is-info">索引可用</span>
+      )}
+      <button
+        type="button"
+        className="knowledge-insight-chip"
+        disabled={testing}
+        onClick={onTest}
+      >
+        {testing ? '测试中' : '测试 provider'}
+      </button>
+      <button
+        type="button"
+        className="knowledge-insight-chip"
+        disabled={!canRebuild || rebuilding}
+        onClick={onRebuild}
+      >
+        {rebuilding ? '重建中' : '重建索引'}
+      </button>
     </div>
   );
 }
@@ -1802,6 +1914,7 @@ async function invalidateKnowledgeQueries(queryClient: ReturnType<typeof useQuer
     queryClient.invalidateQueries({ queryKey: ['knowledge-chunks'] }),
     queryClient.invalidateQueries({ queryKey: ['knowledge-search'] }),
     queryClient.invalidateQueries({ queryKey: ['knowledge-insights'] }),
+    queryClient.invalidateQueries({ queryKey: ['knowledge-embedding-status'] }),
     queryClient.invalidateQueries({ queryKey: ['files'] }),
     queryClient.invalidateQueries({ queryKey: ['project-files', projectId] }),
   ]);
