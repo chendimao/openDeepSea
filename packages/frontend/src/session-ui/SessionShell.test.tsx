@@ -13,6 +13,7 @@ import {
   buildSessionRunTranscriptItems,
   getLatestUserMessageKey,
   getSessionRunThinkingDuration,
+  isSessionInspectorVisibleForWorkspacePane,
   isTranscriptNearBottom,
   shouldIgnoreProjectDragStart,
   syncExpandedProjectIds,
@@ -107,6 +108,11 @@ test('SessionShell renders current session token usage in the bottom status bar'
   assert.match(html, /Token 消耗/);
   assert.match(html, /12,345 tokens/);
   assert.doesNotMatch(html, /API 消耗/);
+});
+
+test('SessionShell only shows the right inspector on the transcript pane', () => {
+  assert.equal(isSessionInspectorVisibleForWorkspacePane('transcript'), true);
+  assert.equal(isSessionInspectorVisibleForWorkspacePane('file-browser'), false);
 });
 
 test('SessionShell renders tool rows as detail buttons', () => {
@@ -348,6 +354,10 @@ test('SessionShell includes project tree row pin and drag feedback styles', () =
 
 test('SessionShell project rail CSS keeps the reference-style compact hierarchy', () => {
   assert.match(sessionOsCss, /\.deepsea-main\s*\{[^}]*grid-template-columns:\s*292px minmax\(500px,\s*1fr\) 420px/s);
+  assert.match(
+    sessionOsCss,
+    /\.deepsea-main\.deepsea-main--without-inspector\s*\{[^}]*grid-template-columns:\s*292px minmax\(500px,\s*1fr\)/s,
+  );
   assert.match(sessionOsCss, /\.deepsea-project-tree-heading\s*\{[^}]*margin-bottom:\s*12px/s);
   assert.match(
     sessionOsCss,

@@ -59,6 +59,7 @@ import {
 import { ProjectAgentStrip } from './ProjectAgentStrip';
 import { SessionFileComposer } from './SessionFileComposer';
 import { SessionCenterWorkspace } from './SessionCenterWorkspace';
+import type { SessionCenterWorkspacePane } from './SessionCenterWorkspace';
 import type { SessionComposerSubmit } from './session-file-composer-model';
 import { GeneratedImageEvidencePanel } from './GeneratedImageEvidencePanel';
 
@@ -95,10 +96,12 @@ export function SessionShellView({
 }): JSX.Element {
   const activeRun = getActiveRun(payload.activeSession);
   const forkTarget = payload.historyRecords[0]?.id;
+  const [activeWorkspacePane, setActiveWorkspacePane] = useState<SessionCenterWorkspacePane>('transcript');
+  const showInspector = isSessionInspectorVisibleForWorkspacePane(activeWorkspacePane);
 
   return (
     <section className="session-shell deepsea-shell" aria-label="Session Operations Console">
-      <main className="deepsea-main">
+      <main className={showInspector ? 'deepsea-main' : 'deepsea-main deepsea-main--without-inspector'}>
         <ProjectSessionTreeRail
           projects={payload.projectSwitcher.projects}
           sessions={payload.activeSessions}
@@ -115,6 +118,7 @@ export function SessionShellView({
         />
         <SessionCenterWorkspace
           projectId={payload.project.id}
+          onActivePaneChange={setActiveWorkspacePane}
           transcript={(
             <TranscriptCanvas
               detail={payload.activeSession}
@@ -126,14 +130,16 @@ export function SessionShellView({
             />
           )}
         />
-        <IntegratedInspector
-          payload={payload}
-          activeRun={activeRun}
-          onCommand={onCommand}
-          onCancelRun={onCancelRun}
-          onRetryRun={onRetryRun}
-          onSaveContract={onSaveContract}
-        />
+        {showInspector ? (
+          <IntegratedInspector
+            payload={payload}
+            activeRun={activeRun}
+            onCommand={onCommand}
+            onCancelRun={onCancelRun}
+            onRetryRun={onRetryRun}
+            onSaveContract={onSaveContract}
+          />
+        ) : null}
       </main>
       <BottomStatusBar
         payload={payload}
@@ -142,6 +148,10 @@ export function SessionShellView({
       />
     </section>
   );
+}
+
+export function isSessionInspectorVisibleForWorkspacePane(pane: SessionCenterWorkspacePane): boolean {
+  return pane === 'transcript';
 }
 
 function BottomStatusBar({

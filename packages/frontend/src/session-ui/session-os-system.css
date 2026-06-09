@@ -439,6 +439,9 @@
     grid-template-columns: 280px minmax(440px, 1fr) 320px;
     padding-top: 76px;
   }
+  .deepsea-main.deepsea-main--without-inspector {
+    grid-template-columns: 280px minmax(440px, 1fr);
+  }
 }
 @media (max-width: 980px) {
   .deepsea-shell {

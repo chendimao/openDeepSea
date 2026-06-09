@@ -3,12 +3,16 @@ import React, { useMemo, useRef } from 'react';
 import { FileBrowserWorkspace } from './FileBrowserWorkspace';
 import { useHideFlexLayoutArtifacts } from './flexlayout-accessibility';
 
+export type SessionCenterWorkspacePane = 'transcript' | 'file-browser';
+
 export function SessionCenterWorkspace({
   projectId,
   transcript,
+  onActivePaneChange,
 }: {
   projectId: string;
   transcript: React.ReactNode;
+  onActivePaneChange?: (pane: SessionCenterWorkspacePane) => void;
 }): JSX.Element {
   const canUseFlexLayout = typeof document !== 'undefined';
   const model = useMemo(() => (canUseFlexLayout ? createSessionCenterModel() : null), [canUseFlexLayout]);
@@ -39,6 +43,10 @@ export function SessionCenterWorkspace({
         }}
         onAction={(action) => {
           if (action.type === Actions.DELETE_TAB || action.type === Actions.MOVE_NODE) return undefined;
+          if (action.type === Actions.SELECT_TAB) {
+            const pane = getSessionCenterWorkspacePaneForTabId(String(action.data.tabNode));
+            if (pane) onActivePaneChange?.(pane);
+          }
           return action;
         }}
         onRenderTab={(node: TabNode, renderValues) => {
@@ -98,4 +106,10 @@ function createSessionCenterModel(): Model {
       }],
     },
   });
+}
+
+export function getSessionCenterWorkspacePaneForTabId(tabId: string): SessionCenterWorkspacePane | null {
+  if (tabId === 'session-transcript-tab') return 'transcript';
+  if (tabId === 'session-file-browser-tab') return 'file-browser';
+  return null;
 }

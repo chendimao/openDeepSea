@@ -584,6 +584,9 @@
   padding-bottom: 32px;
   overflow: hidden;
 }
+.deepsea-main.deepsea-main--without-inspector {
+  grid-template-columns: 292px minmax(500px, 1fr);
+}
 .deepsea-history,
 .deepsea-inspector {
   min-width: 0;
