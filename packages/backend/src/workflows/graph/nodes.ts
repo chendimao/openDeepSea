@@ -2520,6 +2520,7 @@ function selectParallelImplementationBatch(input: {
 }): Task[] {
   const workflowPlan = input.state.workflowPlan;
   if (!workflowPlan) return [];
+  if (input.activeWrites.some((writes) => scopeWritesRequireSerial(writes, input.projectPath))) return [];
   const workflowPlanTaskById = new Map(workflowPlan.tasks.map((task) => [task.id, task]));
   const selected: Task[] = [];
   const selectedAgentIds = new Set<string>();
@@ -2544,6 +2545,7 @@ function selectParallelImplementationBatch(input: {
     if (!agentId || selectedAgentIds.has(agentId)) continue;
     if (input.activeAgentIds.has(agentId)) continue;
     const writes = parsedPlanTask?.scopeWrite ?? [];
+    if (scopeWritesRequireSerial(writes, input.projectPath)) return [];
     if (input.activeWrites.some((existing) => scopeWritesConflict(existing, writes, input.projectPath))) continue;
     if (selectedWrites.some((existing) => scopeWritesConflict(existing, writes, input.projectPath))) continue;
     selected.push(child);
@@ -2563,6 +2565,8 @@ function selectNextImplementationChild(input: {
   activeAgentIds: Set<string>;
   activeWrites: string[][];
 }): Task | undefined {
+  const hasActiveSerialWrites = input.activeWrites.some((writes) => scopeWritesRequireSerial(writes, input.projectPath));
+  if (hasActiveSerialWrites) return undefined;
   const runnableChildren = input.childTasks.filter((child) =>
     (child.status === 'todo' || child.status === 'in_progress') &&
     !input.activeChildTaskIds.has(child.id) &&
@@ -2578,6 +2582,7 @@ function selectNextImplementationChild(input: {
     const agentId = child.assigned_agent_id ?? workflowPlanTask?.agent_id ?? null;
     if (agentId && input.activeAgentIds.has(agentId)) return false;
     const writes = parsedPlanTask?.scopeWrite ?? [];
+    if (input.activeWrites.length > 0 && scopeWritesRequireSerial(writes, input.projectPath)) return false;
     if (input.activeWrites.some((existing) => scopeWritesConflict(existing, writes, input.projectPath))) return false;
     if (!workflowPlanTask) return true;
     if (workflowPlanTask.role !== 'executor') return false;
@@ -2602,6 +2607,38 @@ function scopeWritesConflict(left: string[], right: string[], projectPath: strin
   const normalizedRight = right.map((scope) => normalizeScopePath(scope, projectPath)).filter((scope): scope is string => scope !== null);
   return normalizedLeft.some((leftScope) =>
     normalizedRight.some((rightScope) => scopePathConflicts(leftScope, rightScope))
+  );
+}
+
+function scopeWritesRequireSerial(writes: string[], projectPath: string): boolean {
+  return writes
+    .map((scope) => normalizeScopePath(scope, projectPath))
+    .filter((scope): scope is string => scope !== null)
+    .some((scope) => scopePathRequiresSerial(scope));
+}
+
+function scopePathRequiresSerial(scope: string): boolean {
+  if (isBroadScopePath(scope)) return true;
+  const segments = scope.split('/').filter(Boolean);
+  const basename = segments.at(-1) ?? scope;
+  if ([
+    'package.json',
+    'package-lock.json',
+    'npm-shrinkwrap.json',
+    'pnpm-lock.yaml',
+    'yarn.lock',
+    'tsconfig.json',
+  ].includes(basename)) {
+    return true;
+  }
+  if (/^(vite|eslint)\.config\./u.test(basename)) return true;
+  return segments.some((segment) =>
+    segment === '.github' ||
+    segment === 'migrations' ||
+    segment === 'schema' ||
+    segment === 'shared' ||
+    segment === 'contracts' ||
+    segment === 'types'
   );
 }
 

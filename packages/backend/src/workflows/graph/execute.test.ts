@@ -480,6 +480,147 @@ test('execute node does not parallelize implementation children with conflicting
   assert.equal(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length, 1);
 });
 
+test('execute node does not parallelize high-risk root config writes with other ready children', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-execute-high-risk-root-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Execute High Risk Root', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Execute High Risk Root Room' });
+  const configExecutor = createAcpExecutor(room.id, 'high-risk-config', ['.']);
+  const frontend = createAcpExecutor(room.id, 'high-risk-frontend', ['packages/frontend']);
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'High-risk root config parent task',
+  });
+  const configChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Root package config child',
+    description: 'Modify root package metadata.',
+    assigned_agent_id: configExecutor.id,
+    created_from: 'workflow_assignment',
+  });
+  const frontendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Frontend page child',
+    description: 'Modify frontend page.',
+    assigned_agent_id: frontend.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+  const started: string[] = [];
+  const nodes = createGraphNodes(createGraphTools({
+    runAcpAgent: async (input) => {
+      started.push(input.agent.id);
+      return createCompletedGraphAgentRun(room.id, input, 'high-risk implementation done');
+    },
+  }));
+
+  const nextState = await nodes.executeNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Do not parallelize high-risk root config writes',
+      assumptions: [],
+      tasks: [
+        {
+          title: configChild.title,
+          description: configChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Root config reaches review'],
+          scopeRead: ['package.json'],
+          scopeWrite: ['package.json'],
+          dependsOn: [],
+        },
+        {
+          title: frontendChild.title,
+          description: frontendChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Frontend waits'],
+          scopeRead: ['packages/frontend/src/pages/FilesPage.tsx'],
+          scopeWrite: ['packages/frontend/src/pages/FilesPage.tsx'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    workflowPlan: {
+      workflow_name: parentTask.title,
+      source_message_id: parentTask.id,
+      goal: parentTask.title,
+      summary: 'Do not parallelize high-risk root config writes',
+      tasks: [
+        {
+          id: 'task-1-root-package-config-child',
+          title: configChild.title,
+          description: configChild.description ?? '',
+          role: 'executor',
+          agent_id: configExecutor.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+        {
+          id: 'task-2-frontend-page-child',
+          title: frontendChild.title,
+          description: frontendChild.description ?? '',
+          role: 'executor',
+          agent_id: frontend.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+      ],
+    },
+    currentNode: 'dispatch',
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [configChild.id, frontendChild.id],
+    childTaskPlanIndexes: {
+      [configChild.id]: 0,
+      [frontendChild.id]: 1,
+    },
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  });
+
+  assert.deepEqual(started, [configExecutor.id]);
+  assert.equal(taskRepo.get(configChild.id)?.status, 'review');
+  assert.equal(taskRepo.get(frontendChild.id)?.status, 'todo');
+  assert.deepEqual(nextState.workflowPlan?.tasks.map((task) => task.status), ['completed', 'pending']);
+  assert.equal(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length, 1);
+});
+
 test('execute node blocks parallel batch without partial steps when a child has no executor', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-execute-parallel-missing-executor-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
