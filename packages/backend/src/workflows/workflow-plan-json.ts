@@ -61,7 +61,7 @@ export function normalizeWorkflowPlanObject(input: unknown): WorkflowPlanJson {
       description: task.description,
       role: task.role,
       agent_id: task.agent_id ?? null,
-      mode: deriveMode(task.depends_on ?? []),
+      mode: normalizeTaskMode(task.mode, task.depends_on ?? []),
       depends_on: task.depends_on ?? [],
       status: task.status ?? 'pending',
       progress: task.progress ?? 0,
@@ -110,6 +110,12 @@ export function deriveWorkflowPlanFromParsedPlan(input: {
 
 function deriveMode(dependsOn: string[]): WorkflowPlanTaskMode {
   return dependsOn.length > 0 ? 'serial' : 'parallel';
+}
+
+function normalizeTaskMode(mode: WorkflowPlanTaskMode | undefined, dependsOn: string[]): WorkflowPlanTaskMode {
+  if (dependsOn.length > 0) return 'serial';
+  if (mode === 'serial') return 'serial';
+  return deriveMode(dependsOn);
 }
 
 function validateTaskIds(tasks: WorkflowPlanTaskInput[]): void {

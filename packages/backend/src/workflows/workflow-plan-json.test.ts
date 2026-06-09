@@ -58,17 +58,17 @@ test('normalizeWorkflowPlanMarkdown converts a fenced JSON plan into executable 
   assert.deepEqual(plan.tasks[2]?.depends_on, ['backend-rules', 'frontend-ui']);
 });
 
-test('normalizeWorkflowPlanObject derives serial mode from depends_on and ignores supplied mode', () => {
+test('normalizeWorkflowPlanObject preserves explicit serial mode and derives dependency serial mode', () => {
   const input: WorkflowPlanInput = {
-    workflow_name: '依赖推导',
+    workflow_name: '显式串行',
     source_message_id: 'msg-user-2',
-    goal: '验证依赖关系',
-    summary: '外部 mode 不可信，必须由 depends_on 推导。',
+    goal: '验证串行关系',
+    summary: '显式 serial 必须保留，带依赖任务必须串行。',
     tasks: [
       {
         id: 'first',
         title: '第一步',
-        description: '无依赖，可并行',
+        description: '无依赖，但需要用户明确串行。',
         role: 'executor',
         agent_id: null,
         mode: 'serial',
@@ -80,7 +80,7 @@ test('normalizeWorkflowPlanObject derives serial mode from depends_on and ignore
       {
         id: 'second',
         title: '第二步',
-        description: '依赖第一步',
+        description: '依赖第一步，即使声明 parallel 也必须串行。',
         role: 'executor',
         agent_id: null,
         mode: 'parallel',
@@ -89,16 +89,25 @@ test('normalizeWorkflowPlanObject derives serial mode from depends_on and ignore
         progress: 50,
         result_refs: [],
       },
+      {
+        id: 'third',
+        title: '第三步',
+        description: '无依赖且未声明 mode，默认并行。',
+        role: 'executor',
+        agent_id: null,
+        depends_on: [],
+      },
     ],
   };
 
   const plan = normalizeWorkflowPlanObject(input);
 
-  assert.equal(plan.tasks[0]?.mode, 'parallel');
+  assert.equal(plan.tasks[0]?.mode, 'serial');
   assert.equal(plan.tasks[0]?.status, 'completed');
   assert.equal(plan.tasks[0]?.progress, 100);
   assert.deepEqual(plan.tasks[0]?.result_refs, ['message-1']);
   assert.equal(plan.tasks[1]?.mode, 'serial');
+  assert.equal(plan.tasks[2]?.mode, 'parallel');
 });
 
 test('normalizeWorkflowPlanObject rejects missing required root fields', () => {
