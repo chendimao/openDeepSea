@@ -833,7 +833,7 @@ function TranscriptCanvas({
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   const followTranscriptRef = useRef(true);
-  const acceptedVisualCompanionMessageIdsRef = useRef(new Set<string>());
+  const acceptedVisualCompanionOfferKeysRef = useRef(new Set<string>());
   const { data: projectAgents } = useQuery({
     queryKey: ['project-used-agents', projectId],
     queryFn: () => api.getProjectUsedAgents(projectId),
@@ -854,15 +854,15 @@ function TranscriptCanvas({
   const latestUserMessageKey = useMemo(() => getLatestUserMessageKey(detail.messages), [detail.messages]);
   const [displayModes, setDisplayModes] = useState<Record<string, SessionMessageDisplayMode>>({});
   const [copiedActionKey, setCopiedActionKey] = useState<string | null>(null);
-  const [acceptedVisualCompanionMessageIds, setAcceptedVisualCompanionMessageIds] = useState<Set<string>>(() => new Set());
+  const [acceptedVisualCompanionOfferKeys, setAcceptedVisualCompanionOfferKeys] = useState<Set<string>>(() => new Set());
   const displayModeFor = (key: string): SessionMessageDisplayMode => displayModes[key] ?? 'preview';
   const setDisplayModeFor = (key: string, mode: SessionMessageDisplayMode) => {
     setDisplayModes((current) => ({ ...current, [key]: mode }));
   };
-  const acceptVisualCompanionOffer = (messageId: string): void => {
-    if (acceptedVisualCompanionMessageIdsRef.current.has(messageId)) return;
-    acceptedVisualCompanionMessageIdsRef.current.add(messageId);
-    setAcceptedVisualCompanionMessageIds(new Set(acceptedVisualCompanionMessageIdsRef.current));
+  const acceptVisualCompanionOffer = (offerKey: string): void => {
+    if (acceptedVisualCompanionOfferKeysRef.current.has(offerKey)) return;
+    acceptedVisualCompanionOfferKeysRef.current.add(offerKey);
+    setAcceptedVisualCompanionOfferKeys(new Set(acceptedVisualCompanionOfferKeysRef.current));
     onSendMessage(buildVisualCompanionAcceptanceSubmit());
   };
   const copyTranscriptText = async (content: string, key: string) => {
@@ -947,8 +947,8 @@ function TranscriptCanvas({
                 savingKnowledgeKey={savingKnowledgeKey}
                 copiedActionKey={copiedActionKey}
                 onCopyText={(content, key) => void copyTranscriptText(content, key)}
-                visualCompanionAccepted={acceptedVisualCompanionMessageIds.has(item.message.id)}
-                onAcceptVisualCompanion={() => acceptVisualCompanionOffer(item.message.id)}
+                visualCompanionAccepted={acceptedVisualCompanionOfferKeys.has(`message:${item.message.id}`)}
+                onAcceptVisualCompanion={() => acceptVisualCompanionOffer(`message:${item.message.id}`)}
               />
             );
           }
@@ -963,6 +963,13 @@ function TranscriptCanvas({
           const canSaveRunKnowledge = Boolean(onSaveKnowledge && output.trim());
           const savingRunKnowledge = savingKnowledgeKey === runKnowledgeActionKey;
           const runKnowledgeTitle = `智能体回复 - ${runLabel} - ${formatClock(item.run.started_at)}`;
+          const runVisualCompanionOfferKey = `run:${item.run.id}`;
+          const canOpenRunVisualCompanion = shouldShowVisualCompanionAction({
+            role: 'assistant',
+            displayMode,
+            content: output,
+            accepted: acceptedVisualCompanionOfferKeys.has(runVisualCompanionOfferKey),
+          });
           return (
             <article key={item.key} className="deepsea-message deepsea-message--agent-run" data-role="assistant">
               <section className="deepsea-run-log" aria-label={`${runLabel} 回复`}>
@@ -1003,6 +1010,19 @@ function TranscriptCanvas({
                       >
                         <BookOpen aria-hidden="true" />
                         <span>{savingRunKnowledge ? '保存中' : '保存为知识'}</span>
+                      </button>
+                    ) : null}
+                    {canOpenRunVisualCompanion ? (
+                      <button
+                        type="button"
+                        className="deepsea-message__action"
+                        data-action="visual-companion"
+                        data-acceptance-message={VISUAL_COMPANION_ACCEPTANCE_MESSAGE}
+                        aria-label="打开设计预览"
+                        onClick={() => acceptVisualCompanionOffer(runVisualCompanionOfferKey)}
+                      >
+                        <SquarePen aria-hidden="true" />
+                        <span>打开设计预览</span>
                       </button>
                     ) : null}
                     <MarkdownDisplaySwitch
