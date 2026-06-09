@@ -12,6 +12,7 @@ const LOCAL_TOKEN = process.env.OPENDEEPSEA_LOCAL_TOKEN;
 
 const express = (await import('express')).default;
 const { router } = await import('../routes.js');
+const { projectRepo } = await import('../repos/projects.js');
 
 const app = express();
 app.use(express.json());
@@ -70,4 +71,32 @@ test('terminal routes create, get, and kill skills install sessions', async () =
   assert.equal(killedRes.status, 200);
   const killed = await killedRes.json() as { status: string };
   assert.equal(killed.status, 'killed');
+});
+
+test('terminal routes create project shell sessions in the project directory', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'opendeepsea-terminal-project-shell-'));
+  const project = projectRepo.create({ name: 'Terminal Project Shell', path: projectPath });
+
+  const createRes = await request('/api/terminals', {
+    method: 'POST',
+    body: JSON.stringify({
+      profile: 'project_shell',
+      projectId: project.id,
+      cols: 80,
+      rows: 24,
+    }),
+  });
+  assert.equal(createRes.status, 201);
+  const created = await createRes.json() as {
+    id: string;
+    profile: string;
+    cwd: string;
+    status: string;
+  };
+  assert.equal(created.profile, 'project_shell');
+  assert.equal(created.cwd, projectPath);
+  assert.equal(created.status, 'running');
+
+  const killRes = await request(`/api/terminals/${created.id}/kill`, { method: 'POST' });
+  assert.equal(killRes.status, 204);
 });
