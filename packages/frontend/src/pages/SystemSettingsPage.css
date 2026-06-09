@@ -143,20 +143,12 @@
     color: #1f2937;
     font-size: 13px;
     outline: none;
-    padding: 0 48px 0 40px;
+    padding: 0 16px 0 40px;
   }
 
   .system-settings-search input:focus {
     border-color: #3b82f6;
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
-  }
-
-  .system-settings-search span {
-    position: absolute;
-    right: 12px;
-    color: #9ca3af;
-    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 10px;
   }
 
   .system-settings-icon-button {
@@ -271,7 +263,7 @@
     opacity: 0.82;
   }
 
-  .system-settings-reset {
+  .system-settings-sidebar__hint {
     display: grid;
     width: 100%;
     gap: 4px;
@@ -280,40 +272,27 @@
     background: rgba(239, 246, 255, 0.52);
     padding: 12px;
     text-align: left;
-    transition: background 160ms, border-color 160ms;
   }
 
-  .system-settings-reset:hover {
-    border-color: #dbeafe;
-    background: #eff6ff;
-  }
-
-  .system-settings-reset span {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .system-settings-sidebar__hint strong {
     color: #2563eb;
-  }
-
-  .system-settings-reset svg {
-    width: 16px;
-    height: 16px;
-    transition: transform 500ms;
-  }
-
-  .system-settings-reset:hover svg {
-    transform: rotate(180deg);
-  }
-
-  .system-settings-reset strong {
     font-size: 14px;
     font-weight: 600;
   }
 
-  .system-settings-reset small {
+  .system-settings-sidebar__hint small {
     color: #60a5fa;
     font-size: 10px;
     line-height: 1.25;
+  }
+
+  .system-settings-sidebar__empty {
+    border: 1px dashed #cbd5e1;
+    border-radius: 12px;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 14px 12px;
   }
 
   .system-settings-main {
@@ -326,9 +305,13 @@
 
   .system-settings-content {
     display: grid;
-    width: min(100%, 896px);
+    width: min(100%, 1180px);
     margin: 0 auto;
-    gap: 32px;
+    gap: 24px;
+  }
+
+  .system-settings-form-bridge {
+    min-width: 0;
   }
 
   .system-settings-section-title {
@@ -896,7 +879,7 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .system-settings-reset {
+    .system-settings-sidebar__hint {
       margin-top: 12px;
     }
 

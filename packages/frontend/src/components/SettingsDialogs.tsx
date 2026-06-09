@@ -130,7 +130,7 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   global_session_prompt: null,
 };
 
-type SystemSettingsCategory = 'general' | 'sessionPrompt' | 'chat' | 'model';
+export type SystemSettingsCategory = 'general' | 'sessionPrompt' | 'chat' | 'model';
 
 type AiConfigDraft = {
   name: string;
@@ -278,7 +278,7 @@ export function ProjectSettingsDialog({
   );
 }
 
-function SystemSettingsForm({
+export function SystemSettingsForm({
   theme,
   value,
   aiConfigs,
@@ -287,6 +287,9 @@ function SystemSettingsForm({
   providerConfigsError,
   fallbackOptions,
   isSaving,
+  activeCategory: controlledActiveCategory,
+  onActiveCategoryChange,
+  hideCategoryNavigation = false,
   onThemeChange,
   onSave,
 }: {
@@ -298,6 +301,9 @@ function SystemSettingsForm({
   providerConfigsError: string | null;
   fallbackOptions: FallbackAgentOption[];
   isSaving: boolean;
+  activeCategory?: SystemSettingsCategory;
+  onActiveCategoryChange?: (category: SystemSettingsCategory) => void;
+  hideCategoryNavigation?: boolean;
   onThemeChange: (theme: ThemeMode) => void;
   onSave: (patch: SystemSettingsSavePatch) => void;
 }): JSX.Element {
@@ -324,9 +330,11 @@ function SystemSettingsForm({
     createEmptyProviderProfileDraft('codex', 0),
   );
   const [providerProfileError, setProviderProfileError] = useState<string | null>(null);
-  const [activeCategory, setActiveCategory] = useState<SystemSettingsCategory>('general');
+  const [internalActiveCategory, setInternalActiveCategory] = useState<SystemSettingsCategory>('general');
   const queryClient = useQueryClient();
   const { t } = useI18n();
+  const activeCategory = controlledActiveCategory ?? internalActiveCategory;
+  const setActiveCategory = onActiveCategoryChange ?? setInternalActiveCategory;
   const requiresFallback = routingMode !== 'mentions_only';
   const isGlobalSessionPromptOverLimit = globalSessionPrompt.length > GLOBAL_SESSION_PROMPT_LIMIT;
   const selectedFallbackAgentId = pickFallbackAgentId(fallbackAgentId, fallbackOptions);
@@ -674,37 +682,39 @@ function SystemSettingsForm({
         </Button>
       }
     >
-      <div className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)]">
-        <nav
-          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5"
-          aria-label={t('settings.categoryNavigation')}
-        >
-          {categories.map((category) => {
-            const Icon = category.icon;
-            return (
-              <button
-                key={category.value}
-                type="button"
-                className={cn(
-                  'flex min-h-[54px] w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ease-ocean',
-                  activeCategory === category.value
-                    ? 'bg-[var(--color-surface-raised)] text-[var(--color-fg)] shadow-[inset_0_0_0_1px_var(--color-border-strong)]'
-                    : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-fg)]',
-                )}
-                aria-current={activeCategory === category.value ? 'page' : undefined}
-                onClick={() => setActiveCategory(category.value)}
-              >
-                <Icon className="h-4 w-4 flex-shrink-0 text-[var(--color-accent)]" strokeWidth={1.75} />
-                <span className="min-w-0">
-                  <span className="block text-[13px] font-semibold leading-tight">{category.title}</span>
-                  <span className="mt-1 block text-[11px] leading-snug text-[var(--color-fg-muted)]">
-                    {category.description}
+      <div className={cn('grid gap-4', hideCategoryNavigation ? 'md:grid-cols-1' : 'md:grid-cols-[220px_minmax(0,1fr)]')}>
+        {!hideCategoryNavigation && (
+          <nav
+            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5"
+            aria-label={t('settings.categoryNavigation')}
+          >
+            {categories.map((category) => {
+              const Icon = category.icon;
+              return (
+                <button
+                  key={category.value}
+                  type="button"
+                  className={cn(
+                    'flex min-h-[54px] w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors ease-ocean',
+                    activeCategory === category.value
+                      ? 'bg-[var(--color-surface-raised)] text-[var(--color-fg)] shadow-[inset_0_0_0_1px_var(--color-border-strong)]'
+                      : 'text-[var(--color-fg-muted)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-fg)]',
+                  )}
+                  aria-current={activeCategory === category.value ? 'page' : undefined}
+                  onClick={() => setActiveCategory(category.value)}
+                >
+                  <Icon className="h-4 w-4 flex-shrink-0 text-[var(--color-accent)]" strokeWidth={1.75} />
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-semibold leading-tight">{category.title}</span>
+                    <span className="mt-1 block text-[11px] leading-snug text-[var(--color-fg-muted)]">
+                      {category.description}
+                    </span>
                   </span>
-                </span>
-              </button>
-            );
-          })}
-        </nav>
+                </button>
+              );
+            })}
+          </nav>
+        )}
 
         <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <div className="mb-4 flex items-start gap-2.5">
