@@ -496,8 +496,8 @@ test('execute node does not parallelize high-risk root config writes with other 
     room_id: room.id,
     project_id: project.id,
     parent_task_id: parentTask.id,
-    title: 'Root package config child',
-    description: 'Modify root package metadata.',
+    title: 'Root postcss config child',
+    description: 'Modify root PostCSS config.',
     assigned_agent_id: configExecutor.id,
     created_from: 'workflow_assignment',
   });
@@ -544,8 +544,8 @@ test('execute node does not parallelize high-risk root config writes with other 
           suggestedRole: 'executor',
           priority: 'normal',
           acceptance: ['Root config reaches review'],
-          scopeRead: ['package.json'],
-          scopeWrite: ['package.json'],
+          scopeRead: ['postcss.config.js'],
+          scopeWrite: ['postcss.config.js'],
           dependsOn: [],
         },
         {

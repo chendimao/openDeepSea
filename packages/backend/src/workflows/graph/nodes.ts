@@ -2632,7 +2632,9 @@ function scopePathRequiresSerial(scope: string): boolean {
   ].includes(basename)) {
     return true;
   }
-  if (/^(vite|eslint)\.config\./u.test(basename)) return true;
+  if (/^(vite|eslint|postcss|tailwind|vitest|jest|playwright|webpack|rollup|tsup|babel|prettier|next|nuxt|astro|svelte|storybook|turbo|commitlint|lint-staged)\.config\./u.test(basename)) {
+    return true;
+  }
   return segments.some((segment) =>
     segment === '.github' ||
     segment === 'migrations' ||
