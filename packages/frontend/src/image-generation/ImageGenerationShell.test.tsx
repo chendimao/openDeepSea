@@ -40,8 +40,8 @@ test('image workbench shell keeps the project context visible', () => {
   assert.match(html, /data-project-id="project-1"/);
   assert.match(html, /project:<span class="text-\[#64748b\]">project-1<\/span>/);
   assert.match(html, /模型配置/);
-  assert.match(html, /Provider 管理/);
-  assert.match(html, /保存配置/);
+  assert.match(html, /立即配置模型/);
+  assert.doesNotMatch(html, /保存配置/);
   assert.match(html, /文生图/);
   assert.match(html, /图生图/);
   assert.match(html, /任务队列/);

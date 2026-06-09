@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
+import { Dialog, DialogContent } from '../components/ui/Dialog';
 import { api } from '../lib/api';
 import { cn } from '../lib/utils';
 import type {
@@ -377,6 +378,7 @@ function ModelConfigPanel({
   onClear: () => void;
   onSubmit: () => void;
 }): JSX.Element {
+  const [providerConfigOpen, setProviderConfigOpen] = useState(false);
   const model = profile?.model || 'gpt-image-2';
   const submitDisabled = busy || !canSubmitWorkbenchImageJob(form);
 
@@ -401,13 +403,28 @@ function ModelConfigPanel({
               {profile ? '可用' : '待配置'}
             </span>
           </div>
+          <button
+            type="button"
+            className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded bg-[#111827] px-3 text-xs font-bold text-white transition-colors hover:bg-[#1f2937] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]"
+            onClick={() => setProviderConfigOpen(true)}
+          >
+            <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+            {profile ? '配置模型' : '立即配置模型'}
+          </button>
         </div>
-        <details className="mt-3 rounded-lg border border-[#e5e7eb] bg-white p-3" open={!profile}>
-          <summary className="cursor-pointer text-xs font-bold text-[#374151]">Provider 管理</summary>
-          <div className="mt-3 text-xs">
-            <ProviderProfilePanel projectId={projectId} />
-          </div>
-        </details>
+        {providerConfigOpen && (
+          <Dialog open={providerConfigOpen} onOpenChange={setProviderConfigOpen}>
+            <DialogContent
+              title="模型配置"
+              description="管理当前项目的图片生成 Provider、Base URL、API Key 和默认模型。"
+              className="max-h-[84vh] w-[min(94vw,760px)] overflow-y-auto"
+            >
+              <div className="text-xs">
+                <ProviderProfilePanel projectId={projectId} />
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
 
         <h3 className="mb-4 mt-6 text-sm font-bold">输出设置</h3>
         <Field label="生成模式">
