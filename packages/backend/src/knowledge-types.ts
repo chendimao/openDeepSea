@@ -145,6 +145,26 @@ export interface KnowledgeRankingSignals {
   finalScore: number;
 }
 
+export interface KnowledgeInsightGroup {
+  count: number;
+  source_ids: string[];
+}
+
+export interface KnowledgeInsights {
+  duplicates: KnowledgeInsightGroup;
+  stale: KnowledgeInsightGroup;
+  parser_incomplete: KnowledgeInsightGroup;
+  empty_index: KnowledgeInsightGroup;
+}
+
+export interface KnowledgeMetadataPatch {
+  key_points?: string[];
+  decisions?: string[];
+  constraints?: string[];
+  risks?: string[];
+  learnings?: string[];
+}
+
 export interface KnowledgeSearchResult {
   chunk_id: string;
   source_id: string;

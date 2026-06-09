@@ -287,6 +287,62 @@ test('knowledge import routes create manual, url, and workspace document sources
   assert.ok(knowledgeRepo.search({ projectId: project.id, query: 'A12' }).length >= 3);
 });
 
+test('knowledge governance routes expose insights and metadata patch', async () => {
+  const project = createProject('governance');
+  const first = knowledgeRepo.ensureSource({
+    project_id: project.id,
+    source_type: 'manual',
+    source_id: 'governance-a',
+    title: 'Governance A',
+    status: 'ready',
+    content_hash: 'same-governance',
+    metadata: { parser_status: 'complete' },
+  });
+  const second = knowledgeRepo.ensureSource({
+    project_id: project.id,
+    source_type: 'manual',
+    source_id: 'governance-b',
+    title: 'Governance B',
+    status: 'ready',
+    content_hash: 'same-governance',
+    metadata: { parser_status: 'requires_sidecar' },
+  });
+  knowledgeRepo.replaceChunks(first.id, [{ chunk_type: 'body', content: 'A12 governance', project_id: project.id }]);
+
+  const insightsRes = await request(`/api/knowledge/insights?projectId=${project.id}`);
+  assert.equal(insightsRes.status, 200);
+  const insights = await insightsRes.json() as {
+    duplicates: { count: number };
+    parser_incomplete: { count: number };
+    empty_index: { count: number };
+  };
+  assert.equal(insights.duplicates.count, 2);
+  assert.equal(insights.parser_incomplete.count, 1);
+  assert.equal(insights.empty_index.count, 1);
+
+  const patchRes = await request(`/api/knowledge/sources/${first.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      metadataPatch: {
+        decisions: ['采用 hybrid'],
+        risks: ['OCR 未配置'],
+      },
+    }),
+  });
+  assert.equal(patchRes.status, 200);
+  const patched = await patchRes.json() as { metadata: { decisions: string[]; risks: string[] } };
+  assert.deepEqual(patched.metadata.decisions, ['采用 hybrid']);
+  assert.deepEqual(patched.metadata.risks, ['OCR 未配置']);
+
+  const invalidPatchRes = await request(`/api/knowledge/sources/${first.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ metadataPatch: { storage_path: ['/tmp/leak'] } }),
+  });
+  assert.equal(invalidPatchRes.status, 400);
+});
+
 test('knowledge action routes reprocess, disable, restore, and delete source records', async () => {
   const project = createProject('actions');
   const file = createTextFile(project.id, '重处理前内容。');

@@ -990,16 +990,29 @@ const knowledgeSearchQuerySchema = z.object({
   sourceType: knowledgeSourceTypeSchema.optional(),
   limit: z.coerce.number().int().positive().max(100).optional(),
 });
+const knowledgeInsightsQuerySchema = z.object({
+  projectId: z.string().min(1),
+  roomId: z.string().optional(),
+});
+const knowledgeMetadataPatchSchema = z.object({
+  key_points: z.array(z.string()).optional(),
+  decisions: z.array(z.string()).optional(),
+  constraints: z.array(z.string()).optional(),
+  risks: z.array(z.string()).optional(),
+  learnings: z.array(z.string()).optional(),
+}).strict();
 const knowledgePatchSchema = z.object({
   status: z.enum(['ready', 'disabled', 'stale']).optional(),
   enabled: z.union([z.literal(0), z.literal(1), z.boolean()]).optional(),
   tags: z.array(z.string()).optional(),
   summary: z.string().nullable().optional(),
+  metadataPatch: knowledgeMetadataPatchSchema.optional(),
 }).refine(
   (value) => value.status !== undefined ||
     value.enabled !== undefined ||
     value.tags !== undefined ||
-    value.summary !== undefined,
+    value.summary !== undefined ||
+    value.metadataPatch !== undefined,
   { message: 'at least one knowledge source field is required' },
 );
 const manualKnowledgeSchema = z.object({
@@ -1055,6 +1068,19 @@ router.get('/knowledge', (req, res) => {
     query: q,
     limit,
   }));
+});
+
+router.get('/knowledge/insights', (req, res) => {
+  const parsed = knowledgeInsightsQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { projectId, roomId } = parsed.data;
+  if (!projectRepo.get(projectId)) return res.status(404).json({ error: 'project not found' });
+  if (roomId) {
+    const room = roomRepo.get(roomId);
+    if (!room) return res.status(404).json({ error: 'room not found' });
+    if (room.project_id !== projectId) return res.status(400).json({ error: 'room does not belong to project' });
+  }
+  res.json(knowledgeService.getInsights({ projectId, roomId }));
 });
 
 router.get('/knowledge/search', (req, res) => {

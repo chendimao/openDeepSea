@@ -9,6 +9,10 @@ import {
   type WorkspaceKnowledgeImportInput,
   type WorkspaceKnowledgeImportResult,
 } from './knowledge-imports.js';
+import {
+  getKnowledgeInsights,
+  patchKnowledgeSourceMetadata,
+} from './knowledge-governance.js';
 import { searchKnowledge } from './knowledge-search.js';
 import { fileRepo } from './repos/files.js';
 import { knowledgeRepo } from './repos/knowledge.js';
@@ -16,6 +20,8 @@ import { projectRepo } from './repos/projects.js';
 import { roomRepo } from './repos/rooms.js';
 import type {
   KnowledgeExtractionResponse,
+  KnowledgeInsights,
+  KnowledgeMetadataPatch,
   KnowledgeRetrievalMode,
   KnowledgeSearchResult,
   KnowledgeSource,
@@ -133,6 +139,7 @@ export const knowledgeService = {
     enabled?: 0 | 1 | boolean;
     tags?: string[];
     summary?: string | null;
+    metadataPatch?: KnowledgeMetadataPatch;
   }): KnowledgeSource | undefined {
     const source = knowledgeRepo.getSource(sourceId);
     if (!source) return undefined;
@@ -140,7 +147,7 @@ export const knowledgeService = {
     const explicitEnabled = normalizeEnabled(input.enabled);
     if (input.status === 'disabled' || explicitEnabled === 0) {
       knowledgeRepo.setChunksEnabled(source.id, 0);
-      return knowledgeRepo.updateSourceStatus(source.id, {
+      const updated = knowledgeRepo.updateSourceStatus(source.id, {
         status: 'disabled',
         tags: input.tags,
         summary: input.summary,
@@ -149,11 +156,12 @@ export const knowledgeService = {
           previous_status: source.status,
         },
       });
+      return applyMetadataPatchIfPresent(updated, input.metadataPatch);
     }
 
     if (input.status === 'ready' || explicitEnabled === 1) {
       knowledgeRepo.setChunksEnabled(source.id, 1);
-      return knowledgeRepo.updateSourceStatus(source.id, {
+      const updated = knowledgeRepo.updateSourceStatus(source.id, {
         status: input.status === 'ready' ? 'ready' : getRestoredStatus(source),
         error: null,
         tags: input.tags,
@@ -163,17 +171,23 @@ export const knowledgeService = {
           previous_status: null,
         },
       });
+      return applyMetadataPatchIfPresent(updated, input.metadataPatch);
     }
 
-    return knowledgeRepo.updateSourceStatus(source.id, {
+    const updated = knowledgeRepo.updateSourceStatus(source.id, {
       status: input.status ?? source.status,
       tags: input.tags,
       summary: input.summary,
     });
+    return applyMetadataPatchIfPresent(updated, input.metadataPatch);
   },
 
   deleteSource(sourceId: string): boolean {
     return knowledgeRepo.deleteSource(sourceId);
+  },
+
+  getInsights(input: { projectId: string; roomId?: string }): KnowledgeInsights {
+    return getKnowledgeInsights(input);
   },
 
   createManualKnowledge(input: ManualKnowledgeInput): KnowledgeImportResult {
@@ -211,6 +225,14 @@ function numberMetadata(value: unknown): number | null {
 function normalizeEnabled(value: 0 | 1 | boolean | undefined): 0 | 1 | undefined {
   if (value === undefined) return undefined;
   return value === true || value === 1 ? 1 : 0;
+}
+
+function applyMetadataPatchIfPresent(
+  source: KnowledgeSource | undefined,
+  metadataPatch: KnowledgeMetadataPatch | undefined,
+): KnowledgeSource | undefined {
+  if (!source || !metadataPatch) return source;
+  return patchKnowledgeSourceMetadata(source.id, metadataPatch);
 }
 
 function getRestoredStatus(source: KnowledgeSource): 'ready' | 'stale' {
