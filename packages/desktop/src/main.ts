@@ -6,6 +6,12 @@ import { dirname, join, resolve } from 'node:path';
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import type { WriteStream } from 'node:fs';
+import {
+  createDesktopDataManager,
+  DESKTOP_DATA_CHANNELS,
+  type DesktopDataManager,
+  type DesktopDataDirectoryPickResult,
+} from './desktop-data';
 
 type BackendLaunch = {
   command: string;
@@ -27,10 +33,46 @@ const isDev = process.env.OPENDEEPSEA_DESKTOP_DEV === '1';
 const LOCAL_TOKEN_CHANNEL = 'opendeepsea:get-local-token';
 let mainWindow: BrowserWindow | null = null;
 let backendRuntime: BackendRuntime | null = null;
+let desktopDataManager: DesktopDataManager | null = null;
 let isQuitting = false;
+let suppressBackendExitDialog = false;
 
 ipcMain.on(LOCAL_TOKEN_CHANNEL, (event) => {
   event.returnValue = backendRuntime?.localToken ?? '';
+});
+ipcMain.handle(DESKTOP_DATA_CHANNELS.getDataDirectory, async () => {
+  return getDesktopDataManager().getState();
+});
+ipcMain.handle(DESKTOP_DATA_CHANNELS.chooseDataDirectory, async (): Promise<DesktopDataDirectoryPickResult> => {
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, {
+      title: '选择 OpenDeepSea 数据目录',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    : await dialog.showOpenDialog({
+      title: '选择 OpenDeepSea 数据目录',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true, state: await getDesktopDataManager().getState() };
+  }
+  const selectedPath = result.filePaths[0];
+  return {
+    canceled: false,
+    path: selectedPath,
+    state: await getDesktopDataManager().setDataDirectory(selectedPath),
+  };
+});
+ipcMain.handle(DESKTOP_DATA_CHANNELS.resetDataDirectory, async () => {
+  return getDesktopDataManager().resetDataDirectory();
+});
+ipcMain.handle(DESKTOP_DATA_CHANNELS.clearData, async () => {
+  await clearDesktopDataAndRelaunch();
+  return { ok: true };
+});
+ipcMain.handle(DESKTOP_DATA_CHANNELS.restartApp, async () => {
+  relaunchApp();
+  return { ok: true };
 });
 
 if (!app.requestSingleInstanceLock()) {
@@ -48,6 +90,7 @@ if (!app.requestSingleInstanceLock()) {
 async function startDesktopApp(): Promise<void> {
   try {
     await app.whenReady();
+    desktopDataManager = createDesktopDataManager({ userDataDir: app.getPath('userData') });
     backendRuntime = await startBackend();
     mainWindow = createMainWindow();
     await loadRenderer(mainWindow, backendRuntime.baseUrl);
@@ -66,7 +109,7 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
-  stopBackend();
+  void stopBackend();
 });
 
 app.on('window-all-closed', () => {
@@ -124,7 +167,8 @@ async function startBackend(): Promise<BackendRuntime> {
   const port = isDev ? getDevBackendPort() : await findFreePort();
   const localToken = getDesktopLocalToken();
   const baseUrl = `http://127.0.0.1:${port}`;
-  const launch = buildBackendLaunch(port, localToken);
+  const dataDir = await getDesktopDataManager().ensureActiveDataDirectory();
+  const launch = buildBackendLaunch(port, localToken, dataDir);
   const logStream = createBackendLogStream();
   let suppressExitDialog = false;
   const child = spawn(launch.command, launch.args, {
@@ -148,7 +192,7 @@ async function startBackend(): Promise<BackendRuntime> {
   });
   child.on('exit', (code, signal) => {
     writeBackendLog(logStream, `\n[desktop] backend exited code=${code ?? 'null'} signal=${signal ?? 'null'}\n`);
-    if (!isQuitting && !suppressExitDialog) {
+    if (!isQuitting && !suppressBackendExitDialog && !suppressExitDialog) {
       dialog.showErrorBox('OpenDeepSea 后端已退出', `后端进程已退出：code=${code ?? 'null'} signal=${signal ?? 'null'}`);
       app.quit();
     }
@@ -165,10 +209,7 @@ async function startBackend(): Promise<BackendRuntime> {
   return { baseUrl, localToken, process: child, logStream };
 }
 
-function buildBackendLaunch(port: number, localToken: string): BackendLaunch {
-  const dataDir = join(app.getPath('userData'), 'data');
-  mkdirSync(dataDir, { recursive: true });
-
+function buildBackendLaunch(port: number, localToken: string, dataDir: string): BackendLaunch {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PORT: String(port),
@@ -189,7 +230,7 @@ function buildBackendLaunch(port: number, localToken: string): BackendLaunch {
 
   env.ELECTRON_RUN_AS_NODE = '1';
   env.NODE_ENV = 'production';
-  env.OPENDEEPSEA_FRONTEND_DIST = join(app.getAppPath(), 'packages', 'frontend', 'dist');
+  env.OPENDEEPSEA_FRONTEND_DIST = join(process.resourcesPath, 'frontend-dist');
 
   return {
     command: process.execPath,
@@ -233,11 +274,16 @@ async function waitForBackend(baseUrl: string, child: BackendProcess): Promise<v
   throw new Error(`backend did not become ready: ${(lastError as Error | null)?.message ?? 'timeout'}`);
 }
 
-function stopBackend(): void {
+async function stopBackend(): Promise<void> {
   const runtime = backendRuntime;
   backendRuntime = null;
   if (!runtime) return;
   terminateBackendProcess(runtime.process);
+  await waitForBackendProcessExit(runtime.process, 5000);
+  if (!hasBackendProcessExited(runtime.process)) {
+    forceKillBackendProcess(runtime.process);
+    await waitForBackendProcessExit(runtime.process, 2000);
+  }
   runtime.logStream.end();
 }
 
@@ -269,18 +315,81 @@ function terminateBackendProcess(child: BackendProcess): void {
   }
 
   const forceKillTimer = setTimeout(() => {
-    if (hasBackendProcessExited(child)) return;
-    try {
-      process.kill(-pid, 'SIGKILL');
-    } catch {
-      child.kill('SIGKILL');
-    }
+    forceKillBackendProcess(child);
   }, 5000);
   forceKillTimer.unref();
 }
 
 function hasBackendProcessExited(child: BackendProcess): boolean {
   return child.exitCode !== null || child.signalCode !== null;
+}
+
+function forceKillBackendProcess(child: BackendProcess): void {
+  if (hasBackendProcessExited(child)) return;
+  const pid = child.pid;
+  if (!pid) {
+    child.kill('SIGKILL');
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    const killer = spawn('taskkill', ['/pid', String(pid), '/t', '/f'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    killer.on('error', () => {
+      child.kill('SIGKILL');
+    });
+    killer.unref();
+    return;
+  }
+
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch {
+    child.kill('SIGKILL');
+  }
+}
+
+async function waitForBackendProcessExit(child: BackendProcess, timeoutMs: number): Promise<void> {
+  if (hasBackendProcessExited(child)) return;
+  await Promise.race([
+    new Promise<void>((resolveExit) => {
+      child.once('exit', () => resolveExit());
+    }),
+    delay(timeoutMs),
+  ]);
+}
+
+async function clearDesktopDataAndRelaunch(): Promise<void> {
+  suppressBackendExitDialog = true;
+  try {
+    await stopBackend();
+    await getDesktopDataManager().clearActiveDataDirectory();
+    relaunchApp();
+  } catch (err) {
+    suppressBackendExitDialog = false;
+    if (!backendRuntime && !isQuitting) {
+      backendRuntime = await startBackend();
+      if (mainWindow) await loadRenderer(mainWindow, backendRuntime.baseUrl);
+    }
+    throw err;
+  }
+}
+
+function relaunchApp(): void {
+  isQuitting = true;
+  setImmediate(() => {
+    app.relaunch();
+    app.exit(0);
+  });
+}
+
+function getDesktopDataManager(): DesktopDataManager {
+  if (!desktopDataManager) {
+    desktopDataManager = createDesktopDataManager({ userDataDir: app.getPath('userData') });
+  }
+  return desktopDataManager;
 }
 
 function isAllowedExternalUrl(value: string): boolean {

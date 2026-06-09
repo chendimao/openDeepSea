@@ -63,7 +63,8 @@ npm run package:desktop
 ### 产物结构检查
 
 ```bash
-npx asar list release/desktop/mac/OpenDeepSea.app/Contents/Resources/app.asar | rg "packages/(desktop/dist/main.js|desktop/dist/preload.js|backend/dist/server.js|frontend/dist/index.html)|packages/backend/package.json"
+npx asar list release/desktop/mac/OpenDeepSea.app/Contents/Resources/app.asar | rg "packages/(desktop/dist/main.js|desktop/dist/preload.js|backend/dist/server.js)|packages/backend/package.json"
+test -f release/desktop/mac/OpenDeepSea.app/Contents/Resources/frontend-dist/index.html
 ```
 
 结果：确认 app.asar 包含：
@@ -72,10 +73,13 @@ npx asar list release/desktop/mac/OpenDeepSea.app/Contents/Resources/app.asar | 
 - `/packages/backend/package.json`
 - `/packages/desktop/dist/main.js`
 - `/packages/desktop/dist/preload.js`
-- `/packages/frontend/dist/index.html`
 - `/node_modules/better-sqlite3/package.json`
 - `/node_modules/node-pty/package.json`
 - `/node_modules/express/package.json`
+
+前端生产产物确认：
+
+- `release/desktop/mac/OpenDeepSea.app/Contents/Resources/frontend-dist/index.html`
 
 native unpack 确认：
 
@@ -145,6 +149,70 @@ npm run package:desktop
 - `ws://127.0.0.1:17330/ws` 返回 `403`。
 - `ws://127.0.0.1:17330/ws?localToken=smoke-token` 可连接。
 - 打包后 root `better-sqlite3` 可在普通 Node 下打开 `:memory:` 数据库，root `node-pty` 可在普通 Node 下加载 `spawn`。
+
+### Electron 数据目录设置与清除数据回归
+
+本轮新增 Electron 桌面数据目录设置与清除数据能力，覆盖：
+
+- Electron main 使用 `desktop-settings.json` 管理自定义数据目录。
+- backend sidecar 启动时注入 `OPENDEEPSEA_DATA_DIR` 和 `OPENCLAW_ROOM_DB`。
+- 文件上传目录统一落在 `OPENDEEPSEA_DATA_DIR/uploads/messages` 与 `OPENDEEPSEA_DATA_DIR/uploads/files`。
+- 自定义目录必须为空或已有 `.opendeepsea-data-dir.json` marker。
+- 清除桌面数据前停止 backend，并且只清除带有效 marker 的当前数据目录内容。
+- Web 端没有 `window.openDeepSeaDesktop` 时不显示桌面数据设置。
+
+说明：主工作区存在与本次任务无关的 `packages/frontend/src/pages/SkillsPage.tsx` 脏改动，会使 `npm run build:prod -w @openclaw-room/frontend` 因缺少 `tokenSourceDescription`、`SkillsMpTokenSettingsPanel`、`tokenSourceLabel` 失败。完整安装包验证在隔离 worktree `.worktrees/electron-data-dir-package-verify` 中执行，该 worktree 只应用本次 staged patch；验证通过后将 ignored 的 `release/desktop` 产物同步回主工作区。
+
+验证命令：
+
+```bash
+cd packages/desktop && node --import tsx --test src/desktop-data.test.ts
+```
+
+结果：6 个测试通过，0 失败。
+
+```bash
+cd packages/frontend && node --import tsx --test src/components/SettingsDialogs.test.tsx
+```
+
+结果：5 个测试通过，0 失败。
+
+```bash
+npm run build:desktop
+npm run package:desktop
+```
+
+结果：均通过；`build:desktop` 仍只有 Vite chunk size warning；`package:desktop` 生成：
+
+- `release/desktop/OpenDeepSea-0.1.0.dmg`
+- `release/desktop/OpenDeepSea-0.1.0-mac.zip`
+
+包内结构检查：
+
+```bash
+npx asar list release/desktop/mac/OpenDeepSea.app/Contents/Resources/app.asar | rg "packages/(desktop/dist/(main|preload|desktop-data)\\.js|backend/dist/server\\.js)|node_modules/(better-sqlite3|node-pty)/package\\.json"
+test -f release/desktop/mac/OpenDeepSea.app/Contents/Resources/frontend-dist/index.html
+```
+
+结果：确认 app.asar 包含 `desktop-data.js`、Electron main/preload、backend server，以及 `better-sqlite3` / `node-pty` 依赖；前端生产入口位于 `Contents/Resources/frontend-dist/index.html`。
+
+包内 smoke 结果：
+
+- 使用打包后的 `release/desktop/mac/OpenDeepSea.app/Contents/MacOS/OpenDeepSea` 以 `ELECTRON_RUN_AS_NODE=1` 启动 asar 内 backend。
+- 使用临时 `OPENDEEPSEA_DATA_DIR`、`OPENCLAW_ROOM_DB`、`OPENDEEPSEA_FRONTEND_DIST`、`OPENDEEPSEA_LOCAL_TOKEN` 和随机空闲端口。
+- `GET /api/health` 返回 ok。
+- `GET /` 返回前端 HTML，响应头 `Cache-Control: no-store`。
+- `ws://127.0.0.1:<port>/ws` 返回 `403`。
+- `ws://127.0.0.1:<port>/ws?localToken=smoke-token` 可连接。
+
+root ABI 检查：
+
+```bash
+node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('select 1 as ok').get(); db.close(); console.log('better-sqlite3 node abi ok')"
+node -e "const pty=require('node-pty'); console.log(typeof pty.spawn === 'function' ? 'node-pty node abi ok' : 'node-pty missing spawn')"
+```
+
+结果：`better-sqlite3 node abi ok`，`node-pty node abi ok`。
 
 ## 兼容性修复记录
 

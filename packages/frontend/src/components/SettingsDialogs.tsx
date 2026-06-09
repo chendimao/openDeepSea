@@ -94,6 +94,18 @@ export function buildGlobalSessionPromptCounterLabel(value: string): string {
   return `${value.length} / ${GLOBAL_SESSION_PROMPT_LIMIT}`;
 }
 
+type DesktopDataApi = NonNullable<Window['openDeepSeaDesktop']>;
+
+export function shouldShowDesktopDataSection(api: Window['openDeepSeaDesktop'] | undefined): api is DesktopDataApi {
+  return Boolean(
+    typeof api?.getDataDirectory === 'function' &&
+    typeof api.chooseDataDirectory === 'function' &&
+    typeof api.resetDataDirectory === 'function' &&
+    typeof api.clearData === 'function' &&
+    typeof api.restartApp === 'function',
+  );
+}
+
 const ROUTING_OPTIONS: Array<{ value: MessageRoutingMode; descriptionKey: MessageKey }> = [
   { value: 'mentions_only', descriptionKey: 'settings.routing.mentions_only.description' },
   { value: 'fallback_reply', descriptionKey: 'settings.routing.fallback_reply.description' },
@@ -657,6 +669,7 @@ export function SystemSettingsForm({
   ];
   const activeCategoryMeta = categories.find((category) => category.value === activeCategory) ?? categories[0];
   const ActiveCategoryIcon = activeCategoryMeta.icon;
+  const desktopDataApi = typeof window === 'undefined' ? undefined : window.openDeepSeaDesktop;
 
   return (
     <SettingsDialogBody
@@ -744,6 +757,15 @@ export function SystemSettingsForm({
               >
                 <LanguageSection />
               </SubSettingSection>
+              {shouldShowDesktopDataSection(desktopDataApi) && (
+                <SubSettingSection
+                  title={t('settings.desktopData')}
+                  description={t('settings.desktopDataDescription')}
+                  icon={<FolderOpen className="h-4 w-4" strokeWidth={1.75} />}
+                >
+                  <DesktopDataSection api={desktopDataApi} />
+                </SubSettingSection>
+              )}
             </div>
           )}
           {activeCategory === 'sessionPrompt' && (
@@ -1630,6 +1652,167 @@ function LanguageSection(): JSX.Element {
       value={locale}
       onChange={setLocale}
     />
+  );
+}
+
+function DesktopDataSection({ api }: { api: DesktopDataApi }): JSX.Element {
+  const { t } = useI18n();
+  const [state, setState] = useState<OpenDeepSeaDesktopDataDirectoryState | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+
+  useEffect(() => {
+    let canceled = false;
+    setError(null);
+    api.getDataDirectory()
+      .then((nextState) => {
+        if (!canceled) setState(nextState);
+      })
+      .catch((err) => {
+        if (!canceled) setError((err as Error).message || t('settings.desktopDataLoadFailed'));
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [api, t]);
+
+  const run = async (action: () => Promise<void>): Promise<void> => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  return (
+    <DesktopDataSectionView
+      state={state}
+      error={error}
+      isBusy={isBusy}
+      onChoose={() => void run(async () => {
+        const result = await api.chooseDataDirectory();
+        setState(result.state);
+        if (!result.canceled) toast.success(t('settings.desktopDataSaved'));
+      })}
+      onReset={() => void run(async () => {
+        setState(await api.resetDataDirectory());
+        toast.success(t('settings.desktopDataResetDone'));
+      })}
+      onRestart={() => void run(async () => {
+        await api.restartApp();
+      })}
+      onClear={() => void run(async () => {
+        if (!window.confirm(t('settings.desktopDataClearConfirm'))) return;
+        await api.clearData();
+        toast.success(t('settings.desktopDataClearStarted'));
+      })}
+    />
+  );
+}
+
+export function DesktopDataSectionView({
+  state,
+  error = null,
+  isBusy,
+  onChoose,
+  onReset,
+  onRestart,
+  onClear,
+}: {
+  state: OpenDeepSeaDesktopDataDirectoryState | null;
+  error?: string | null;
+  isBusy: boolean;
+  onChoose: () => void;
+  onReset: () => void;
+  onRestart: () => void;
+  onClear: () => void;
+}): JSX.Element {
+  const { t } = useI18n();
+
+  if (!state) {
+    return (
+      <div className="space-y-2">
+        <div className="text-[12px] text-[var(--color-fg-muted)]">
+          {t('settings.desktopDataLoading')}
+        </div>
+        {error && (
+          <div className="flex items-start gap-2 rounded-md border border-[color-mix(in_srgb,var(--color-danger)_40%,var(--color-border))] bg-[color-mix(in_srgb,var(--color-danger)_8%,transparent)] px-3 py-2 text-[12px] leading-relaxed text-[var(--color-danger)]">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.75} />
+            <span>{error}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="divide-y divide-[var(--color-border)] border-y border-[var(--color-border)]">
+        <DesktopDataPathRow label={t('settings.desktopDataCurrentDir')} value={state.activeDataDir} />
+        <DesktopDataPathRow label={t('settings.desktopDataDefaultDir')} value={state.defaultDataDir} />
+        {state.pendingDataDir && (
+          <DesktopDataPathRow label={t('settings.desktopDataPendingDir')} value={state.pendingDataDir} />
+        )}
+      </div>
+
+      {state.requiresRestart && (
+        <div className="flex items-start gap-2 rounded-md border border-[color-mix(in_srgb,var(--color-warning)_36%,var(--color-border))] bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-3 py-2 text-[12px] leading-relaxed text-[var(--color-fg)]">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-[var(--color-warning)]" strokeWidth={1.75} />
+          <span>{t('settings.desktopDataRestartRequired')}</span>
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-start gap-2 rounded-md border border-[color-mix(in_srgb,var(--color-danger)_40%,var(--color-border))] bg-[color-mix(in_srgb,var(--color-danger)_8%,transparent)] px-3 py-2 text-[12px] leading-relaxed text-[var(--color-danger)]">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.75} />
+          <span>{error}</span>
+        </div>
+      )}
+      {!state.canClearData && (
+        <div className="flex items-start gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-[12px] leading-relaxed text-[var(--color-fg-muted)]">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" strokeWidth={1.75} />
+          <span>{t('settings.desktopDataNotClearable')}</span>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" size="sm" variant="secondary" disabled={isBusy} onClick={onChoose}>
+          <FolderOpen className="h-3.5 w-3.5" />
+          {t('settings.desktopDataChoose')}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" disabled={isBusy} onClick={onReset}>
+          <RotateCcw className="h-3.5 w-3.5" />
+          {t('settings.desktopDataReset')}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" disabled={isBusy || !state.requiresRestart} onClick={onRestart}>
+          <RefreshCw className="h-3.5 w-3.5" />
+          {t('settings.desktopDataRestart')}
+        </Button>
+        <Button type="button" size="sm" variant="danger" disabled={isBusy || !state.canClearData} onClick={onClear}>
+          <Trash2 className="h-3.5 w-3.5" />
+          {t('settings.desktopDataClear')}
+        </Button>
+      </div>
+
+      <p className="text-[11.5px] leading-relaxed text-[var(--color-fg-muted)]">
+        {t('settings.desktopDataClearDescription')}
+      </p>
+    </div>
+  );
+}
+
+function DesktopDataPathRow({ label, value }: { label: string; value: string }): JSX.Element {
+  return (
+    <div className="grid gap-1 py-2 sm:grid-cols-[116px_minmax(0,1fr)] sm:items-start">
+      <span className="text-[11.5px] font-medium text-[var(--color-fg-muted)]">{label}</span>
+      <span className="min-w-0 truncate font-mono text-[11.5px] text-[var(--color-fg)]" title={value}>
+        {value}
+      </span>
+    </div>
   );
 }
 
