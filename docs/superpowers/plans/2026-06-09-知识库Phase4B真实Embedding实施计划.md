@@ -692,7 +692,7 @@ git commit -m "feat(knowledge): 支持重建embedding索引"
 - Modify: `packages/backend/src/knowledge-cli.ts`
 - Modify: `packages/backend/src/knowledge-cli.test.ts`
 
-- [ ] **Step 1: Write failing async search test**
+- [x] **Step 1: Write failing async search test**
 
 Add to `packages/backend/src/knowledge-search.test.ts`:
 
@@ -726,7 +726,7 @@ embeddingModel?: string;
 embeddingFallback?: string;
 ```
 
-- [ ] **Step 2: Run failing async search test**
+- [x] **Step 2: Run failing async search test**
 
 Run:
 
@@ -737,7 +737,7 @@ cd packages/backend
 
 Expected: FAIL because `searchKnowledgeAsync` and ranking metadata do not exist.
 
-- [ ] **Step 3: Implement async search**
+- [x] **Step 3: Implement async search**
 
 In `packages/backend/src/knowledge-search.ts`, add:
 
@@ -762,7 +762,7 @@ export async function searchKnowledgeAsync(input: {
 
 Use `getKnowledgeEmbeddingProvider()` to embed the query and read `provider.id/model`. Keep existing synchronous `searchKnowledge()` for compatibility and local hash tests.
 
-- [ ] **Step 4: Update Agent RAG to async**
+- [x] **Step 4: Update Agent RAG to async**
 
 In `packages/backend/src/knowledge-rag.ts`, convert `searchKnowledgeForAgent()` to `async`:
 
@@ -805,7 +805,7 @@ export async function searchKnowledgeForAgent(input: {
 
 Update all call sites to `await`.
 
-- [ ] **Step 5: Update CLI output**
+- [x] **Step 5: Update CLI output**
 
 In `packages/backend/src/knowledge-cli.ts`, await async RAG search and include:
 
@@ -814,7 +814,7 @@ embedding_provider: result.results[0]?.ranking?.embeddingProvider ?? null,
 embedding_model: result.results[0]?.ranking?.embeddingModel ?? null,
 ```
 
-- [ ] **Step 6: Run search/RAG/CLI tests**
+- [x] **Step 6: Run search/RAG/CLI tests**
 
 Run:
 
@@ -825,7 +825,7 @@ cd packages/backend
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 4**
+- [x] **Step 7: Commit Task 4**
 
 ```bash
 git add packages/backend/src/knowledge-search.ts packages/backend/src/knowledge-search.test.ts packages/backend/src/knowledge-rag.ts packages/backend/src/knowledge-rag.test.ts packages/backend/src/knowledge-cli.ts packages/backend/src/knowledge-cli.test.ts packages/backend/src/knowledge-types.ts

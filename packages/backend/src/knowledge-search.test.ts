@@ -9,7 +9,8 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-know
 const { projectRepo } = await import('./repos/projects.js');
 const { knowledgeRepo } = await import('./repos/knowledge.js');
 const { rebuildSourceEmbeddings } = await import('./knowledge-embedding.js');
-const { searchKnowledge } = await import('./knowledge-search.js');
+const { rebuildKnowledgeEmbeddings } = await import('./knowledge-embedding-rebuild.js');
+const { searchKnowledge, searchKnowledgeAsync } = await import('./knowledge-search.js');
 
 function createProject(name: string) {
   return projectRepo.create({
@@ -77,6 +78,26 @@ test('searchKnowledge keeps keyword mode compatible and adds ranking metadata in
   assert.equal(hybrid[0]?.ranking?.titleMatch, true);
   assert.equal(hybrid[0]?.ranking?.summaryMatch, true);
   assert.ok((hybrid[0]?.ranking?.finalScore ?? 0) > 0);
+});
+
+test('searchKnowledgeAsync uses configured embedding provider metadata for hybrid results', async () => {
+  const project = createProject('async-search-provider');
+  const { source } = createSourceWithChunk({
+    projectId: project.id,
+    title: 'A12 语义验收',
+    content: 'A12 移动端验收 需要截图和控制台无错误。',
+  });
+  await rebuildKnowledgeEmbeddings({ projectId: project.id, sourceId: source.id });
+
+  const results = await searchKnowledgeAsync({
+    projectId: project.id,
+    query: '移动端验收',
+    mode: 'hybrid',
+  });
+
+  assert.equal(results[0]?.retrieval_mode, 'hybrid');
+  assert.equal(results[0]?.ranking?.embeddingProvider, 'local-hash');
+  assert.equal(results[0]?.ranking?.embeddingModel, 'local-hash-v1');
 });
 
 test('searchKnowledge vector preview returns embedding results with citations', () => {

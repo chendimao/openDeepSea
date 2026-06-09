@@ -138,6 +138,9 @@ export interface KnowledgeCitation {
 export interface KnowledgeRankingSignals {
   keywordScore?: number;
   vectorScore?: number;
+  embeddingProvider?: string;
+  embeddingModel?: string;
+  embeddingFallback?: string;
   titleMatch: boolean;
   tagMatch: boolean;
   summaryMatch: boolean;

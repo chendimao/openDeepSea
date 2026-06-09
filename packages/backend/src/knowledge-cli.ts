@@ -9,7 +9,7 @@ import type { KnowledgeRetrievalMode } from './knowledge-types.js';
 
 type EnvLike = Record<string, string | undefined>;
 
-export function runKnowledgeCli(argv: string[], env: EnvLike = process.env): unknown {
+export function runKnowledgeCli(argv: string[], env: EnvLike = process.env): unknown | Promise<unknown> {
   const [command, ...args] = argv;
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     return {
@@ -30,7 +30,11 @@ export function runKnowledgeCli(argv: string[], env: EnvLike = process.env): unk
       mode: readSearchMode(readOption(args, '--mode') ?? env.OPENDEEPSEA_KNOWLEDGE_SEARCH_MODE ?? null),
       limit: readNumberOption(args, '--limit'),
       usage: readUsageFromEnv(env),
-    });
+    }).then((result) => ({
+      ...result,
+      embedding_provider: result.embedding_provider ?? result.results[0]?.ranking?.embeddingProvider ?? null,
+      embedding_model: result.embedding_model ?? result.results[0]?.ranking?.embeddingModel ?? null,
+    }));
   }
 
   if (command === 'read-chunk') {
@@ -123,9 +127,9 @@ function readNumberOption(args: string[], name: string): number | undefined {
   return parsed;
 }
 
-function main(): void {
+async function main(): Promise<void> {
   try {
-    const result = runKnowledgeCli(process.argv.slice(2));
+    const result = await Promise.resolve(runKnowledgeCli(process.argv.slice(2)));
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (err) {
     process.stderr.write(`${JSON.stringify({ error: (err as Error).message })}\n`);
@@ -134,5 +138,5 @@ function main(): void {
 }
 
 if (process.argv[1]?.endsWith('knowledge-cli.ts') || process.argv[1]?.endsWith('knowledge-cli.js')) {
-  main();
+  void main();
 }

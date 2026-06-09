@@ -10,6 +10,8 @@ const { db } = await import('./db.js');
 const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { knowledgeRepo } = await import('./repos/knowledge.js');
+const { settingsRepo } = await import('./repos/settings.js');
+const { rebuildKnowledgeEmbeddings } = await import('./knowledge-embedding-rebuild.js');
 const {
   listKnowledgeSourcesForAgent,
   readKnowledgeChunkForAgent,
@@ -63,7 +65,7 @@ function createReadySource(input: {
   return { source, extraction, chunks };
 }
 
-test('searchKnowledgeForAgent returns hybrid citations and records agent usage refs', () => {
+test('searchKnowledgeForAgent returns hybrid citations and records agent usage refs', async () => {
   const project = createProject('search');
   const room = roomRepo.create({ project_id: project.id, name: 'RAG Room' });
   const { source, chunks } = createReadySource({
@@ -76,12 +78,13 @@ test('searchKnowledgeForAgent returns hybrid citations and records agent usage r
       'A12 rollback uses the previous package.',
     ],
   });
+  await rebuildKnowledgeEmbeddings({ projectId: project.id, sourceId: source.id });
 
-  const response = searchKnowledgeForAgent({
+  const response = await searchKnowledgeForAgent({
     projectId: project.id,
     roomId: room.id,
     query: 'A12 deployment',
-    limit: 3,
+    limit: 1,
     usage: {
       refType: 'agent_run',
       refId: 'agent-run-1',
@@ -97,6 +100,8 @@ test('searchKnowledgeForAgent returns hybrid citations and records agent usage r
   assert.equal(response.results[0]?.source_id, source.id);
   assert.equal(response.results[0]?.chunk_id, chunks[0]?.id);
   assert.match(response.results[0]?.content ?? '', /database backup/);
+  assert.equal(response.results[0]?.ranking?.embeddingProvider, 'local-hash');
+  assert.equal(response.results[0]?.ranking?.embeddingModel, 'local-hash-v1');
   assert.equal(response.citations[0]?.key, `knowledge:${source.id}#chunk:${chunks[0]?.id}`);
   assert.equal(knowledgeRepo.countUsageRefs(source.id), 1);
 
@@ -108,9 +113,11 @@ test('searchKnowledgeForAgent returns hybrid citations and records agent usage r
   assert.match(usageRow?.metadata_json ?? '', /planner/);
   assert.match(usageRow?.metadata_json ?? '', /hybrid/);
   assert.match(usageRow?.metadata_json ?? '', /A12 deployment/);
+  assert.match(usageRow?.metadata_json ?? '', /local-hash/);
+  assert.match(usageRow?.metadata_json ?? '', /local-hash-v1/);
 });
 
-test('searchKnowledgeForAgent supports explicit keyword search mode', () => {
+test('searchKnowledgeForAgent supports explicit keyword search mode', async () => {
   const project = createProject('search-mode');
   createReadySource({
     projectId: project.id,
@@ -118,7 +125,7 @@ test('searchKnowledgeForAgent supports explicit keyword search mode', () => {
     chunks: ['A12 mode search content.'],
   });
 
-  const response = searchKnowledgeForAgent({
+  const response = await searchKnowledgeForAgent({
     projectId: project.id,
     query: 'A12 mode',
     mode: 'keyword',
@@ -126,6 +133,50 @@ test('searchKnowledgeForAgent supports explicit keyword search mode', () => {
 
   assert.equal(response.retrieval_mode, 'keyword');
   assert.equal(response.results.length, 1);
+});
+
+test('searchKnowledgeForAgent falls back to keyword when embedding provider is unavailable', async () => {
+  const project = createProject('search-fallback');
+  const { source } = createReadySource({
+    projectId: project.id,
+    title: 'A12 fallback runbook',
+    chunks: ['A12 fallback keyword content.'],
+  });
+  settingsRepo.updateSystem({
+    knowledge_embedding_provider: 'openai-compatible',
+    knowledge_embedding_model: 'text-embedding-3-small',
+    knowledge_embedding_dimensions: null,
+    knowledge_embedding_base_url: 'https://embedding-fallback.example/v1',
+    knowledge_embedding_api_key_env_var: 'OPENDEEPSEA_MISSING_RAG_EMBEDDING_KEY',
+  });
+
+  const response = await searchKnowledgeForAgent({
+    projectId: project.id,
+    query: 'A12 fallback',
+    mode: 'hybrid',
+    usage: {
+      refType: 'agent_run',
+      refId: 'agent-run-fallback',
+    },
+  });
+
+  assert.equal(response.retrieval_mode, 'hybrid');
+  assert.equal(response.results[0]?.source_id, source.id);
+  assert.match(response.warnings?.join('\n') ?? '', /embedding_fallback: keyword/);
+
+  const usageRow = db.prepare('SELECT metadata_json FROM knowledge_usage_refs WHERE source_id = ?').get(source.id) as
+    | { metadata_json: string }
+    | undefined;
+  assert.match(usageRow?.metadata_json ?? '', /embedding_fallback/);
+  assert.match(usageRow?.metadata_json ?? '', /keyword/);
+
+  settingsRepo.updateSystem({
+    knowledge_embedding_provider: null,
+    knowledge_embedding_model: null,
+    knowledge_embedding_dimensions: null,
+    knowledge_embedding_base_url: null,
+    knowledge_embedding_api_key_env_var: null,
+  });
 });
 
 test('readKnowledgeChunkForAgent rejects chunks outside the project scope', () => {

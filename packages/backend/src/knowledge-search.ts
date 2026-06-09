@@ -7,6 +7,7 @@ import type {
   KnowledgeStatus,
 } from './knowledge-types.js';
 import { cosineSimilarity, createLocalHashEmbeddingProvider } from './knowledge-embedding.js';
+import { getKnowledgeEmbeddingProvider } from './knowledge-embedding-provider.js';
 import { knowledgeRepo } from './repos/knowledge.js';
 
 const DEFAULT_LIMIT = 20;
@@ -30,6 +31,23 @@ export function searchKnowledge(input: {
   return hybridSearch({ ...input, query });
 }
 
+export async function searchKnowledgeAsync(input: {
+  projectId: string;
+  roomId?: string;
+  query: string;
+  mode?: KnowledgeRetrievalMode;
+  status?: KnowledgeStatus;
+  sourceType?: KnowledgeSourceType;
+  limit?: number;
+}): Promise<KnowledgeSearchResult[]> {
+  const query = input.query.trim();
+  if (!query) return [];
+  const mode = input.mode ?? 'keyword';
+  if (mode === 'keyword') return keywordSearch({ ...input, query });
+  if (mode === 'vector_preview') return vectorSearchAsync({ ...input, query, mode: 'vector_preview' });
+  return hybridSearchAsync({ ...input, query });
+}
+
 function keywordSearch(input: {
   projectId: string;
   roomId?: string;
@@ -46,6 +64,54 @@ function keywordSearch(input: {
     sourceTypes: input.sourceType ? [input.sourceType] : undefined,
     limit: input.limit,
   });
+}
+
+async function vectorSearchAsync(input: {
+  projectId: string;
+  roomId?: string;
+  query: string;
+  mode: Extract<KnowledgeRetrievalMode, 'vector_preview' | 'hybrid'>;
+  status?: KnowledgeStatus;
+  sourceType?: KnowledgeSourceType;
+  limit?: number;
+}): Promise<KnowledgeSearchResult[]> {
+  const limit = normalizeLimit(input.limit, DEFAULT_LIMIT, MAX_LIMIT);
+  const provider = getKnowledgeEmbeddingProvider();
+  const queryVector = await provider.embed(input.query);
+  const embeddings = knowledgeRepo.listChunkEmbeddings({
+    projectId: input.projectId,
+    provider: provider.id,
+    model: provider.model,
+  });
+  const results: KnowledgeSearchResult[] = [];
+
+  for (const embedding of embeddings) {
+    const source = knowledgeRepo.getSource(embedding.source_id);
+    if (!source || !sourceMatches(source, input)) continue;
+    const chunk = knowledgeRepo.listChunks(source.id).find((item) => item.id === embedding.chunk_id);
+    if (!chunk || chunk.enabled !== 1) continue;
+    const vectorScore = Math.max(0, cosineSimilarity(queryVector, embedding.vector));
+    if (vectorScore <= 0) continue;
+    const ranking = buildRanking({
+      query: input.query,
+      source,
+      keywordScore: undefined,
+      vectorScore,
+      embeddingProvider: provider.id,
+      embeddingModel: provider.model,
+    });
+    results.push(buildSearchResult({
+      source,
+      chunk,
+      mode: input.mode,
+      score: vectorScore,
+      ranking,
+    }));
+  }
+
+  return results
+    .sort((left, right) => (right.ranking?.finalScore ?? right.score) - (left.ranking?.finalScore ?? left.score))
+    .slice(0, limit);
 }
 
 function vectorSearch(input: {
@@ -80,38 +146,85 @@ function vectorSearch(input: {
       keywordScore: undefined,
       vectorScore,
     });
-    results.push({
-      chunk_id: chunk.id,
-      source_id: source.id,
-      external_source_id: source.source_id,
-      project_id: source.project_id,
-      source_type: source.source_type,
-      title: source.title,
-      tags: source.tags,
-      chunk_index: chunk.chunk_index,
-      chunk_type: chunk.chunk_type,
-      heading: chunk.heading,
-      content: chunk.content,
-      snippet: buildSnippet(chunk.content),
+    results.push(buildSearchResult({
+      source,
+      chunk,
+      mode: input.mode,
       score: vectorScore,
-      retrieval_mode: input.mode,
       ranking,
-      metadata: chunk.metadata,
-      citation: {
-        source_id: source.id,
-        source_type: source.source_type,
-        source_title: source.title,
-        external_source_id: source.source_id,
-        chunk_id: chunk.id,
-        chunk_index: chunk.chunk_index,
-        heading: chunk.heading,
-        room_id: source.room_id,
-      },
-    });
+    }));
   }
 
   return results
     .sort((left, right) => (right.ranking?.finalScore ?? right.score) - (left.ranking?.finalScore ?? left.score))
+    .slice(0, limit);
+}
+
+async function hybridSearchAsync(input: {
+  projectId: string;
+  roomId?: string;
+  query: string;
+  status?: KnowledgeStatus;
+  sourceType?: KnowledgeSourceType;
+  limit?: number;
+}): Promise<KnowledgeSearchResult[]> {
+  const limit = normalizeLimit(input.limit, DEFAULT_LIMIT, MAX_LIMIT);
+  const merged = new Map<string, KnowledgeSearchResult>();
+  const keywordResults = keywordSearch({ ...input, limit: Math.max(limit, HYBRID_CANDIDATE_LIMIT) });
+  keywordResults.forEach((result, index) => {
+    const source = knowledgeRepo.getSource(result.source_id);
+    const keywordScore = 1 / (index + 1);
+    const ranking = buildRanking({
+      query: input.query,
+      source,
+      keywordScore,
+      vectorScore: undefined,
+    });
+    merged.set(result.chunk_id, {
+      ...result,
+      score: ranking.finalScore,
+      retrieval_mode: 'hybrid',
+      ranking,
+    });
+  });
+
+  const vectorResults = await vectorSearchAsync({
+    ...input,
+    mode: 'hybrid',
+    limit: Math.max(limit, HYBRID_CANDIDATE_LIMIT),
+  });
+  for (const vectorResult of vectorResults) {
+    const existing = merged.get(vectorResult.chunk_id);
+    const source = knowledgeRepo.getSource(vectorResult.source_id);
+    if (existing) {
+      const ranking = buildRanking({
+        query: input.query,
+        source,
+        keywordScore: existing.ranking?.keywordScore,
+        vectorScore: vectorResult.ranking?.vectorScore,
+        embeddingProvider: vectorResult.ranking?.embeddingProvider,
+        embeddingModel: vectorResult.ranking?.embeddingModel,
+      });
+      merged.set(existing.chunk_id, {
+        ...existing,
+        score: ranking.finalScore,
+        retrieval_mode: 'hybrid',
+        ranking,
+      });
+    } else {
+      merged.set(vectorResult.chunk_id, {
+        ...vectorResult,
+        retrieval_mode: 'hybrid',
+      });
+    }
+  }
+
+  return [...merged.values()]
+    .sort((left, right) => {
+      const scoreDelta = (right.ranking?.finalScore ?? right.score) - (left.ranking?.finalScore ?? left.score);
+      if (Math.abs(scoreDelta) > 0.000001) return scoreDelta;
+      return left.chunk_index - right.chunk_index;
+    })
     .slice(0, limit);
 }
 
@@ -198,6 +311,9 @@ function buildRanking(input: {
   source: KnowledgeSource | undefined;
   keywordScore?: number;
   vectorScore?: number;
+  embeddingProvider?: string;
+  embeddingModel?: string;
+  embeddingFallback?: string;
 }) {
   const terms = getQueryTerms(input.query);
   const titleMatch = matchesAnyTerm(input.source?.title, terms);
@@ -214,11 +330,51 @@ function buildRanking(input: {
   return {
     ...(input.keywordScore === undefined ? {} : { keywordScore: roundScore(input.keywordScore) }),
     ...(input.vectorScore === undefined ? {} : { vectorScore: roundScore(input.vectorScore) }),
+    ...(input.embeddingProvider ? { embeddingProvider: input.embeddingProvider } : {}),
+    ...(input.embeddingModel ? { embeddingModel: input.embeddingModel } : {}),
+    ...(input.embeddingFallback ? { embeddingFallback: input.embeddingFallback } : {}),
     titleMatch,
     tagMatch,
     summaryMatch,
     recencyBoost: roundScore(recencyBoost),
     finalScore: roundScore(finalScore),
+  };
+}
+
+function buildSearchResult(input: {
+  source: KnowledgeSource;
+  chunk: KnowledgeChunk;
+  mode: KnowledgeRetrievalMode;
+  score: number;
+  ranking: ReturnType<typeof buildRanking>;
+}): KnowledgeSearchResult {
+  return {
+    chunk_id: input.chunk.id,
+    source_id: input.source.id,
+    external_source_id: input.source.source_id,
+    project_id: input.source.project_id,
+    source_type: input.source.source_type,
+    title: input.source.title,
+    tags: input.source.tags,
+    chunk_index: input.chunk.chunk_index,
+    chunk_type: input.chunk.chunk_type,
+    heading: input.chunk.heading,
+    content: input.chunk.content,
+    snippet: buildSnippet(input.chunk.content),
+    score: input.score,
+    retrieval_mode: input.mode,
+    ranking: input.ranking,
+    metadata: input.chunk.metadata,
+    citation: {
+      source_id: input.source.id,
+      source_type: input.source.source_type,
+      source_title: input.source.title,
+      external_source_id: input.source.source_id,
+      chunk_id: input.chunk.id,
+      chunk_index: input.chunk.chunk_index,
+      heading: input.chunk.heading,
+      room_id: input.source.room_id,
+    },
   };
 }
 

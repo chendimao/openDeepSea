@@ -9,6 +9,7 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'opendeepsea-know
 const { db } = await import('./db.js');
 const { projectRepo } = await import('./repos/projects.js');
 const { knowledgeRepo } = await import('./repos/knowledge.js');
+const { rebuildKnowledgeEmbeddings } = await import('./knowledge-embedding-rebuild.js');
 const { runKnowledgeCli } = await import('./knowledge-cli.js');
 
 function createProject(name: string) {
@@ -45,19 +46,22 @@ function createReadySource(projectId: string) {
   return { source, chunk: chunk! };
 }
 
-test('runKnowledgeCli searches knowledge and records usage from env', () => {
+test('runKnowledgeCli searches knowledge and records usage from env', async () => {
   const project = createProject('search');
   const { source } = createReadySource(project.id);
+  await rebuildKnowledgeEmbeddings({ projectId: project.id, sourceId: source.id });
 
-  const result = runKnowledgeCli(
+  const result = await runKnowledgeCli(
     ['search', '--project', project.id, '--query', 'A12 CLI', '--limit', '3'],
     {
       OPENDEEPSEA_AGENT_RUN_ID: 'agent-run-cli-1',
       OPENDEEPSEA_ROOM_ID: 'room-env-1',
     },
-  ) as { source: string; results: Array<{ citation_key: string }> };
+  ) as { source: string; embedding_provider: string | null; embedding_model: string | null; results: Array<{ citation_key: string }> };
 
   assert.equal(result.source, 'openclaw.knowledge.search');
+  assert.equal(result.embedding_provider, 'local-hash');
+  assert.equal(result.embedding_model, 'local-hash-v1');
   assert.equal(result.results.length, 1);
   assert.match(result.results[0]?.citation_key ?? '', new RegExp(`knowledge:${source.id}`));
 
@@ -68,17 +72,17 @@ test('runKnowledgeCli searches knowledge and records usage from env', () => {
   assert.match(row?.metadata_json ?? '', /room-env-1/);
 });
 
-test('runKnowledgeCli supports search mode from flag and env default', () => {
+test('runKnowledgeCli supports search mode from flag and env default', async () => {
   const project = createProject('search-mode');
   createReadySource(project.id);
 
-  const explicit = runKnowledgeCli(
+  const explicit = await runKnowledgeCli(
     ['search', '--project', project.id, '--query', 'A12 CLI', '--mode', 'hybrid'],
     { OPENDEEPSEA_AGENT_RUN_ID: 'agent-run-mode-1' },
   ) as { retrieval_mode: string };
   assert.equal(explicit.retrieval_mode, 'hybrid');
 
-  const fromEnv = runKnowledgeCli(
+  const fromEnv = await runKnowledgeCli(
     ['search', '--project', project.id, '--query', 'A12 CLI'],
     { OPENDEEPSEA_KNOWLEDGE_SEARCH_MODE: 'vector_preview' },
   ) as { retrieval_mode: string };

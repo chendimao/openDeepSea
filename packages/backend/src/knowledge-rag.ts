@@ -1,5 +1,6 @@
 import { db } from './db.js';
-import { searchKnowledge } from './knowledge-search.js';
+import { sanitizeEmbeddingProviderError } from './knowledge-embedding-provider.js';
+import { searchKnowledge, searchKnowledgeAsync } from './knowledge-search.js';
 import { knowledgeRepo } from './repos/knowledge.js';
 import { projectRepo } from './repos/projects.js';
 import { roomRepo } from './repos/rooms.js';
@@ -41,6 +42,8 @@ export interface KnowledgeAgentToolResponse<T> {
   };
   generated_at: number;
   retrieval_mode?: KnowledgeRetrievalMode;
+  embedding_provider?: string | null;
+  embedding_model?: string | null;
   results: T;
   citations: KnowledgeAgentCitation[];
   warnings?: string[];
@@ -101,35 +104,71 @@ export interface KnowledgeAgentSourceListItem {
   citation_key: string;
 }
 
-export function searchKnowledgeForAgent(input: {
+export async function searchKnowledgeForAgent(input: {
   projectId: string;
   roomId?: string | null;
   query: string;
   mode?: KnowledgeSearchMode;
   limit?: number;
   usage?: KnowledgeAgentUsage | null;
-}): KnowledgeAgentToolResponse<KnowledgeAgentSearchResult[]> {
+}): Promise<KnowledgeAgentToolResponse<KnowledgeAgentSearchResult[]>> {
   const scope = resolveScope(input.projectId, input.roomId);
   const mode = input.mode ?? 'hybrid';
-  const results = searchKnowledge({
-    projectId: scope.project_id,
-    roomId: scope.room_id,
-    query: input.query,
-    mode,
-    limit: normalizeLimit(input.limit, 5, 10),
-  });
+  const limit = normalizeLimit(input.limit, 5, 10);
+  const warnings: string[] = [];
+  let embeddingFallback: string | undefined;
+  let results: KnowledgeSearchResult[];
+  try {
+    results = await searchKnowledgeAsync({
+      projectId: scope.project_id,
+      roomId: scope.room_id,
+      query: input.query,
+      mode,
+      limit,
+    });
+  } catch (err) {
+    if (mode === 'keyword') throw err;
+    embeddingFallback = 'keyword';
+    warnings.push(`embedding_fallback: keyword (${sanitizeEmbeddingProviderError(err, '')})`);
+    results = searchKnowledge({
+      projectId: scope.project_id,
+      roomId: scope.room_id,
+      query: input.query,
+      mode: 'keyword',
+      limit,
+    }).map((result) => ({
+      ...result,
+      retrieval_mode: mode,
+      ranking: {
+        titleMatch: false,
+        tagMatch: false,
+        summaryMatch: false,
+        recencyBoost: 0,
+        finalScore: result.score,
+        embeddingFallback,
+      },
+    }));
+  }
+  const embeddingProvider = firstRankingValue(results, 'embeddingProvider');
+  const embeddingModel = firstRankingValue(results, 'embeddingModel');
   const mapped = results.map(toSearchResult);
   recordResultUsage(scope.project_id, results, input.usage, 'search', {
     retrieval_mode: mode,
     query: input.query,
+    ...(embeddingProvider ? { embedding_provider: embeddingProvider } : {}),
+    ...(embeddingModel ? { embedding_model: embeddingModel } : {}),
+    ...(embeddingFallback ? { embedding_fallback: embeddingFallback } : {}),
   });
   return {
     source: 'openclaw.knowledge.search',
     scope,
     generated_at: Date.now(),
     retrieval_mode: mode,
+    embedding_provider: embeddingProvider ?? null,
+    embedding_model: embeddingModel ?? null,
     results: mapped,
     citations: results.map((result) => citationFromSearchResult(result)),
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
@@ -352,6 +391,17 @@ function recordResultUsage(
       ...(result.ranking ? { ranking: result.ranking } : {}),
     });
   }
+}
+
+function firstRankingValue<K extends 'embeddingProvider' | 'embeddingModel'>(
+  results: KnowledgeSearchResult[],
+  key: K,
+): KnowledgeRankingSignals[K] | undefined {
+  for (const result of results) {
+    const value = result.ranking?.[key];
+    if (value) return value;
+  }
+  return undefined;
 }
 
 function recordUsage(
