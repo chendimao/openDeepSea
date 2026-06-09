@@ -10705,6 +10705,182 @@
     font-weight: 500;
   }
 
+  .knowledge-mode-toggle {
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  }
+
+  .knowledge-mode-toggle button {
+    min-width: 72px;
+    border-left: 1px solid #e5e7eb;
+    padding: 4px 10px;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .knowledge-mode-toggle button:first-child {
+    border-left: 0;
+  }
+
+  .knowledge-mode-toggle button:hover {
+    background: #f8fafc;
+  }
+
+  .knowledge-mode-toggle button.is-active {
+    background: #eff6ff;
+    color: #004ac6;
+  }
+
+  .knowledge-insights-strip {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: -6px 0 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #f8fafc;
+    padding: 7px 8px;
+  }
+
+  .knowledge-insights-strip__summary {
+    color: #475569;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .knowledge-insight-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    background: #ffffff;
+    padding: 2px 7px;
+    color: #334155;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .knowledge-insight-chip strong {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+
+  .knowledge-insight-chip.is-warning {
+    border-color: #fde68a;
+    background: #fffbeb;
+    color: #92400e;
+  }
+
+  .knowledge-insight-chip.is-danger {
+    border-color: #fecaca;
+    background: #fef2f2;
+    color: #b91c1c;
+  }
+
+  .knowledge-insight-chip.is-info {
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+  }
+
+  .knowledge-import-panel {
+    margin-bottom: 12px;
+    border: 1px solid #dbeafe;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 10px;
+  }
+
+  .knowledge-import-panel__tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+
+  .knowledge-import-panel__tabs button,
+  .knowledge-import-panel__actions button {
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    background: #ffffff;
+    padding: 4px 9px;
+    color: #334155;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .knowledge-import-panel__tabs button.is-active,
+  .knowledge-import-panel__actions button[type="submit"] {
+    border-color: #bfdbfe;
+    background: #004ac6;
+    color: #ffffff;
+  }
+
+  .knowledge-import-panel__actions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.62;
+  }
+
+  .knowledge-import-panel__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .knowledge-import-panel__grid label,
+  .knowledge-governance-field {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+    color: #475569;
+    font-size: 10px;
+    font-weight: 800;
+  }
+
+  .knowledge-import-panel__grid label.is-wide {
+    grid-column: 1 / -1;
+  }
+
+  .knowledge-import-panel__grid input,
+  .knowledge-import-panel__grid textarea,
+  .knowledge-governance-field textarea {
+    width: 100%;
+    resize: vertical;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    background: #ffffff;
+    padding: 6px 8px;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.45;
+    outline: none;
+  }
+
+  .knowledge-import-panel__grid input:focus,
+  .knowledge-import-panel__grid textarea:focus,
+  .knowledge-governance-field textarea:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 1px #3b82f6;
+  }
+
+  .knowledge-import-panel__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
   .knowledge-table-wrap {
     overflow: hidden;
     border: 1px solid #f3f4f6;
@@ -10960,6 +11136,72 @@
     color: #dc2626;
   }
 
+  .knowledge-ranking-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .knowledge-ranking-chip {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    background: #f8fafc;
+    padding: 5px 7px;
+  }
+
+  .knowledge-ranking-chip small,
+  .knowledge-ranking-flag {
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 800;
+  }
+
+  .knowledge-ranking-chip strong {
+    color: #0f172a;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 11px;
+  }
+
+  .knowledge-ranking-flag {
+    border: 1px solid #bfdbfe;
+    border-radius: 4px;
+    background: #eff6ff;
+    padding: 1px 5px;
+    color: #1d4ed8;
+  }
+
+  .knowledge-governance-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .knowledge-governance-field textarea {
+    min-height: 50px;
+    font-size: 11px;
+  }
+
+  .knowledge-governance-save {
+    display: inline-flex;
+    justify-content: center;
+    border-radius: 4px;
+    background: #004ac6;
+    padding: 6px 10px;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .knowledge-governance-save:disabled {
+    cursor: not-allowed;
+    opacity: 0.62;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .heartbeat, .fade-up, .modal-pop, .ai-message-row.is-highlighted, .agent-activity-dot, .chat-activity-pulse, .chat-activity-icon svg { animation: none !important; }
     *, *::before, *::after { transition-duration: 0ms !important; }
@@ -11134,6 +11376,19 @@
     .knowledge-filter-button,
     .knowledge-sort-button {
       max-width: 100%;
+    }
+
+    .knowledge-mode-toggle {
+      width: 100%;
+    }
+
+    .knowledge-mode-toggle button {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .knowledge-import-panel__grid {
+      grid-template-columns: minmax(0, 1fr);
     }
 
     .knowledge-pagination {

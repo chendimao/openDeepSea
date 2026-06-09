@@ -37,11 +37,17 @@ import { useI18n } from '../lib/i18n';
 import {
   filterKnowledgeSources,
   formatKnowledgeSize,
+  getKnowledgeRetrievalModeDisplay,
   getKnowledgeSourceTypeDisplay,
   sortKnowledgeSourcesByStatus,
+  summarizeKnowledgeInsights,
   summarizeKnowledgeStats,
   type KnowledgeChunk,
   type KnowledgeExtraction,
+  type KnowledgeInsightsSummary,
+  type KnowledgeLocale,
+  type KnowledgeMetadataPatch,
+  type KnowledgeRetrievalMode,
   type KnowledgeSearchResult,
   type KnowledgeSource,
   type KnowledgeSourceDetail,
@@ -53,6 +59,20 @@ import type { ProjectFile, ResourceType } from '../lib/types';
 
 type IconComponent = LucideIcon;
 type DetailTab = 'overview' | 'preview' | 'extraction' | 'summary' | 'chunks' | 'refs';
+type KnowledgeImportKind = 'manual' | 'url' | 'workspace';
+type KnowledgeFactField = keyof KnowledgeMetadataPatch;
+
+interface KnowledgeImportFormState {
+  manualTitle: string;
+  manualContent: string;
+  manualTags: string;
+  url: string;
+  urlTitle: string;
+  urlContent: string;
+  urlTags: string;
+  workspacePaths: string;
+  workspaceTags: string;
+}
 
 interface KnowledgeDashboardStats {
   total: number;
@@ -115,6 +135,32 @@ const DETAIL_TABS: Array<{ value: DetailTab; label: string }> = [
   { value: 'refs', label: '引用' },
 ];
 
+const RETRIEVAL_MODE_OPTIONS: Array<{ value: KnowledgeRetrievalMode; fallbackLabel: string }> = [
+  { value: 'keyword', fallbackLabel: '关键词' },
+  { value: 'vector_preview', fallbackLabel: '向量预览' },
+  { value: 'hybrid', fallbackLabel: '混合' },
+];
+
+const KNOWLEDGE_FACT_FIELDS: Array<{ key: KnowledgeFactField; label: string; placeholder: string }> = [
+  { key: 'key_points', label: '关键点', placeholder: '每行一个关键事实' },
+  { key: 'decisions', label: '决策', placeholder: '每行一个已确认决策' },
+  { key: 'constraints', label: '约束', placeholder: '每行一个约束条件' },
+  { key: 'risks', label: '风险', placeholder: '每行一个风险或缺口' },
+  { key: 'learnings', label: '经验', placeholder: '每行一个可复用经验' },
+];
+
+const EMPTY_IMPORT_FORM: KnowledgeImportFormState = {
+  manualTitle: '',
+  manualContent: '',
+  manualTags: '',
+  url: '',
+  urlTitle: '',
+  urlContent: '',
+  urlTags: '',
+  workspacePaths: '',
+  workspaceTags: '',
+};
+
 export function KnowledgePage(): JSX.Element {
   const { projectId = '' } = useParams();
   const queryClient = useQueryClient();
@@ -125,6 +171,10 @@ export function KnowledgePage(): JSX.Element {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('overview');
   const [previewFile, setPreviewFile] = useState<ProjectFile | null>(null);
+  const [retrievalMode, setRetrievalMode] = useState<KnowledgeRetrievalMode>('keyword');
+  const [importDialog, setImportDialog] = useState<KnowledgeImportKind | null>(null);
+  const [importForm, setImportForm] = useState<KnowledgeImportFormState>(EMPTY_IMPORT_FORM);
+  const [metadataDraft, setMetadataDraft] = useState<Record<KnowledgeFactField, string>>(() => buildMetadataDraft(null));
 
   useEffect(() => {
     setFilters((current) => ({
@@ -194,17 +244,24 @@ export function KnowledgePage(): JSX.Element {
 
   const shouldSearchKnowledge = Boolean(selectedProjectId && keyword);
   const { data: searchResults = [], isLoading: searchLoading } = useQuery({
-    queryKey: ['knowledge-search', selectedProjectId, activeRoomId, filters.status ?? '', filters.sourceType ?? '', keyword],
+    queryKey: ['knowledge-search', selectedProjectId, activeRoomId, filters.status ?? '', filters.sourceType ?? '', keyword, retrievalMode],
     queryFn: () => api.searchKnowledge({
       projectId: selectedProjectId,
       roomId: activeRoomId || undefined,
       status: filters.status || undefined,
       sourceType: filters.sourceType || undefined,
       query: keyword,
+      mode: retrievalMode,
       limit: 50,
     }),
     enabled: shouldSearchKnowledge,
   });
+  const { data: insights } = useQuery({
+    queryKey: ['knowledge-insights', selectedProjectId, activeRoomId],
+    queryFn: () => api.getKnowledgeInsights({ projectId: selectedProjectId, roomId: activeRoomId || undefined }),
+    enabled: Boolean(selectedProjectId),
+  });
+  const insightSummary = useMemo(() => summarizeKnowledgeInsights(insights, locale), [insights, locale]);
 
   const searchSourceIds = useMemo(
     () => new Set(searchResults.map((result) => result.source_id)),
@@ -264,6 +321,10 @@ export function KnowledgePage(): JSX.Element {
   const rows = useMemo(() => visibleSources.map(createKnowledgeRow), [visibleSources]);
   const selectedRow = rows.find((row) => row.id === selectedSourceId) ?? null;
   const selectedSourceIdForQuery = selectedRow?.source.id ?? null;
+  const selectedSearchResults = useMemo(
+    () => searchResults.filter((result) => result.source_id === selectedSourceIdForQuery),
+    [searchResults, selectedSourceIdForQuery],
+  );
   const pathLabel = selectedProject ? `${selectedProject.name} · ${selectedProject.path}` : '所有项目';
 
   useEffect(() => {
@@ -287,6 +348,10 @@ export function KnowledgePage(): JSX.Element {
     queryFn: () => api.listKnowledgeChunks(selectedSourceIdForQuery!, { limit: 200 }),
     enabled: !!selectedSourceIdForQuery && activeDetailTab === 'chunks',
   });
+
+  useEffect(() => {
+    setMetadataDraft(buildMetadataDraft((selectedDetail ?? selectedRow?.source)?.metadata ?? null));
+  }, [selectedDetail, selectedRow?.source]);
 
   const upload = useMutation({
     mutationFn: (selectedFiles: File[]) => {
@@ -318,6 +383,52 @@ export function KnowledgePage(): JSX.Element {
     onSuccess: async (source) => {
       await invalidateKnowledgeQueries(queryClient, selectedProjectId);
       toast.success(source.status === 'disabled' ? '已禁用检索' : '已恢复检索');
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const createImport = useMutation({
+    mutationFn: (kind: KnowledgeImportKind) => {
+      if (!selectedProjectId) throw new Error('请选择项目后再导入知识。');
+      const roomId = activeRoomId || undefined;
+      if (kind === 'manual') {
+        return api.createManualKnowledge(selectedProjectId, {
+          title: importForm.manualTitle,
+          content: importForm.manualContent,
+          tags: parseTagInput(importForm.manualTags),
+          roomId,
+        });
+      }
+      if (kind === 'url') {
+        return api.createUrlKnowledge(selectedProjectId, {
+          url: importForm.url,
+          title: importForm.urlTitle || undefined,
+          content: importForm.urlContent || undefined,
+          tags: parseTagInput(importForm.urlTags),
+          roomId,
+        });
+      }
+      return api.importWorkspaceKnowledgeDocs(selectedProjectId, {
+        paths: parseMultilineInput(importForm.workspacePaths),
+        tags: parseTagInput(importForm.workspaceTags),
+        roomId,
+      });
+    },
+    onSuccess: async () => {
+      await invalidateKnowledgeQueries(queryClient, selectedProjectId);
+      setImportDialog(null);
+      toast.success('已导入知识资源');
+    },
+    onError: (err) => toast.error((err as Error).message),
+  });
+
+  const saveMetadata = useMutation({
+    mutationFn: (sourceId: string) => api.updateKnowledgeSource(sourceId, {
+      metadataPatch: buildMetadataPatch(metadataDraft),
+    }),
+    onSuccess: async () => {
+      await invalidateKnowledgeQueries(queryClient, selectedProjectId);
+      toast.success('知识沉淀已保存');
     },
     onError: (err) => toast.error((err as Error).message),
   });
@@ -403,6 +514,18 @@ export function KnowledgePage(): JSX.Element {
                     <FileOutput className="h-3 w-3 text-slate-500" strokeWidth={2} />
                     导出清单
                   </button>
+                  <button type="button" disabled={!selectedProjectId} onClick={() => setImportDialog('manual')}>
+                    <Plus className="h-3 w-3 text-slate-500" strokeWidth={2} />
+                    手动
+                  </button>
+                  <button type="button" disabled={!selectedProjectId} onClick={() => setImportDialog('url')}>
+                    <Link2 className="h-3 w-3 text-slate-500" strokeWidth={2} />
+                    URL
+                  </button>
+                  <button type="button" disabled={!selectedProjectId} onClick={() => setImportDialog('workspace')}>
+                    <FolderOpen className="h-3 w-3 text-slate-500" strokeWidth={2} />
+                    工作区
+                  </button>
                 </div>
                 <div className="knowledge-view-toggle" aria-label="展示模式">
                   <button
@@ -429,6 +552,8 @@ export function KnowledgePage(): JSX.Element {
 
             <KnowledgeStatsCards stats={dashboardStats} />
 
+            <KnowledgeInsightsStrip summary={insightSummary} onSelectSource={(sourceId) => setSelectedSourceId(sourceId)} />
+
             <div className="mb-3 space-y-2">
               <label className="knowledge-resource-search">
                 <Search className="h-3 w-3 text-slate-500" strokeWidth={2.1} />
@@ -440,6 +565,7 @@ export function KnowledgePage(): JSX.Element {
                 />
                 <SlidersHorizontal className="h-3 w-3 text-slate-500" strokeWidth={2.1} />
               </label>
+              <KnowledgeRetrievalModeControl mode={retrievalMode} locale={locale} onChange={setRetrievalMode} />
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px]">
                   <FilterSelect
@@ -475,6 +601,18 @@ export function KnowledgePage(): JSX.Element {
               </div>
             </div>
 
+            {importDialog ? (
+              <KnowledgeImportPanel
+                kind={importDialog}
+                form={importForm}
+                pending={createImport.isPending}
+                onKindChange={setImportDialog}
+                onChange={(patch) => setImportForm((current) => ({ ...current, ...patch }))}
+                onCancel={() => setImportDialog(null)}
+                onSubmit={() => createImport.mutate(importDialog)}
+              />
+            ) : null}
+
             {shouldSearchKnowledge ? <SearchResultSummary loading={searchLoading} results={searchResults} /> : null}
 
             <KnowledgeResourceTable
@@ -498,14 +636,19 @@ export function KnowledgePage(): JSX.Element {
           detail={selectedDetail}
           extraction={selectedExtraction}
           chunks={selectedChunks}
+          rankingResults={selectedSearchResults}
           activeTab={activeDetailTab}
           actionPending={reprocess.isPending || updateStatus.isPending || removeSource.isPending}
+          metadataDraft={metadataDraft}
+          metadataSaving={saveMetadata.isPending}
           onTabChange={setActiveDetailTab}
           onClose={() => setSelectedSourceId(null)}
           onPreview={() => openPreview(selectedDetail)}
           onCopyReference={(source) => void copyKnowledgeReference(source)}
           onToggleDisabled={(source) => updateStatus.mutate(source)}
           onReprocess={(sourceId) => reprocess.mutate(sourceId)}
+          onMetadataDraftChange={(field, value) => setMetadataDraft((current) => ({ ...current, [field]: value }))}
+          onSaveMetadata={(sourceId) => saveMetadata.mutate(sourceId)}
           onDelete={(sourceId) => {
             if (window.confirm('删除该知识库记录？原始文件会保留。')) removeSource.mutate(sourceId);
           }}
@@ -731,6 +874,161 @@ function FilterSelect({
   );
 }
 
+function KnowledgeRetrievalModeControl({
+  mode,
+  locale,
+  onChange,
+}: {
+  mode: KnowledgeRetrievalMode;
+  locale: KnowledgeLocale;
+  onChange: (mode: KnowledgeRetrievalMode) => void;
+}): JSX.Element {
+  return (
+    <div className="knowledge-mode-toggle" aria-label="检索模式">
+      {RETRIEVAL_MODE_OPTIONS.map((option) => {
+        const display = getKnowledgeRetrievalModeDisplay(option.value, locale);
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={mode === option.value}
+            title={display.description}
+            className={mode === option.value ? 'is-active' : ''}
+            onClick={() => onChange(option.value)}
+          >
+            {display.label || option.fallbackLabel}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function KnowledgeInsightsStrip({
+  summary,
+  onSelectSource,
+}: {
+  summary: KnowledgeInsightsSummary;
+  onSelectSource: (sourceId: string) => void;
+}): JSX.Element | null {
+  if (summary.items.length === 0) return null;
+  return (
+    <div className="knowledge-insights-strip" aria-label="知识治理信号">
+      <span className="knowledge-insights-strip__summary">治理信号 {summary.totalIssues}</span>
+      {summary.items.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          className={`knowledge-insight-chip is-${item.tone}`}
+          onClick={() => {
+            const firstSourceId = item.sourceIds[0];
+            if (firstSourceId) onSelectSource(firstSourceId);
+          }}
+        >
+          {item.label}
+          <strong>{item.count}</strong>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function KnowledgeImportPanel({
+  kind,
+  form,
+  pending,
+  onKindChange,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  kind: KnowledgeImportKind;
+  form: KnowledgeImportFormState;
+  pending: boolean;
+  onKindChange: (kind: KnowledgeImportKind) => void;
+  onChange: (patch: Partial<KnowledgeImportFormState>) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}): JSX.Element {
+  return (
+    <form
+      className="knowledge-import-panel"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit();
+      }}
+    >
+      <div className="knowledge-import-panel__tabs">
+        {([
+          ['manual', '手动条目'],
+          ['url', 'URL'],
+          ['workspace', '工作区文档'],
+        ] as Array<[KnowledgeImportKind, string]>).map(([value, label]) => (
+          <button key={value} type="button" className={kind === value ? 'is-active' : ''} onClick={() => onKindChange(value)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {kind === 'manual' ? (
+        <div className="knowledge-import-panel__grid">
+          <label>
+            <span>标题</span>
+            <input value={form.manualTitle} onChange={(event) => onChange({ manualTitle: event.target.value })} placeholder="例如：A12 验收规范" />
+          </label>
+          <label>
+            <span>标签</span>
+            <input value={form.manualTags} onChange={(event) => onChange({ manualTags: event.target.value })} placeholder="规范, 验收" />
+          </label>
+          <label className="is-wide">
+            <span>内容</span>
+            <textarea value={form.manualContent} onChange={(event) => onChange({ manualContent: event.target.value })} placeholder="输入要沉淀到知识库的文本" rows={4} />
+          </label>
+        </div>
+      ) : null}
+
+      {kind === 'url' ? (
+        <div className="knowledge-import-panel__grid">
+          <label>
+            <span>URL</span>
+            <input value={form.url} onChange={(event) => onChange({ url: event.target.value })} placeholder="https://example.com/spec" />
+          </label>
+          <label>
+            <span>标题</span>
+            <input value={form.urlTitle} onChange={(event) => onChange({ urlTitle: event.target.value })} placeholder="可选" />
+          </label>
+          <label className="is-wide">
+            <span>内容</span>
+            <textarea value={form.urlContent} onChange={(event) => onChange({ urlContent: event.target.value })} placeholder="可选；留空则创建待刷新 URL 记录" rows={3} />
+          </label>
+          <label className="is-wide">
+            <span>标签</span>
+            <input value={form.urlTags} onChange={(event) => onChange({ urlTags: event.target.value })} placeholder="url, 调研" />
+          </label>
+        </div>
+      ) : null}
+
+      {kind === 'workspace' ? (
+        <div className="knowledge-import-panel__grid">
+          <label className="is-wide">
+            <span>路径</span>
+            <textarea value={form.workspacePaths} onChange={(event) => onChange({ workspacePaths: event.target.value })} placeholder="docs/spec.md&#10;packages/frontend/src/pages/KnowledgePage.tsx" rows={3} />
+          </label>
+          <label className="is-wide">
+            <span>标签</span>
+            <input value={form.workspaceTags} onChange={(event) => onChange({ workspaceTags: event.target.value })} placeholder="工作区, 文档" />
+          </label>
+        </div>
+      ) : null}
+
+      <div className="knowledge-import-panel__actions">
+        <button type="button" onClick={onCancel}>取消</button>
+        <button type="submit" disabled={pending}>{pending ? '导入中' : '导入知识'}</button>
+      </div>
+    </form>
+  );
+}
+
 function SearchResultSummary({ loading, results }: { loading: boolean; results: KnowledgeSearchResult[] }): JSX.Element {
   return (
     <div className="mb-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
@@ -874,28 +1172,38 @@ function KnowledgeDetailsPanel({
   detail,
   extraction,
   chunks,
+  rankingResults,
   activeTab,
   actionPending,
+  metadataDraft,
+  metadataSaving,
   onTabChange,
   onClose,
   onPreview,
   onCopyReference,
   onToggleDisabled,
   onReprocess,
+  onMetadataDraftChange,
+  onSaveMetadata,
   onDelete,
 }: {
   row: KnowledgeResourceRow | null;
   detail?: KnowledgeSourceDetail;
   extraction?: KnowledgeExtraction;
   chunks: KnowledgeChunk[];
+  rankingResults: KnowledgeSearchResult[];
   activeTab: DetailTab;
   actionPending: boolean;
+  metadataDraft: Record<KnowledgeFactField, string>;
+  metadataSaving: boolean;
   onTabChange: (tab: DetailTab) => void;
   onClose: () => void;
   onPreview: () => void;
   onCopyReference: (source: KnowledgeSource) => void;
   onToggleDisabled: (source: KnowledgeSource) => void;
   onReprocess: (sourceId: string) => void;
+  onMetadataDraftChange: (field: KnowledgeFactField, value: string) => void;
+  onSaveMetadata: (sourceId: string) => void;
   onDelete: (sourceId: string) => void;
 }): JSX.Element {
   const source = detail ?? row?.source ?? null;
@@ -934,7 +1242,20 @@ function KnowledgeDetailsPanel({
               ))}
             </div>
 
-            <KnowledgeDetailTabContent tab={activeTab} row={row} source={source} detail={detail} extraction={extraction} chunks={chunks} previewFile={previewFile} />
+            <KnowledgeDetailTabContent
+              tab={activeTab}
+              row={row}
+              source={source}
+              detail={detail}
+              extraction={extraction}
+              chunks={chunks}
+              rankingResults={rankingResults}
+              previewFile={previewFile}
+              metadataDraft={metadataDraft}
+              metadataSaving={metadataSaving}
+              onMetadataDraftChange={onMetadataDraftChange}
+              onSaveMetadata={onSaveMetadata}
+            />
           </div>
 
           <div className="mt-auto flex shrink-0 flex-wrap gap-2 border-t border-slate-200 bg-white p-2.5">
@@ -974,7 +1295,33 @@ function KnowledgeDetailsPanel({
   );
 }
 
-function KnowledgeDetailTabContent({ tab, row, source, detail, extraction, chunks, previewFile }: { tab: DetailTab; row: KnowledgeResourceRow; source: KnowledgeSource; detail?: KnowledgeSourceDetail; extraction?: KnowledgeExtraction; chunks: KnowledgeChunk[]; previewFile: ProjectFile | null }): JSX.Element {
+function KnowledgeDetailTabContent({
+  tab,
+  row,
+  source,
+  detail,
+  extraction,
+  chunks,
+  rankingResults,
+  previewFile,
+  metadataDraft,
+  metadataSaving,
+  onMetadataDraftChange,
+  onSaveMetadata,
+}: {
+  tab: DetailTab;
+  row: KnowledgeResourceRow;
+  source: KnowledgeSource;
+  detail?: KnowledgeSourceDetail;
+  extraction?: KnowledgeExtraction;
+  chunks: KnowledgeChunk[];
+  rankingResults: KnowledgeSearchResult[];
+  previewFile: ProjectFile | null;
+  metadataDraft: Record<KnowledgeFactField, string>;
+  metadataSaving: boolean;
+  onMetadataDraftChange: (field: KnowledgeFactField, value: string) => void;
+  onSaveMetadata: (sourceId: string) => void;
+}): JSX.Element {
   if (tab === 'extraction') {
     return (
       <DetailSection title="解析文本">
@@ -1070,8 +1417,22 @@ function KnowledgeDetailTabContent({ tab, row, source, detail, extraction, chunk
           <DetailRow label="Chunks" value={row.pagesLabel} />
           <DetailRow label="更新时间" value={row.compactUpdatedAt} mono />
           <DetailRow label="Parser" value={source.parser ?? '(none)'} mono />
+          <DetailRow label="解析状态" value={formatParserStatus(source.metadata?.parser_status)} />
+          <DetailRow label="Sidecar" value={source.metadata?.requires_sidecar ? '需要' : '不需要'} />
         </div>
       </DetailSection>
+
+      <ParserWarnings metadata={source.metadata ?? null} />
+
+      <KnowledgeRankingSignals results={rankingResults} />
+
+      <KnowledgeGovernanceEditor
+        sourceId={source.id}
+        draft={metadataDraft}
+        saving={metadataSaving}
+        onChange={onMetadataDraftChange}
+        onSave={onSaveMetadata}
+      />
 
       <DetailSection title="标签">
         <div className="flex flex-wrap gap-1">
@@ -1110,6 +1471,88 @@ function DetailCounter({ label, value }: { label: string; value: number }): JSX.
       <div className="text-[8px] font-bold uppercase text-slate-500">{label}</div>
       <div className="text-[14px] font-black text-slate-800">{formatCount(value)}</div>
     </div>
+  );
+}
+
+function ParserWarnings({ metadata }: { metadata: KnowledgeSource['metadata'] | null }): JSX.Element | null {
+  const warnings = Array.isArray(metadata?.parser_warnings)
+    ? metadata.parser_warnings.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+  if (warnings.length === 0) return null;
+  return (
+    <DetailSection title="解析提示">
+      <div className="space-y-1">
+        {warnings.map((warning) => (
+          <div key={warning} className="rounded border border-amber-100 bg-amber-50 px-2 py-1 text-[11px] leading-5 text-amber-800">
+            {warning}
+          </div>
+        ))}
+      </div>
+    </DetailSection>
+  );
+}
+
+function KnowledgeRankingSignals({ results }: { results: KnowledgeSearchResult[] }): JSX.Element | null {
+  const ranking = results.find((result) => result.ranking)?.ranking;
+  if (!ranking) return null;
+  return (
+    <DetailSection title="Ranking">
+      <div className="knowledge-ranking-grid">
+        <RankingChip label="final" value={ranking.finalScore} />
+        <RankingChip label="keyword" value={ranking.keywordScore} />
+        <RankingChip label="vector" value={ranking.vectorScore} />
+        <RankingChip label="recency" value={ranking.recencyBoost} />
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {ranking.titleMatch ? <span className="knowledge-ranking-flag">title</span> : null}
+        {ranking.tagMatch ? <span className="knowledge-ranking-flag">tag</span> : null}
+        {ranking.summaryMatch ? <span className="knowledge-ranking-flag">summary</span> : null}
+      </div>
+    </DetailSection>
+  );
+}
+
+function RankingChip({ label, value }: { label: string; value: number | undefined }): JSX.Element {
+  return (
+    <span className="knowledge-ranking-chip">
+      <small>{label}</small>
+      <strong>{formatRankingValue(value)}</strong>
+    </span>
+  );
+}
+
+function KnowledgeGovernanceEditor({
+  sourceId,
+  draft,
+  saving,
+  onChange,
+  onSave,
+}: {
+  sourceId: string;
+  draft: Record<KnowledgeFactField, string>;
+  saving: boolean;
+  onChange: (field: KnowledgeFactField, value: string) => void;
+  onSave: (sourceId: string) => void;
+}): JSX.Element {
+  return (
+    <DetailSection title="知识沉淀">
+      <div className="knowledge-governance-grid">
+        {KNOWLEDGE_FACT_FIELDS.map((field) => (
+          <label key={field.key} className="knowledge-governance-field">
+            <span>{field.label}</span>
+            <textarea
+              value={draft[field.key]}
+              rows={2}
+              placeholder={field.placeholder}
+              onChange={(event) => onChange(field.key, event.target.value)}
+            />
+          </label>
+        ))}
+      </div>
+      <button type="button" className="knowledge-governance-save" disabled={saving} onClick={() => onSave(sourceId)}>
+        {saving ? '保存中' : '保存沉淀'}
+      </button>
+    </DetailSection>
   );
 }
 
@@ -1238,6 +1681,60 @@ function sanitizeSnippet(value: string): string {
   return value.replace(/<\/?mark>/g, '').trim();
 }
 
+function parseTagInput(value: string): string[] | undefined {
+  const tags = value
+    .split(/[,\n，]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 12);
+  return tags.length > 0 ? tags : undefined;
+}
+
+function parseMultilineInput(value: string): string[] {
+  return value
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function buildMetadataDraft(metadata: KnowledgeSource['metadata'] | null | undefined): Record<KnowledgeFactField, string> {
+  return Object.fromEntries(KNOWLEDGE_FACT_FIELDS.map((field) => [
+    field.key,
+    Array.isArray(metadata?.[field.key])
+      ? (metadata[field.key] as unknown[]).filter((item): item is string => typeof item === 'string').join('\n')
+      : '',
+  ])) as Record<KnowledgeFactField, string>;
+}
+
+function buildMetadataPatch(draft: Record<KnowledgeFactField, string>): KnowledgeMetadataPatch {
+  return Object.fromEntries(KNOWLEDGE_FACT_FIELDS.map((field) => [
+    field.key,
+    parseMultilineInput(draft[field.key]),
+  ])) as KnowledgeMetadataPatch;
+}
+
+function formatParserStatus(value: unknown): string {
+  switch (value) {
+    case 'complete':
+      return 'complete';
+    case 'partial':
+      return 'partial';
+    case 'metadata_only':
+      return 'metadata_only';
+    case 'requires_sidecar':
+      return 'requires_sidecar';
+    case 'failed':
+      return 'failed';
+    default:
+      return '(none)';
+  }
+}
+
+function formatRankingValue(value: number | undefined): string {
+  if (value === undefined || !Number.isFinite(value)) return '0';
+  return value.toFixed(value >= 10 ? 1 : 3).replace(/\.?0+$/, '');
+}
+
 async function copyKnowledgeReference(source: KnowledgeSource): Promise<void> {
   await navigator.clipboard.writeText(`knowledge:${source.id}`);
   toast.success('已复制知识引用 ID', { description: `knowledge:${source.id}` });
@@ -1285,6 +1782,7 @@ async function invalidateKnowledgeQueries(queryClient: ReturnType<typeof useQuer
     queryClient.invalidateQueries({ queryKey: ['knowledge-extraction'] }),
     queryClient.invalidateQueries({ queryKey: ['knowledge-chunks'] }),
     queryClient.invalidateQueries({ queryKey: ['knowledge-search'] }),
+    queryClient.invalidateQueries({ queryKey: ['knowledge-insights'] }),
     queryClient.invalidateQueries({ queryKey: ['files'] }),
     queryClient.invalidateQueries({ queryKey: ['project-files', projectId] }),
   ]);
