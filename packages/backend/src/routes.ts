@@ -1002,6 +1002,24 @@ const knowledgePatchSchema = z.object({
     value.summary !== undefined,
   { message: 'at least one knowledge source field is required' },
 );
+const manualKnowledgeSchema = z.object({
+  title: z.string().trim().min(1).max(160),
+  content: z.string().trim().min(1),
+  tags: z.array(z.string().trim().min(1).max(40)).max(12).optional(),
+  roomId: z.string().optional(),
+});
+const urlKnowledgeSchema = z.object({
+  url: z.string().trim().min(1).max(2048),
+  title: z.string().trim().min(1).max(160).optional(),
+  content: z.string().trim().min(1).optional(),
+  tags: z.array(z.string().trim().min(1).max(40)).max(12).optional(),
+  roomId: z.string().optional(),
+});
+const workspaceKnowledgeDocsSchema = z.object({
+  paths: z.array(z.string().trim().min(1).max(500)).min(1).max(50),
+  tags: z.array(z.string().trim().min(1).max(40)).max(12).optional(),
+  roomId: z.string().optional(),
+});
 const sessionKnowledgeNoteSchema = z.object({
   messageId: z.string().trim().min(1).optional(),
   title: z.string().trim().min(1).optional(),
@@ -1106,6 +1124,57 @@ router.delete('/knowledge/sources/:sourceId', (req, res) => {
   const deleted = knowledgeService.deleteSource(parsed.data.sourceId);
   if (!deleted) return res.status(404).json({ error: 'knowledge source not found' });
   res.status(204).end();
+});
+
+router.post('/projects/:projectId/knowledge/manual', (req, res) => {
+  const parsed = manualKnowledgeSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const result = knowledgeService.createManualKnowledge({
+      projectId: req.params.projectId,
+      roomId: parsed.data.roomId,
+      title: parsed.data.title,
+      content: parsed.data.content,
+      tags: parsed.data.tags,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    sendKnowledgeImportError(res, error);
+  }
+});
+
+router.post('/projects/:projectId/knowledge/url', (req, res) => {
+  const parsed = urlKnowledgeSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const result = knowledgeService.createUrlKnowledge({
+      projectId: req.params.projectId,
+      roomId: parsed.data.roomId,
+      url: parsed.data.url,
+      title: parsed.data.title,
+      content: parsed.data.content,
+      tags: parsed.data.tags,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    sendKnowledgeImportError(res, error);
+  }
+});
+
+router.post('/projects/:projectId/knowledge/workspace-docs', async (req, res) => {
+  const parsed = workspaceKnowledgeDocsSchema.safeParse(req.body ?? {});
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  try {
+    const result = await knowledgeService.importWorkspaceDocuments({
+      projectId: req.params.projectId,
+      roomId: parsed.data.roomId,
+      paths: parsed.data.paths,
+      tags: parsed.data.tags,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    sendKnowledgeImportError(res, error);
+  }
 });
 
 router.post('/sessions/:sessionId/knowledge-notes', (req, res) => {
@@ -1483,6 +1552,15 @@ function listKnowledgeSourcesForRoute(input: {
       project_name: projectNames.get(source.project_id) ?? null,
       room_name: source.room_id ? roomNames.get(source.room_id) ?? null : null,
     }));
+}
+
+function sendKnowledgeImportError(res: Response, error: unknown): void {
+  const message = error instanceof Error ? error.message : 'knowledge import failed';
+  if (message === 'project not found' || message === 'room not found') {
+    res.status(404).json({ error: message });
+    return;
+  }
+  res.status(400).json({ error: message });
 }
 
 async function unlinkProjectFileSafely(file: ProjectFile): Promise<void> {

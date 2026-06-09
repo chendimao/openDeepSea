@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { constants, mkdtempSync, writeFileSync } from 'node:fs';
+import { constants, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { IncomingMessage, ServerResponse, type OutgoingHttpHeaders } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { Duplex } from 'node:stream';
 import test from 'node:test';
 
@@ -243,6 +243,48 @@ test('knowledge list query matches source summary and tags', async () => {
   assert.equal(tagRes.status, 200);
   const tagMatches = await tagRes.json() as Array<{ id: string }>;
   assert.deepEqual(tagMatches.map((item) => item.id), [source.id]);
+});
+
+test('knowledge import routes create manual, url, and workspace document sources', async () => {
+  const project = createProject('imports');
+  const workspacePath = join(project.path, 'docs/a12.md');
+  mkdirSync(dirname(workspacePath), { recursive: true });
+  writeFileSync(workspacePath, '# A12 workspace route\n验收内容');
+
+  const manualRes = await request(`/api/projects/${project.id}/knowledge/manual`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: 'Manual A12', content: 'A12 manual content', tags: ['manual'] }),
+  });
+  assert.equal(manualRes.status, 201);
+  const manual = await manualRes.json() as { source: { source_type: string; status: string } };
+  assert.equal(manual.source.source_type, 'manual');
+  assert.equal(manual.source.status, 'ready');
+
+  const urlRes = await request(`/api/projects/${project.id}/knowledge/url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: 'https://example.com/a12', content: 'A12 URL content' }),
+  });
+  assert.equal(urlRes.status, 201);
+  const url = await urlRes.json() as { source: { source_type: string; status: string; uri: string } };
+  assert.equal(url.source.source_type, 'url');
+  assert.equal(url.source.status, 'ready');
+  assert.equal(url.source.uri, 'https://example.com/a12');
+
+  const workspaceRes = await request(`/api/projects/${project.id}/knowledge/workspace-docs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paths: ['docs/a12.md'] }),
+  });
+  assert.equal(workspaceRes.status, 201);
+  const workspace = await workspaceRes.json() as { created: Array<{ source_type: string; status: string }>; failed: unknown[] };
+  assert.equal(workspace.created.length, 1);
+  assert.equal(workspace.created[0]?.source_type, 'workspace_doc');
+  assert.equal(workspace.created[0]?.status, 'ready');
+  assert.equal(workspace.failed.length, 0);
+
+  assert.ok(knowledgeRepo.search({ projectId: project.id, query: 'A12' }).length >= 3);
 });
 
 test('knowledge action routes reprocess, disable, restore, and delete source records', async () => {

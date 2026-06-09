@@ -49,7 +49,7 @@ export interface KnowledgeChunkDraft {
   enabled: 0 | 1;
 }
 
-export async function extractKnowledgeText(input: KnowledgeExtractInput): Promise<KnowledgeExtractResult> {
+export function extractKnowledgeText(input: KnowledgeExtractInput): KnowledgeExtractResult {
   const mimeType = (input.mimeType ?? '').toLowerCase();
   if (mimeType.startsWith('image/')) {
     const metadata = buildParserMetadata({

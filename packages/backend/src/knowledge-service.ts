@@ -1,4 +1,14 @@
 import { ingestProjectFileIntoKnowledge } from './knowledge-ingestion.js';
+import {
+  createManualKnowledgeSource,
+  createUrlKnowledgeSource,
+  importWorkspaceDocuments as importWorkspaceDocumentsIntoKnowledge,
+  type KnowledgeImportResult,
+  type ManualKnowledgeInput,
+  type UrlKnowledgeInput,
+  type WorkspaceKnowledgeImportInput,
+  type WorkspaceKnowledgeImportResult,
+} from './knowledge-imports.js';
 import { searchKnowledge } from './knowledge-search.js';
 import { fileRepo } from './repos/files.js';
 import { knowledgeRepo } from './repos/knowledge.js';
@@ -164,6 +174,18 @@ export const knowledgeService = {
 
   deleteSource(sourceId: string): boolean {
     return knowledgeRepo.deleteSource(sourceId);
+  },
+
+  createManualKnowledge(input: ManualKnowledgeInput): KnowledgeImportResult {
+    return createManualKnowledgeSource(input);
+  },
+
+  createUrlKnowledge(input: UrlKnowledgeInput): KnowledgeImportResult {
+    return createUrlKnowledgeSource(input);
+  },
+
+  importWorkspaceDocuments(input: WorkspaceKnowledgeImportInput): Promise<WorkspaceKnowledgeImportResult> {
+    return importWorkspaceDocumentsIntoKnowledge(input);
   },
 };
 
