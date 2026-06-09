@@ -31,6 +31,19 @@ type BackendProcess = ChildProcessByStdio<null, Readable, Readable>;
 
 const isDev = process.env.OPENDEEPSEA_DESKTOP_DEV === '1';
 const LOCAL_TOKEN_CHANNEL = 'opendeepsea:get-local-token';
+const DESKTOP_WINDOW_CHANNELS = {
+  getWindowState: 'opendeepsea:get-window-state',
+  minimizeWindow: 'opendeepsea:minimize-window',
+  toggleMaximizeWindow: 'opendeepsea:toggle-maximize-window',
+  closeWindow: 'opendeepsea:close-window',
+  windowStateChanged: 'opendeepsea:window-state-changed',
+} as const;
+
+type DesktopWindowState = {
+  isMaximized: boolean;
+  isFullScreen: boolean;
+};
+
 let mainWindow: BrowserWindow | null = null;
 let backendRuntime: BackendRuntime | null = null;
 let desktopDataManager: DesktopDataManager | null = null;
@@ -72,6 +85,28 @@ ipcMain.handle(DESKTOP_DATA_CHANNELS.clearData, async () => {
 });
 ipcMain.handle(DESKTOP_DATA_CHANNELS.restartApp, async () => {
   relaunchApp();
+  return { ok: true };
+});
+ipcMain.handle(DESKTOP_WINDOW_CHANNELS.getWindowState, (event): DesktopWindowState => {
+  return getWindowState(BrowserWindow.fromWebContents(event.sender));
+});
+ipcMain.handle(DESKTOP_WINDOW_CHANNELS.minimizeWindow, (event): DesktopWindowState => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  win?.minimize();
+  return getWindowState(win);
+});
+ipcMain.handle(DESKTOP_WINDOW_CHANNELS.toggleMaximizeWindow, (event): DesktopWindowState => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return getWindowState(null);
+  if (win.isMaximized()) {
+    win.unmaximize();
+  } else {
+    win.maximize();
+  }
+  return getWindowState(win);
+});
+ipcMain.handle(DESKTOP_WINDOW_CHANNELS.closeWindow, (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.close();
   return { ok: true };
 });
 
@@ -123,6 +158,7 @@ function createMainWindow(): BrowserWindow {
     minWidth: 1100,
     minHeight: 720,
     title: 'OpenDeepSea',
+    frame: false,
     show: false,
     backgroundColor: '#05070a',
     webPreferences: {
@@ -133,7 +169,14 @@ function createMainWindow(): BrowserWindow {
     },
   });
 
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    win.show();
+    emitWindowState(win);
+  });
+  win.on('maximize', () => emitWindowState(win));
+  win.on('unmaximize', () => emitWindowState(win));
+  win.on('enter-full-screen', () => emitWindowState(win));
+  win.on('leave-full-screen', () => emitWindowState(win));
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedExternalUrl(url)) {
       void shell.openExternal(url);
@@ -144,6 +187,18 @@ function createMainWindow(): BrowserWindow {
     if (mainWindow === win) mainWindow = null;
   });
   return win;
+}
+
+function getWindowState(win: BrowserWindow | null): DesktopWindowState {
+  return {
+    isMaximized: win?.isMaximized() ?? false,
+    isFullScreen: win?.isFullScreen() ?? false,
+  };
+}
+
+function emitWindowState(win: BrowserWindow): void {
+  if (win.webContents.isDestroyed()) return;
+  win.webContents.send(DESKTOP_WINDOW_CHANNELS.windowStateChanged, getWindowState(win));
 }
 
 async function loadRenderer(win: BrowserWindow, backendBaseUrl: string): Promise<void> {
