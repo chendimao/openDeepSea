@@ -2565,7 +2565,7 @@
 .deepsea-message-tools--run {
   margin-left: auto;
 }
-.deepsea-message__action {
+.deepsea-message-tools .deepsea-message__action {
   display: inline-flex;
   min-height: 22px;
   align-items: center;
@@ -2582,27 +2582,27 @@
   cursor: pointer;
   white-space: nowrap;
 }
-.deepsea-message__action[data-action="copy"] {
+.deepsea-message-tools .deepsea-message__action[data-action="copy"] {
   color: var(--deepsea-primary-bright);
 }
-.deepsea-message__action:hover:not(:disabled) {
+.deepsea-message-tools .deepsea-message__action:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.55);
   color: var(--deepsea-primary-bright);
 }
-.deepsea-message__action[data-state="copied"] {
+.deepsea-message-tools .deepsea-message__action[data-state="copied"] {
   background: var(--deepsea-primary-bright);
   color: #fff;
   box-shadow: 0 4px 10px rgba(37, 99, 235, 0.18);
 }
-.deepsea-message__action:focus-visible {
+.deepsea-message-tools .deepsea-message__action:focus-visible {
   outline: 2px solid rgba(37, 99, 235, 0.35);
   outline-offset: 2px;
 }
-.deepsea-message__action:disabled {
+.deepsea-message-tools .deepsea-message__action:disabled {
   cursor: wait;
   opacity: 0.58;
 }
-.deepsea-message__action svg {
+.deepsea-message-tools .deepsea-message__action svg {
   width: 13px;
   height: 13px;
 }
