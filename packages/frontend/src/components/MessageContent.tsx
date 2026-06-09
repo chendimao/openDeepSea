@@ -33,6 +33,10 @@ function localizeKnownAssistantMessageText(content: string, locale: 'zh' | 'en')
   return content.split(visualCompanionOfferEnglish).join(visualCompanionOfferChinese);
 }
 
+export function isVisualCompanionOfferContent(content: string): boolean {
+  return content.includes(visualCompanionOfferEnglish) || content.includes(visualCompanionOfferChinese);
+}
+
 const jsonValueLabels: Record<string, string> = {
   formal_workflow: '正式工作流',
   ready_to_execute: '准备执行',

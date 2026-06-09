@@ -8,6 +8,8 @@ import type { ProjectUsedAgentsPayload, SessionAgentEvent, SessionWorkspacePaylo
 import { I18nProvider } from '../lib/i18n';
 import {
   SessionShellView,
+  buildVisualCompanionAcceptanceSubmit,
+  shouldShowVisualCompanionAction,
   buildProjectReorderInput,
   buildSessionKnowledgeActionKey,
   buildTranscriptFollowKey,
@@ -209,6 +211,64 @@ test('SessionShell renders save knowledge action only on assistant transcript me
   assert.match(html, /class="deepsea-message__action"/);
   assert.doesNotMatch(html, /保存中/);
   assert.deepEqual(savedKeys, []);
+});
+
+test('SessionShell renders a visual companion accept button for brainstorming preview offers', () => {
+  const payload = createPayload();
+  const baseMessage = payload.activeSession.messages[0]!;
+  payload.activeSession.messages = [{
+    ...baseMessage,
+    id: 'message-visual-companion',
+    role: 'assistant',
+    sender_id: 'planner',
+    sender_name: 'Planner',
+    content: "Some of what we're working on might be easier to explain if I can show it to you in a web browser. I can put together mockups, diagrams, comparisons, and other visuals as we go. This feature is still new and can be token-intensive. Want to try it? (Requires opening a local URL)",
+  }];
+  payload.activeSession.runs = [];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-action="visual-companion"/);
+  assert.match(html, /打开设计预览/);
+  assert.match(html, /data-acceptance-message="同意，打开设计预览。"/);
+  assert.deepEqual(buildVisualCompanionAcceptanceSubmit(), { content: '同意，打开设计预览。' });
+});
+
+test('shouldShowVisualCompanionAction hides accepted visual companion offers', () => {
+  const offer = "Some of what we're working on might be easier to explain if I can show it to you in a web browser. I can put together mockups, diagrams, comparisons, and other visuals as we go. This feature is still new and can be token-intensive. Want to try it? (Requires opening a local URL)";
+
+  assert.equal(shouldShowVisualCompanionAction({
+    role: 'assistant',
+    displayMode: 'preview',
+    content: offer,
+    accepted: false,
+  }), true);
+  assert.equal(shouldShowVisualCompanionAction({
+    role: 'assistant',
+    displayMode: 'preview',
+    content: offer,
+    accepted: true,
+  }), false);
+  assert.equal(shouldShowVisualCompanionAction({
+    role: 'assistant',
+    displayMode: 'source',
+    content: offer,
+    accepted: false,
+  }), false);
+});
+
+test('SessionShell renders a visual companion accept button for run output offers', () => {
+  const payload = createPayload();
+  payload.activeSession.runs[0] = {
+    ...payload.activeSession.runs[0]!,
+    stdout: "Some of what we're working on might be easier to explain if I can show it to you in a web browser. I can put together mockups, diagrams, comparisons, and other visuals as we go. This feature is still new and can be token-intensive. Want to try it? (Requires opening a local URL)",
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-action="visual-companion"/);
+  assert.match(html, /打开设计预览/);
+  assert.match(html, /data-acceptance-message="同意，打开设计预览。"/);
 });
 
 test('SessionShell renders copy action on user system and assistant messages', () => {

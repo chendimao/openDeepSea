@@ -52,7 +52,7 @@ import type {
 import { api } from '../lib/api';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { isPinnedItem, layerIds, reorderWithinLayer, sortPinnedItems } from '../lib/sortableItems';
-import { MessageContent } from '../components/MessageContent';
+import { MessageContent, isVisualCompanionOfferContent } from '../components/MessageContent';
 import { ImageJobStatusCard } from '../image-generation/ImageJobStatusCard';
 import {
   MarkdownDisplaySwitch,
@@ -78,6 +78,24 @@ export function buildSessionKnowledgeActionKey(
   id: string,
 ): SessionKnowledgeActionKey {
   return `${kind}:${id}`;
+}
+
+const VISUAL_COMPANION_ACCEPTANCE_MESSAGE = '同意，打开设计预览。';
+
+export function buildVisualCompanionAcceptanceSubmit(): SessionComposerSubmit {
+  return { content: VISUAL_COMPANION_ACCEPTANCE_MESSAGE };
+}
+
+export function shouldShowVisualCompanionAction(input: {
+  role: SessionMessage['role'];
+  displayMode: SessionMessageDisplayMode;
+  content: string;
+  accepted: boolean;
+}): boolean {
+  return input.role === 'assistant' &&
+    input.displayMode === 'preview' &&
+    !input.accepted &&
+    isVisualCompanionOfferContent(input.content);
 }
 
 async function writeTranscriptTextToClipboard(content: string): Promise<void> {
@@ -815,6 +833,7 @@ function TranscriptCanvas({
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   const followTranscriptRef = useRef(true);
+  const acceptedVisualCompanionMessageIdsRef = useRef(new Set<string>());
   const { data: projectAgents } = useQuery({
     queryKey: ['project-used-agents', projectId],
     queryFn: () => api.getProjectUsedAgents(projectId),
@@ -835,9 +854,16 @@ function TranscriptCanvas({
   const latestUserMessageKey = useMemo(() => getLatestUserMessageKey(detail.messages), [detail.messages]);
   const [displayModes, setDisplayModes] = useState<Record<string, SessionMessageDisplayMode>>({});
   const [copiedActionKey, setCopiedActionKey] = useState<string | null>(null);
+  const [acceptedVisualCompanionMessageIds, setAcceptedVisualCompanionMessageIds] = useState<Set<string>>(() => new Set());
   const displayModeFor = (key: string): SessionMessageDisplayMode => displayModes[key] ?? 'preview';
   const setDisplayModeFor = (key: string, mode: SessionMessageDisplayMode) => {
     setDisplayModes((current) => ({ ...current, [key]: mode }));
+  };
+  const acceptVisualCompanionOffer = (messageId: string): void => {
+    if (acceptedVisualCompanionMessageIdsRef.current.has(messageId)) return;
+    acceptedVisualCompanionMessageIdsRef.current.add(messageId);
+    setAcceptedVisualCompanionMessageIds(new Set(acceptedVisualCompanionMessageIdsRef.current));
+    onSendMessage(buildVisualCompanionAcceptanceSubmit());
   };
   const copyTranscriptText = async (content: string, key: string) => {
     try {
@@ -921,6 +947,8 @@ function TranscriptCanvas({
                 savingKnowledgeKey={savingKnowledgeKey}
                 copiedActionKey={copiedActionKey}
                 onCopyText={(content, key) => void copyTranscriptText(content, key)}
+                visualCompanionAccepted={acceptedVisualCompanionMessageIds.has(item.message.id)}
+                onAcceptVisualCompanion={() => acceptVisualCompanionOffer(item.message.id)}
               />
             );
           }
@@ -1089,6 +1117,8 @@ function TranscriptMessage({
   savingKnowledgeKey,
   copiedActionKey,
   onCopyText,
+  visualCompanionAccepted,
+  onAcceptVisualCompanion,
 }: {
   projectId: string;
   message: SessionMessage;
@@ -1098,6 +1128,8 @@ function TranscriptMessage({
   savingKnowledgeKey?: SessionKnowledgeActionKey | null;
   copiedActionKey: string | null;
   onCopyText: (content: string, key: string) => void;
+  visualCompanionAccepted: boolean;
+  onAcceptVisualCompanion: () => void;
 }): JSX.Element {
   const metadata = parseMessageMetadata(message.metadata);
   const imageJobId = metadata.image_generation_job_id;
@@ -1106,6 +1138,12 @@ function TranscriptMessage({
   const copied = copiedActionKey === copyActionKey;
   const savingKnowledge = savingKnowledgeKey === knowledgeActionKey;
   const canSaveKnowledge = Boolean(onSaveKnowledge && message.role === 'assistant' && message.content.trim());
+  const canOpenVisualCompanion = shouldShowVisualCompanionAction({
+    role: message.role,
+    displayMode,
+    content: message.content,
+    accepted: visualCompanionAccepted,
+  });
   return (
     <>
       <SessionMessageBubble
@@ -1142,6 +1180,19 @@ function TranscriptMessage({
               >
                 <BookOpen aria-hidden="true" />
                 <span>{savingKnowledge ? '保存中' : '保存为知识'}</span>
+              </button>
+            ) : null}
+            {canOpenVisualCompanion ? (
+              <button
+                type="button"
+                className="deepsea-message__action"
+                data-action="visual-companion"
+                data-acceptance-message={VISUAL_COMPANION_ACCEPTANCE_MESSAGE}
+                aria-label="打开设计预览"
+                onClick={onAcceptVisualCompanion}
+              >
+                <SquarePen aria-hidden="true" />
+                <span>打开设计预览</span>
               </button>
             ) : null}
           </>
