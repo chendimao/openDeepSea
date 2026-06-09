@@ -229,9 +229,8 @@ async function findSkillById(client: SkillsMpClientLike, id: string): Promise<Sk
   });
   const skills = extractSkills(response);
   const exact = skills.find((item) => getString(item.id) === id);
-  const raw = exact ?? skills[0];
-  if (!raw) throw new Error('skill_not_found');
-  return raw;
+  if (!exact) throw new Error('skill_not_found');
+  return exact;
 }
 
 function extractSkills(raw: SkillsMpSearchResponse): SkillsMpSkill[] {

@@ -123,6 +123,32 @@ test('online skills service returns stale cached list when upstream fails after 
   assert.equal(stale.skills[0]?.slug, 'skill-creator');
 });
 
+test('online skills service rejects detail search results without an exact SkillsMP id match', async () => {
+  const service = createOnlineSkillsService({
+    client: createClient({
+      searchSkills: async () => createSearchResponse({
+        skills: [{
+          id: 'different-id',
+          name: 'different-skill',
+          githubUrl: 'https://github.com/example/repo/tree/main/skills/different-skill',
+        }],
+        page: 1,
+        limit: 10,
+        total: 1,
+        totalPages: 1,
+      }),
+    }),
+  });
+
+  await assert.rejects(
+    () => service.getOnlineSkill('missing-id'),
+    (error: unknown) => {
+      assert.equal((error as Error).message, 'skill_not_found');
+      return true;
+    },
+  );
+});
+
 test('online skills service exposes no SkillsMP audit data', async () => {
   const service = createOnlineSkillsService({
     client: createClient({}),
