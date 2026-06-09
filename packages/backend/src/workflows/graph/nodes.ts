@@ -2586,6 +2586,7 @@ function selectNextImplementationChild(input: {
     if (input.activeWrites.some((existing) => scopeWritesConflict(existing, writes, input.projectPath))) return false;
     if (!workflowPlanTask) return true;
     if (workflowPlanTask.role !== 'executor') return false;
+    if (input.activeChildTaskIds.size > 0 && workflowPlanTask.mode === 'serial') return false;
     if (workflowPlanTask.status !== 'pending' && workflowPlanTask.status !== 'running') return false;
     return workflowPlanDependenciesReady(workflowPlanTask.depends_on, workflowPlanTaskById);
   });
