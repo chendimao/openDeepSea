@@ -45,6 +45,45 @@ test('AppShell renders the shared Deepsea header with system settings entry', ()
   assert.doesNotMatch(html, /projects\/project-1\/rooms/);
 });
 
+test('AppShell hides desktop window controls in web runtime', () => {
+  deleteDesktopApi();
+
+  const html = renderAppShell('/projects/project-1');
+
+  assert.doesNotMatch(html, /desktop-window-controls/);
+  assert.doesNotMatch(html, /最小化窗口/);
+});
+
+test('AppShell renders macOS window controls before brand identity', () => {
+  installDesktopApi({ platform: 'darwin', isMaximized: false });
+
+  const html = renderAppShell('/projects/project-1');
+
+  assert.match(html, /desktop-window-controls desktop-window-controls--mac/);
+  assert.match(html, /aria-label="最小化窗口"/);
+  assert.match(html, /aria-label="最大化窗口"/);
+  assert.ok(html.indexOf('desktop-window-controls--mac') < html.indexOf('deepsea-brand'));
+});
+
+test('AppShell renders Windows window controls after action icons', () => {
+  installDesktopApi({ platform: 'win32', isMaximized: false });
+
+  const html = renderAppShell('/projects/project-1');
+
+  assert.match(html, /desktop-window-controls desktop-window-controls--system/);
+  assert.match(html, /aria-label="最小化窗口"/);
+  assert.match(html, /aria-label="最大化窗口"/);
+  assert.match(html, /aria-label="关闭窗口"/);
+  assert.ok(html.indexOf('deepsea-action-icons') < html.indexOf('desktop-window-controls--system'));
+});
+
+test('AppShell labels maximized state as restore action', () => {
+  const source = readFileSync(new URL('./AppShell.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /windowState\.isMaximized \? '还原窗口' : '最大化窗口'/);
+  assert.match(source, /windowState\.isMaximized \? Copy : Square/);
+});
+
 test('AppShell omits profile avatar on non-session routes', () => {
   const html = renderAppShell('/agents');
 
@@ -102,6 +141,35 @@ test('AppShell header menu reuses primary navigation and opens command search', 
   assert.match(source, /className="deepsea-header-menu"/);
   assert.match(source, /commandLabel={t\('shell\.searchCommand'\)}/);
 });
+
+function installDesktopApi({
+  platform,
+  isMaximized,
+}: {
+  platform: string;
+  isMaximized: boolean;
+}): void {
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      openDeepSeaDesktop: {
+        platform,
+        getWindowState: async () => ({ isMaximized, isFullScreen: false }),
+        minimizeWindow: async () => ({ isMaximized, isFullScreen: false }),
+        toggleMaximizeWindow: async () => ({ isMaximized: !isMaximized, isFullScreen: false }),
+        closeWindow: async () => ({ ok: true }),
+        onWindowStateChanged: () => () => undefined,
+      },
+    },
+  });
+}
+
+function deleteDesktopApi(): void {
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {},
+  });
+}
 
 function renderAppShell(initialEntry: string): string {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

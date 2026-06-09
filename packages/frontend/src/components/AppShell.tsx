@@ -5,15 +5,19 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
   Bot,
+  Copy,
   Database,
   FileText,
   History,
   Image as ImageIcon,
   Menu,
   MessageCircle,
+  Minus,
   Search,
   Settings,
   ShieldCheck,
+  Square,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../lib/api';
@@ -42,6 +46,8 @@ export function AppShell({
   const location = useLocation();
   const { t } = useI18n();
   const themeStyle = getThemeStyle(theme);
+  const desktopApi = getDesktopApi();
+  const isMacDesktop = desktopApi?.platform === 'darwin';
   const isSessionWorkspaceRoute = location.pathname === '/' ||
     /^\/projects\/[^/]+\/?$/.test(location.pathname) ||
     /^\/projects\/[^/]+\/sessions\/[^/]+\/?$/.test(location.pathname);
@@ -113,6 +119,7 @@ export function AppShell({
       {themeStyle === 'apple' && <div className="liquid-backdrop" aria-hidden="true" />}
       <header className="deepsea-topbar app-header" aria-label={t('shell.sidebar.aria')}>
         <div className="deepsea-topbar__identity">
+          {isMacDesktop && <DesktopWindowControls placement="mac" />}
           <NavLink to="/" className="deepsea-brand" aria-label={t('app.name')}>
             <span className="deepsea-brand__mark">
               <img alt="蟹老板 AI 指挥官 Logo" src="/deepsea-krabs-logo.jpg" />
@@ -141,6 +148,7 @@ export function AppShell({
               <span />
             </button>
           </div>
+          {desktopApi && !isMacDesktop && <DesktopWindowControls placement="system" />}
         </div>
       </header>
       <div className="app-grid">
@@ -156,6 +164,75 @@ export function AppShell({
         }}
       />
       <CreateProjectDialog open={createProjectOpen} onOpenChange={setCreateProjectOpen} />
+    </div>
+  );
+}
+
+type DesktopApi = NonNullable<Window['openDeepSeaDesktop']>;
+type DesktopWindowApi = DesktopApi & Required<Pick<DesktopApi, 'minimizeWindow' | 'toggleMaximizeWindow' | 'closeWindow'>>;
+
+function getDesktopApi(): DesktopWindowApi | null {
+  if (typeof window === 'undefined') return null;
+  const desktopApi = window.openDeepSeaDesktop;
+  if (!desktopApi?.minimizeWindow || !desktopApi.toggleMaximizeWindow || !desktopApi.closeWindow) return null;
+  return desktopApi as DesktopWindowApi;
+}
+
+function DesktopWindowControls({ placement }: { placement: 'mac' | 'system' }): JSX.Element | null {
+  const desktopApi = getDesktopApi();
+  const [windowState, setWindowState] = useState<OpenDeepSeaDesktopWindowState>({
+    isMaximized: false,
+    isFullScreen: false,
+  });
+
+  useEffect(() => {
+    if (!desktopApi) return undefined;
+    let disposed = false;
+    const unsubscribe = desktopApi.onWindowStateChanged?.((state) => setWindowState(state));
+    void desktopApi.getWindowState?.().then((state) => {
+      if (!disposed) setWindowState(state);
+    });
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, [desktopApi]);
+
+  if (!desktopApi) return null;
+
+  const maximizeLabel = windowState.isMaximized ? '还原窗口' : '最大化窗口';
+  const MaximizeIcon = windowState.isMaximized ? Copy : Square;
+
+  return (
+    <div
+      className={cn('desktop-window-controls', placement === 'mac' ? 'desktop-window-controls--mac' : 'desktop-window-controls--system')}
+      role="group"
+      aria-label="窗口控制"
+    >
+      <button
+        type="button"
+        className="desktop-window-control"
+        aria-label="最小化窗口"
+        onClick={() => void desktopApi.minimizeWindow()}
+      >
+        <Minus aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="desktop-window-control"
+        aria-label={maximizeLabel}
+        onClick={() => void desktopApi.toggleMaximizeWindow()}
+      >
+        <MaximizeIcon aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className="desktop-window-control desktop-window-control--close"
+        aria-label="关闭窗口"
+        onClick={() => void desktopApi.closeWindow()}
+      >
+        <X aria-hidden="true" />
+      </button>
     </div>
   );
 }
