@@ -49,6 +49,7 @@ export function AppShell({
   const isKnowledgeRoute = location.pathname === '/knowledge' ||
     /^\/projects\/[^/]+\/knowledge\/?$/.test(location.pathname);
   const isSkillsRoute = location.pathname === '/skills';
+  const isImageWorkbenchRoute = /^\/projects\/[^/]+\/images\/?$/.test(location.pathname);
   const activeProjectId = location.pathname.match(/^\/projects\/([^/]+)/)?.[1]
     ?? sessionWorkspaceHref.match(/^\/projects\/([^/]+)/)?.[1]
     ?? null;
@@ -84,7 +85,7 @@ export function AppShell({
     },
     {
       to: imageWorkbenchHref,
-      active: /^\/projects\/[^/]+\/images\/?$/.test(location.pathname),
+      active: isImageWorkbenchRoute,
       icon: ImageIcon,
       label: '图片',
     },
@@ -108,7 +109,7 @@ export function AppShell({
   }, []);
 
   return (
-    <div className={cn('flex h-screen w-screen flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]', isSessionWorkspaceRoute && 'app-shell--session', isKnowledgeRoute && 'app-shell--knowledge', isSkillsRoute && 'app-shell--skills')}>
+    <div className={cn('flex h-screen w-screen flex-col overflow-hidden bg-[var(--color-bg)] text-[var(--color-fg)]', isSessionWorkspaceRoute && 'app-shell--session', isKnowledgeRoute && 'app-shell--knowledge', isSkillsRoute && 'app-shell--skills', isImageWorkbenchRoute && 'app-shell--image-workbench')}>
       {themeStyle === 'apple' && <div className="liquid-backdrop" aria-hidden="true" />}
       <header className="deepsea-topbar app-header" aria-label={t('shell.sidebar.aria')}>
         <div className="deepsea-topbar__identity">

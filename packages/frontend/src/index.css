@@ -784,6 +784,28 @@
     padding: 0;
   }
 
+  .app-shell--image-workbench {
+    background: #f5f7fa;
+  }
+
+  .app-shell--image-workbench .liquid-backdrop {
+    display: none;
+  }
+
+  .app-shell--image-workbench .app-grid {
+    padding: 48px 0 0;
+  }
+
+  .app-shell--image-workbench .app-main {
+    padding: 0;
+  }
+
+  @media (max-width: 980px) {
+    .app-shell--image-workbench .app-grid {
+      padding-top: 0;
+    }
+  }
+
   .app-grid--room {
     grid-template-columns: minmax(0, 1fr);
     padding: 0;
