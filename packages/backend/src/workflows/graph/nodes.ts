@@ -499,6 +499,9 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       const activeChildTaskIds = new Set(activeImplementationRuns
         .map((run) => run.task_id)
         .filter((taskId): taskId is string => typeof taskId === 'string'));
+      const activeAgentIds = new Set(activeImplementationRuns
+        .map((run) => run.room_agent_id)
+        .filter((agentId): agentId is string => typeof agentId === 'string'));
       const activeWrites = listActiveImplementationStepWrites(tools, context.run.id, activeImplementationRuns);
 
       const parallelBatch = selectParallelImplementationBatch({
@@ -507,6 +510,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         childTaskPlanIndexes,
         projectPath: context.project.path,
         activeChildTaskIds,
+        activeAgentIds,
         activeWrites,
       });
       if (parallelBatch.length > 1) {
@@ -526,6 +530,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         childTaskPlanIndexes,
         projectPath: context.project.path,
         activeChildTaskIds,
+        activeAgentIds,
         activeWrites,
       });
       if (!nextChild) {
@@ -2510,6 +2515,7 @@ function selectParallelImplementationBatch(input: {
   childTaskPlanIndexes: Record<string, number>;
   projectPath: string;
   activeChildTaskIds: Set<string>;
+  activeAgentIds: Set<string>;
   activeWrites: string[][];
 }): Task[] {
   const workflowPlan = input.state.workflowPlan;
@@ -2536,6 +2542,7 @@ function selectParallelImplementationBatch(input: {
     if (!workflowPlanDependenciesReady(workflowPlanTask.depends_on, workflowPlanTaskById)) continue;
     const agentId = child.assigned_agent_id ?? workflowPlanTask.agent_id;
     if (!agentId || selectedAgentIds.has(agentId)) continue;
+    if (input.activeAgentIds.has(agentId)) continue;
     const writes = parsedPlanTask?.scopeWrite ?? [];
     if (input.activeWrites.some((existing) => scopeWritesConflict(existing, writes, input.projectPath))) continue;
     if (selectedWrites.some((existing) => scopeWritesConflict(existing, writes, input.projectPath))) continue;
@@ -2553,11 +2560,13 @@ function selectNextImplementationChild(input: {
   childTaskPlanIndexes: Record<string, number>;
   projectPath: string;
   activeChildTaskIds: Set<string>;
+  activeAgentIds: Set<string>;
   activeWrites: string[][];
 }): Task | undefined {
   const runnableChildren = input.childTasks.filter((child) =>
     (child.status === 'todo' || child.status === 'in_progress') &&
-    !input.activeChildTaskIds.has(child.id)
+    !input.activeChildTaskIds.has(child.id) &&
+    !input.activeAgentIds.has(child.assigned_agent_id ?? '')
   );
   const workflowPlan = input.state.workflowPlan;
   if (!workflowPlan) return runnableChildren[0];
@@ -2566,6 +2575,8 @@ function selectNextImplementationChild(input: {
     const planIndex = input.childTaskPlanIndexes[child.id] ?? -1;
     const workflowPlanTask = workflowPlan.tasks[planIndex];
     const parsedPlanTask = input.state.plan?.tasks[planIndex];
+    const agentId = child.assigned_agent_id ?? workflowPlanTask?.agent_id ?? null;
+    if (agentId && input.activeAgentIds.has(agentId)) return false;
     const writes = parsedPlanTask?.scopeWrite ?? [];
     if (input.activeWrites.some((existing) => scopeWritesConflict(existing, writes, input.projectPath))) return false;
     if (!workflowPlanTask) return true;

@@ -793,6 +793,171 @@ test('execute node starts ready sibling while another implementation child run i
   assert.equal(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length, 2);
 });
 
+test('execute node does not start a ready sibling assigned to an agent with an active implementation run', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-execute-busy-agent-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Execute Busy Agent', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Execute Busy Agent Room' });
+  const executor = createAcpExecutor(room.id, 'busy-agent-executor', ['packages/backend', 'packages/frontend']);
+  const parentTask = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Busy agent parent task',
+  });
+  const backendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Backend active same agent child',
+    description: 'Already running on the shared executor.',
+    assigned_agent_id: executor.id,
+    created_from: 'workflow_assignment',
+  });
+  const frontendChild = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: parentTask.id,
+    title: 'Frontend ready same agent child',
+    description: 'Must wait because the shared executor is busy.',
+    assigned_agent_id: executor.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: parentTask.id,
+    status: 'running',
+    current_stage: 'implementation',
+    graph_version: 'phase-b-v1',
+  });
+  const activeStep = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: backendChild.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'running',
+    room_agent_id: executor.id,
+    assigned_room_agent_id: executor.id,
+    scope_read: ['packages/backend/src/routes.ts'],
+    scope_write: ['packages/backend/src/routes.ts'],
+    prompt: 'active backend prompt',
+    sort_order: 1,
+  });
+  const activeRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: executor.id,
+    agent_id: executor.agent_id,
+    backend: executor.acp_backend ?? 'codex',
+    task_id: backendChild.id,
+    workflow_run_id: run.id,
+    workflow_step_id: activeStep.id,
+    workflow_stage: 'implementation',
+    prompt: 'active backend prompt',
+  });
+
+  let calls = 0;
+  const nodes = createGraphNodes(createGraphTools({
+    runAcpAgent: async () => {
+      calls += 1;
+      throw new Error('runAcpAgent should not be called for a busy single-instance agent');
+    },
+  }));
+
+  const nextState = await nodes.executeNode({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: parentTask.id,
+    userGoal: parentTask.title,
+    projectPath: project.path,
+    plan: {
+      goal: parentTask.title,
+      summary: 'Do not start a second child on a busy agent',
+      assumptions: [],
+      tasks: [
+        {
+          title: backendChild.title,
+          description: backendChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Backend keeps running'],
+          scopeRead: ['packages/backend/src/routes.ts'],
+          scopeWrite: ['packages/backend/src/routes.ts'],
+          dependsOn: [],
+        },
+        {
+          title: frontendChild.title,
+          description: frontendChild.description ?? '',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Frontend waits for the busy executor'],
+          scopeRead: ['packages/frontend/src/pages/FilesPage.tsx'],
+          scopeWrite: ['packages/frontend/src/pages/FilesPage.tsx'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    workflowPlan: {
+      workflow_name: parentTask.title,
+      source_message_id: parentTask.id,
+      goal: parentTask.title,
+      summary: 'Do not start a second child on a busy agent',
+      tasks: [
+        {
+          id: 'task-1-backend-active-same-agent-child',
+          title: backendChild.title,
+          description: backendChild.description ?? '',
+          role: 'executor',
+          agent_id: executor.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'running',
+          progress: 35,
+          result_refs: [],
+        },
+        {
+          id: 'task-2-frontend-ready-same-agent-child',
+          title: frontendChild.title,
+          description: frontendChild.description ?? '',
+          role: 'executor',
+          agent_id: executor.id,
+          mode: 'parallel',
+          depends_on: [],
+          status: 'pending',
+          progress: 0,
+          result_refs: [],
+        },
+      ],
+    },
+    currentNode: 'execute',
+    currentStepId: activeStep.id,
+    activeAgentRunId: null,
+    childTaskIds: [backendChild.id, frontendChild.id],
+    childTaskPlanIndexes: {
+      [backendChild.id]: 0,
+      [frontendChild.id]: 1,
+    },
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+    approval: 'not_required',
+    status: 'running',
+    error: null,
+  });
+
+  assert.equal(calls, 0);
+  assert.equal(taskRepo.get(frontendChild.id)?.status, 'todo');
+  assert.equal(nextState.activeAgentRunId, activeRun.id);
+  assert.deepEqual(nextState.workflowPlan?.tasks.map((task) => task.status), ['running', 'pending']);
+  assert.equal(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length, 1);
+});
+
 test('execute node waits for workflowPlan dependencies before parallel implementation', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-execute-depends-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
