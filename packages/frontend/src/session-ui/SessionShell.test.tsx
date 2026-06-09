@@ -773,6 +773,21 @@ test('SessionShell keeps composer in layout flow below the transcript scroll are
   assert.match(sessionOsCss, /\.deepsea-transcript__end\s*\{[^}]*min-height:\s*1px/s);
 });
 
+test('SessionShell stretches the empty transcript so the composer stays at the workspace bottom', () => {
+  const payload = createPayload();
+  payload.activeSession.messages = [];
+  payload.activeSession.runs = [];
+  payload.activeSession.agentEvents = [];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /deepsea-empty deepsea-empty--center/);
+  assert.match(html, /发送第一条消息开始当前会话。/);
+  assert.match(html, /data-session-composer-textarea="true"/);
+  assert.match(sessionOsCss, /\.deepsea-center-workspace \.flexlayout__tab\s*\{[^}]*display:\s*flex/s);
+  assert.match(sessionOsCss, /\.deepsea-transcript\s*\{[^}]*height:\s*100%/s);
+});
+
 test('isTranscriptNearBottom respects the transcript follow threshold', () => {
   assert.equal(isTranscriptNearBottom({ scrollHeight: 1000, scrollTop: 780, clientHeight: 200 } as HTMLElement), true);
   assert.equal(isTranscriptNearBottom({ scrollHeight: 1000, scrollTop: 500, clientHeight: 200 } as HTMLElement), false);
