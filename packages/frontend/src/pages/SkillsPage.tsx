@@ -1,13 +1,11 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useState, type ReactNode, type UIEvent } from 'react';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Bot,
   Check,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   CircleHelp,
   Database,
   Download,
@@ -266,6 +264,7 @@ export function SkillsPage(): JSX.Element {
   const [tokenSettingsOpen, setTokenSettingsOpen] = useState(false);
   const [tokenDraft, setTokenDraft] = useState('');
   const trimmedSearchQuery = searchQuery.trim();
+  const debouncedSearchQuery = useDebouncedValue(trimmedSearchQuery, 350);
 
   const summariesQuery = useQuery({
     queryKey: ['platform-skills', 'platforms'],
@@ -275,11 +274,16 @@ export function SkillsPage(): JSX.Element {
     queryKey: ['platform-skills', 'aggregate'],
     queryFn: api.listPlatformSkillAggregates,
   });
-  const onlineSkillsQuery = useQuery({
-    queryKey: ['online-skills', trimmedSearchQuery ? 'search' : 'list', onlineView, trimmedSearchQuery, 0, ONLINE_PAGE_SIZE],
-    queryFn: () => trimmedSearchQuery
-      ? api.searchOnlineSkills({ q: trimmedSearchQuery, page: 0, limit: ONLINE_PAGE_SIZE })
-      : api.listOnlineSkills({ view: onlineView, page: 0, limit: ONLINE_PAGE_SIZE }),
+  const onlineSkillsQuery = useInfiniteQuery({
+    queryKey: ['online-skills', debouncedSearchQuery ? 'search' : 'list', onlineView, debouncedSearchQuery, ONLINE_PAGE_SIZE],
+    queryFn: ({ pageParam }) => debouncedSearchQuery
+      ? api.searchOnlineSkills({ q: debouncedSearchQuery, page: pageParam, limit: ONLINE_PAGE_SIZE })
+      : api.listOnlineSkills({ view: onlineView, page: pageParam, limit: ONLINE_PAGE_SIZE }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => {
+      const nextPage = lastPage.page + 1;
+      return nextPage < lastPage.pages ? nextPage : undefined;
+    },
     retry: false,
   });
   const tokenConfigQuery = useQuery({
@@ -311,18 +315,19 @@ export function SkillsPage(): JSX.Element {
     }
     return byName;
   }, [aggregatesQuery.data]);
-  const onlineSkills = onlineSkillsQuery.data?.skills ?? [];
+  const onlinePages = onlineSkillsQuery.data?.pages ?? [];
+  const onlineSkills = useMemo(() => uniqueOnlineSkills(onlinePages.flatMap((page) => page.skills)), [onlinePages]);
   const records = useMemo(
     () => onlineSkills.map((skill) => toSkillRecord(skill, aggregateByName.get(skill.slug) ?? aggregateByName.get(skill.name))),
     [aggregateByName, onlineSkills],
   );
   const filteredRecords = useMemo(() => filterSkillRecords(records, {
-    searchQuery,
+    searchQuery: debouncedSearchQuery,
     statusFilter,
     sourceFilter,
     categoryFilter,
     installedOnly,
-  }), [categoryFilter, installedOnly, records, searchQuery, sourceFilter, statusFilter]);
+  }), [categoryFilter, debouncedSearchQuery, installedOnly, records, sourceFilter, statusFilter]);
   const selectedRecord = useMemo(
     () => filteredRecords.find((item) => item.online.id === selectedSkillId)
       ?? records.find((item) => item.online.id === selectedSkillId)
@@ -334,10 +339,15 @@ export function SkillsPage(): JSX.Element {
   const liveMetrics = useMemo(() => getMetrics(records), [records]);
   const metrics = useMemo(() => ({
     ...liveMetrics,
-    total: onlineSkillsQuery.data?.total ?? liveMetrics.total,
-  }), [liveMetrics, onlineSkillsQuery.data?.total]);
+    total: onlinePages[0]?.total ?? liveMetrics.total,
+  }), [liveMetrics, onlinePages]);
   const loading = onlineSkillsQuery.isLoading && records.length === 0;
   const error = onlineSkillsQuery.error as Error | null;
+  const hasMoreOnlineSkills = Boolean(onlineSkillsQuery.hasNextPage);
+  const loadMoreOnlineSkills = useCallback(() => {
+    if (!onlineSkillsQuery.hasNextPage || onlineSkillsQuery.isFetchingNextPage) return;
+    void onlineSkillsQuery.fetchNextPage();
+  }, [onlineSkillsQuery]);
   const openInstallerForRecord = useCallback((record?: SkillRecord | null) => {
     setInitialInstallCommand(record?.online.installCommand || undefined);
     setInstallerOpen(true);
@@ -384,6 +394,8 @@ export function SkillsPage(): JSX.Element {
           records={filteredRecords}
           totalCount={metrics.total}
           loading={loading}
+          loadingMore={onlineSkillsQuery.isFetchingNextPage}
+          hasMore={hasMoreOnlineSkills}
           error={error}
           selectedId={selectedRecord?.online.id ?? null}
           searchQuery={searchQuery}
@@ -400,6 +412,7 @@ export function SkillsPage(): JSX.Element {
           onOnlineViewChange={setOnlineView}
           onSelect={setSelectedSkillId}
           onInstall={openInstallerForRecord}
+          onLoadMore={loadMoreOnlineSkills}
         />
         <SkillDetailsPanel
           record={selectedRecord}
@@ -617,6 +630,8 @@ function SkillsMarketPanel({
   records,
   totalCount,
   loading,
+  loadingMore,
+  hasMore,
   error,
   selectedId,
   searchQuery,
@@ -633,10 +648,13 @@ function SkillsMarketPanel({
   onOnlineViewChange,
   onSelect,
   onInstall,
+  onLoadMore,
 }: {
   records: SkillRecord[];
   totalCount: number;
   loading: boolean;
+  loadingMore: boolean;
+  hasMore: boolean;
   error: Error | null;
   selectedId: string | null;
   searchQuery: string;
@@ -653,7 +671,14 @@ function SkillsMarketPanel({
   onOnlineViewChange: (value: OnlineSkillView) => void;
   onSelect: (id: string) => void;
   onInstall: (record: SkillRecord) => void;
+  onLoadMore: () => void;
 }): JSX.Element {
+  const handleListScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    if (element.scrollTop + element.clientHeight < element.scrollHeight - 220) return;
+    onLoadMore();
+  }, [onLoadMore]);
+
   return (
     <section className="skills-market-panel">
       <div className="skills-filterbar">
@@ -705,7 +730,7 @@ function SkillsMarketPanel({
           <button type="button" className="skills-grid-button" aria-label="网格视图"><Grid2X2 aria-hidden="true" /></button>
         </div>
       </div>
-      <div className="skills-list skills-scrollbar">
+      <div className="skills-list skills-scrollbar" onScroll={handleListScroll}>
         {loading ? <StateBox icon={Loader2} label="正在加载在线 skills" spinning /> : null}
         {error && records.length === 0 ? (
           <SkillsOnlineErrorState message={error.message} />
@@ -722,10 +747,16 @@ function SkillsMarketPanel({
                 onInstall={() => onInstall(record)}
               />
             ))}
+            <SkillsListLoadState
+              shown={records.length}
+              total={totalCount}
+              loadingMore={loadingMore}
+              hasMore={hasMore}
+              onLoadMore={onLoadMore}
+            />
           </div>
         ) : null}
       </div>
-      <SkillsPagination shown={records.length} total={totalCount} />
     </section>
   );
 }
@@ -783,6 +814,7 @@ function SkillListItem({
           {record.visual.tags.slice(0, 2).map((tag) => <span key={tag}>{tag}</span>)}
           {!record.aggregate.valid ? <span className="is-warn">需要处理</span> : null}
         </span>
+        <PlatformInstallStrip record={record} />
       </span>
       <span className="skills-list-item__meta">
         <MetricCell label="来源" value={providerLabel(record.primaryProvider)} provider={record.primaryProvider} />
@@ -809,6 +841,28 @@ function SkillListItem({
         <MoreVertical aria-hidden="true" />
       </span>
     </div>
+  );
+}
+
+function PlatformInstallStrip({ record }: { record: SkillRecord }): JSX.Element {
+  return (
+    <span className="skills-platform-strip" aria-label="平台安装状态">
+      {PROVIDERS.map((provider) => {
+        const installed = isSkillInstalledForProvider(record, provider);
+        const Icon = providerIcon(provider);
+        return (
+          <span
+            key={provider}
+            className={cn('skills-platform-chip', installed && 'is-installed')}
+            title={`${providerLabel(provider)} ${installed ? '已安装' : '未安装'}`}
+          >
+            <Icon aria-hidden="true" />
+            <span>{providerLabel(provider)}</span>
+            {installed ? <Check aria-hidden="true" /> : <X aria-hidden="true" />}
+          </span>
+        );
+      })}
+    </span>
   );
 }
 
@@ -1050,24 +1104,47 @@ function InstallationEvidence({ provider, skill }: { provider: PlatformSkillProv
   );
 }
 
-function SkillsPagination({ shown, total }: { shown: number; total: number }): JSX.Element {
+function SkillsListLoadState({
+  shown,
+  total,
+  loadingMore,
+  hasMore,
+  onLoadMore,
+}: {
+  shown: number;
+  total: number;
+  loadingMore: boolean;
+  hasMore: boolean;
+  onLoadMore: () => void;
+}): JSX.Element {
+  const safeTotal = Math.max(total, shown);
   return (
-    <div className="skills-pagination">
-      <span>共 <b className="skills-mono">{Math.max(total, shown)}</b> 个 Skills</span>
-      <div>
-        <button type="button" disabled aria-label="上一页"><ChevronLeft aria-hidden="true" /></button>
-        <button type="button" className="is-active">1</button>
-        <button type="button" disabled aria-label="下一页"><ChevronRight aria-hidden="true" /></button>
-      </div>
-      <select aria-label="每页数量" value={String(ONLINE_PAGE_SIZE)} onChange={() => undefined}>
-        <option value={String(ONLINE_PAGE_SIZE)}>{ONLINE_PAGE_SIZE} 条/页</option>
-      </select>
+    <div className="skills-list-load-state">
+      <span>已加载 <b className="skills-mono">{shown}</b> / <b className="skills-mono">{safeTotal}</b></span>
+      {loadingMore ? (
+        <span><Loader2 className="animate-spin" aria-hidden="true" />正在加载更多</span>
+      ) : hasMore ? (
+        <button type="button" onClick={onLoadMore}>继续加载</button>
+      ) : (
+        <span>没有更多 Skills</span>
+      )}
     </div>
   );
 }
 
 function StateBox({ icon: Icon, label, spinning = false }: { icon: LucideIcon; label: string; spinning?: boolean }): JSX.Element {
   return <div className="skills-state-box"><Icon className={spinning ? 'animate-spin' : undefined} aria-hidden="true" />{label}</div>;
+}
+
+function useDebouncedValue(value: string, delayMs: number): string {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [delayMs, value]);
+
+  return debounced;
 }
 
 function tokenSourceLabel(config?: OnlineSkillsTokenConfig, loading = false): string {
@@ -1122,6 +1199,20 @@ function filterSkillRecords(records: SkillRecord[], filters: {
     if (filters.categoryFilter !== 'all' && record.visual.category !== filters.categoryFilter) return false;
     return true;
   });
+}
+
+function uniqueOnlineSkills(skills: OnlineSkill[]): OnlineSkill[] {
+  const byId = new Map<string, OnlineSkill>();
+  for (const skill of skills) {
+    if (!byId.has(skill.id)) byId.set(skill.id, skill);
+  }
+  return Array.from(byId.values());
+}
+
+function isSkillInstalledForProvider(record: SkillRecord, provider: PlatformSkillProvider): boolean {
+  return Boolean(record.aggregate.installations[provider])
+    || record.aggregate.providers.includes(provider)
+    || record.online.installedProviders.includes(provider);
 }
 
 function toSkillRecord(online: OnlineSkill, localAggregate?: PlatformSkillAggregate): SkillRecord {

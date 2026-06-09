@@ -17,8 +17,13 @@ test('SkillsPage opens the restricted skills install terminal only', () => {
 test('SkillsPage defaults to online skills APIs and refreshes local status after terminal events', () => {
   const source = readFileSync(sourceUrl, 'utf8');
 
+  assert.match(source, /useInfiniteQuery/);
   assert.match(source, /api\.listOnlineSkills/);
   assert.match(source, /api\.searchOnlineSkills/);
+  assert.match(source, /useDebouncedValue\(trimmedSearchQuery, 350\)/);
+  assert.match(source, /fetchNextPage/);
+  assert.match(source, /onScroll=\{handleListScroll\}/);
+  assert.match(source, /getNextPageParam/);
   assert.match(source, /api\.getOnlineSkillsTokenConfig/);
   assert.match(source, /api\.updateOnlineSkillsTokenConfig/);
   assert.match(source, /\['online-skills'/);
@@ -28,6 +33,23 @@ test('SkillsPage defaults to online skills APIs and refreshes local status after
   assert.match(source, /queryKey: \['online-skills'\]/);
   assert.match(source, /queryKey: \['online-skills', 'token-config'\]/);
   assert.match(source, /onRefreshRequested=\{refreshPlatformSkills\}/);
+});
+
+test('SkillsPage removes pagination and shows per-platform install status in the list', () => {
+  const source = readFileSync(sourceUrl, 'utf8');
+  const css = readFileSync(cssUrl, 'utf8');
+
+  assert.match(source, /PlatformInstallStrip/);
+  assert.match(source, /isSkillInstalledForProvider/);
+  assert.match(source, /providerLabel\(provider\)/);
+  assert.match(source, /SkillsListLoadState/);
+  assert.doesNotMatch(source, /function SkillsPagination/);
+  assert.doesNotMatch(source, /上一页/);
+  assert.doesNotMatch(source, /下一页/);
+  assert.doesNotMatch(css, /skills-pagination/);
+  assert.match(css, /skills-platform-strip/);
+  assert.match(css, /skills-platform-chip/);
+  assert.match(css, /skills-list-load-state/);
 });
 
 test('SkillsPage supports SkillsMP API Key configuration and keeps terminal below the app header', () => {

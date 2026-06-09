@@ -711,7 +711,7 @@
 
   .skills-list-item {
     display: grid;
-    min-height: 88px;
+    min-height: 112px;
     width: 100%;
     grid-template-columns: 48px minmax(180px, 1fr) 128px 82px;
     align-items: start;
@@ -835,6 +835,46 @@
     color: var(--skills-error);
   }
 
+  .skills-platform-strip {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .skills-platform-chip {
+    display: inline-flex;
+    max-width: 126px;
+    height: 22px;
+    align-items: center;
+    gap: 4px;
+    border: 1px solid var(--skills-border);
+    border-radius: 3px;
+    background: #ffffff;
+    color: var(--skills-muted);
+    padding: 0 6px;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .skills-platform-chip.is-installed {
+    border-color: color-mix(in srgb, var(--skills-secondary) 34%, var(--skills-border));
+    background: var(--skills-secondary-soft);
+    color: var(--skills-secondary);
+  }
+
+  .skills-platform-chip span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .skills-platform-chip svg {
+    width: 11px;
+    height: 11px;
+  }
+
   .skills-list-item__meta {
     display: grid;
     width: 128px;
@@ -939,60 +979,39 @@
     opacity: 0.45;
   }
 
-  .skills-pagination {
+  .skills-list-load-state {
     display: flex;
-    min-height: 48px;
-    flex: 0 0 48px;
+    min-height: 46px;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     gap: 12px;
-    border-top: 1px solid var(--skills-border);
+    background: var(--skills-surface-low);
     padding: 0 24px;
     color: var(--skills-muted);
     font-size: 12px;
   }
 
-  .skills-pagination > div {
-    display: flex;
+  .skills-list-load-state > span,
+  .skills-list-load-state button {
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
   }
 
-  .skills-pagination button {
-    display: grid;
-    width: 24px;
-    height: 24px;
-    place-items: center;
-    border: 0;
+  .skills-list-load-state button {
+    height: 28px;
+    border: 1px solid var(--skills-border);
     border-radius: 3px;
-    background: transparent;
-    color: var(--skills-text);
+    background: #ffffff;
+    color: var(--skills-primary);
+    padding: 0 10px;
     font-size: 12px;
-  }
-
-  .skills-pagination button.is-active {
-    background: var(--skills-primary);
-    color: #fff;
     font-weight: 800;
   }
 
-  .skills-pagination button:disabled {
-    opacity: 0.35;
-  }
-
-  .skills-pagination svg {
+  .skills-list-load-state svg {
     width: 14px;
     height: 14px;
-  }
-
-  .skills-pagination select {
-    height: 26px;
-    border: 0;
-    border-radius: 3px;
-    background: var(--skills-surface-low);
-    color: var(--skills-muted);
-    padding: 0 20px 0 8px;
-    font-size: 12px;
   }
 
   .skills-detail-panel {
