@@ -7,8 +7,11 @@ import test from 'node:test';
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-task-events-routes-')), 'test.db');
 
 const express = (await import('express')).default;
+const { agentRepo } = await import('./repos/agents.js');
+const { agentRunLinkRepo } = await import('./repos/agent-run-links.js');
+const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { projectRepo } = await import('./repos/projects.js');
-const { roomRepo } = await import('./repos/rooms.js');
+const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { taskEventRepo } = await import('./repos/task-events.js');
 const { router } = await import('./routes.js');
@@ -134,4 +137,111 @@ test('GET /rooms/:roomId/task-events can include replayed task state for a task 
   assert.equal(body.replay.priority, 'normal');
   assert.equal(body.replay.deleted, false);
   assert.equal(body.replay.last_seq, 3);
+});
+
+test('GET /rooms/:roomId/task-events does not duplicate persisted native subagent events', async () => {
+  const project = projectRepo.create({
+    name: 'Persisted Subagent Events Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-persisted-subagent-route-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const globalAgent = agentRepo.getByAgentId('backend-executor');
+  assert.ok(globalAgent);
+  const roomAgent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: globalAgent.id });
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Native subagent events' });
+  const parentRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: roomAgent.id,
+    agent_id: roomAgent.agent_id,
+    backend: roomAgent.acp_backend ?? 'codex',
+    task_id: task.id,
+    prompt: 'parent',
+  });
+  const childRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: roomAgent.id,
+    agent_id: roomAgent.agent_id,
+    backend: roomAgent.acp_backend ?? 'codex',
+    task_id: task.id,
+    prompt: 'child',
+  });
+  const link = agentRunLinkRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    parent_run_id: parentRun.id,
+    child_run_id: childRun.id,
+    relationship: 'subagent',
+    role: 'implementer',
+  });
+  taskEventRepo.create({
+    task_id: task.id,
+    room_id: room.id,
+    type: 'runtime_event',
+    layer: 'runtime',
+    source_run_id: parentRun.id,
+    payload: {
+      timeline_type: 'subagent_started',
+      timeline_status: 'started',
+      parent_run_id: link.parent_run_id,
+      child_run_id: link.child_run_id,
+      child_agent_id: childRun.agent_id,
+      role: link.role,
+      relationship: link.relationship,
+    },
+  });
+
+  const res = await request(`/api/rooms/${room.id}/task-events?taskId=${task.id}&layer=runtime`);
+
+  assert.equal(res.status, 200);
+  const body = await res.json() as { events: Array<{ id: string; payload: Record<string, unknown> }> };
+  const subagentStartedEvents = body.events.filter((event) => event.payload.timeline_type === 'subagent_started');
+  assert.equal(subagentStartedEvents.length, 1);
+  assert.doesNotMatch(subagentStartedEvents[0]?.id ?? '', /^subagent-link:/u);
+});
+
+test('GET /rooms/:roomId/task-events still projects legacy subagent run links without persisted events', async () => {
+  const project = projectRepo.create({
+    name: 'Legacy Subagent Link Route',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-legacy-subagent-route-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const globalAgent = agentRepo.getByAgentId('backend-executor');
+  assert.ok(globalAgent);
+  const roomAgent = roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: globalAgent.id });
+  const task = taskRepo.create({ project_id: project.id, room_id: room.id, title: 'Legacy subagent link' });
+  const parentRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: roomAgent.id,
+    agent_id: roomAgent.agent_id,
+    backend: roomAgent.acp_backend ?? 'codex',
+    task_id: task.id,
+    prompt: 'parent',
+  });
+  const childRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: roomAgent.id,
+    agent_id: roomAgent.agent_id,
+    backend: roomAgent.acp_backend ?? 'codex',
+    task_id: task.id,
+    prompt: 'child',
+  });
+  agentRunRepo.updateStatus(childRun.id, 'completed');
+  agentRunLinkRepo.create({
+    room_id: room.id,
+    task_id: task.id,
+    parent_run_id: parentRun.id,
+    child_run_id: childRun.id,
+    relationship: 'subagent',
+    role: 'implementer',
+  });
+
+  const res = await request(`/api/rooms/${room.id}/task-events?taskId=${task.id}&layer=runtime`);
+
+  assert.equal(res.status, 200);
+  const body = await res.json() as { events: Array<{ id: string; payload: Record<string, unknown> }> };
+  const subagentEvents = body.events.filter((event) => event.payload.timeline_type === 'subagent_completed');
+  assert.equal(subagentEvents.length, 1);
+  assert.match(subagentEvents[0]?.id ?? '', /^subagent-link:/u);
+  assert.equal(subagentEvents[0]?.payload.child_run_id, childRun.id);
+  assert.equal(subagentEvents[0]?.payload.timeline_status, 'completed');
 });

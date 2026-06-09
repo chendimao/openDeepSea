@@ -778,11 +778,27 @@ async function runNativeSubagentExecution(input: {
             relationship: 'subagent',
             role: role.role,
           });
-          broadcastSubagentRunProjection(input.roomId, childLink, run);
+          broadcastTaskEvent(input.roomId, recordSubagentRunLifecycleEvent({
+            roomId: input.roomId,
+            taskId: input.taskId,
+            parentRunId: resolvedParentRunId,
+            link: childLink,
+            childRun: run,
+          }));
         },
       });
     } catch (error) {
       const errorMessage = toErrorMessage(error, `${role.role} subagent failed`);
+      if (childLink) {
+        broadcastTaskEvent(input.roomId, recordSubagentRunLifecycleEvent({
+          roomId: input.roomId,
+          taskId: input.taskId,
+          parentRunId: resolvedParentRunId,
+          link: childLink,
+          childRun: childRunId ? agentRunRepo.get(childRunId) : undefined,
+          error: errorMessage,
+        }));
+      }
       const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'subagent_execution', 'failed', {
         superpowers_phase: 'tdd_execute',
         run_id: resolvedParentRunId,
@@ -847,11 +863,25 @@ async function runNativeSubagentExecution(input: {
         relationship: 'subagent',
         role: role.role,
       });
-      broadcastSubagentRunProjection(input.roomId, childLink, childRun);
+      broadcastTaskEvent(input.roomId, recordSubagentRunLifecycleEvent({
+        roomId: input.roomId,
+        taskId: input.taskId,
+        parentRunId: resolvedParentRunId,
+        link: childLink,
+        childRun,
+      }));
     }
-    broadcastSubagentRunProjection(input.roomId, childLink, agentRunRepo.get(childRunId));
     if (result.status !== 'completed') {
       const error = result.error ?? `${role.role} 子代理未完成：${result.status}`;
+      broadcastTaskEvent(input.roomId, recordSubagentRunLifecycleEvent({
+        roomId: input.roomId,
+        taskId: input.taskId,
+        parentRunId: resolvedParentRunId,
+        link: childLink,
+        childRun: agentRunRepo.get(childRunId),
+        result,
+        error,
+      }));
       const messageId = recordTaskActionEvent(input.roomId, input.taskId, 'subagent_execution', 'failed', {
         superpowers_phase: 'tdd_execute',
         run_id: resolvedParentRunId,
@@ -867,6 +897,14 @@ async function runNativeSubagentExecution(input: {
         run_ids: runIds,
       } };
     }
+    broadcastTaskEvent(input.roomId, recordSubagentRunLifecycleEvent({
+      roomId: input.roomId,
+      taskId: input.taskId,
+      parentRunId: resolvedParentRunId,
+      link: childLink,
+      childRun: agentRunRepo.get(childRunId),
+      result,
+    }));
     return { ok: true, content: result.content };
   };
 
@@ -958,29 +996,54 @@ function pushUniqueRunId(runIds: string[], runId: string): void {
   if (!runIds.includes(runId)) runIds.push(runId);
 }
 
-function broadcastSubagentRunProjection(
-  roomId: string,
-  link: AgentRunLink,
-  childRun: AgentRun | undefined,
-): void {
+function broadcastTaskEvent(roomId: string, event: TaskEvent): void {
   wsHub.broadcast(roomId, {
     type: 'task_event:new',
     roomId,
-    event: createSubagentRunTaskEvent(link, childRun),
+    event,
   });
 }
 
-function createSubagentRunTaskEvent(link: AgentRunLink, childRun: AgentRun | undefined): TaskEvent {
-  const timelineType = childRun?.status === 'failed'
-    ? 'subagent_failed'
-    : childRun?.status === 'completed'
-      ? 'subagent_completed'
-      : 'subagent_started';
-  const timelineStatus = childRun?.status === 'failed'
+function recordSubagentRunLifecycleEvent(input: {
+  roomId: string;
+  taskId: string;
+  parentRunId: string;
+  link: AgentRunLink;
+  childRun: AgentRun | undefined;
+  result?: TaskActionAgentResult;
+  error?: string | null;
+}): TaskEvent {
+  const event = createSubagentRunTaskEvent(input.link, input.childRun, {
+    result: input.result,
+    error: input.error,
+  });
+  return taskEventRepo.create({
+    task_id: input.taskId,
+    room_id: input.roomId,
+    type: 'runtime_event',
+    layer: 'runtime',
+    source_run_id: input.parentRunId,
+    payload: event.payload,
+  });
+}
+
+function createSubagentRunTaskEvent(
+  link: AgentRunLink,
+  childRun: AgentRun | undefined,
+  details: { result?: TaskActionAgentResult; error?: string | null } = {},
+): TaskEvent {
+  const resultStatus = details.result?.status;
+  const resultFailed = resultStatus !== undefined && resultStatus !== 'completed';
+  const lifecycleStatus = details.error || resultFailed || childRun?.status === 'failed'
     ? 'failed'
-    : childRun?.status === 'completed'
+    : resultStatus === 'completed' || childRun?.status === 'completed'
       ? 'completed'
       : 'started';
+  const timelineType = lifecycleStatus === 'failed'
+    ? 'subagent_failed'
+    : lifecycleStatus === 'completed'
+      ? 'subagent_completed'
+      : 'subagent_started';
   return {
     id: `subagent-link:${link.id}:${timelineType}`,
     task_id: link.task_id ?? childRun?.task_id ?? '',
@@ -990,16 +1053,25 @@ function createSubagentRunTaskEvent(link: AgentRunLink, childRun: AgentRun | und
     layer: 'runtime',
     payload: {
       timeline_type: timelineType,
-      timeline_status: timelineStatus,
+      timeline_status: lifecycleStatus,
       parent_run_id: link.parent_run_id,
       child_run_id: link.child_run_id,
       child_agent_id: childRun?.agent_id,
       role: link.role,
       relationship: link.relationship,
+      child_run_status: childRun?.status,
+      started_at: childRun?.started_at,
+      completed_at: childRun?.completed_at,
+      result_summary: details.result ? summarizeSubagentResult(details.result.content) : undefined,
+      error: details.error ?? childRun?.error ?? details.result?.error ?? undefined,
     },
     source_run_id: link.parent_run_id,
     created_at: link.created_at,
   };
+}
+
+function summarizeSubagentResult(content: string): string {
+  return content.replace(/\s+/gu, ' ').trim().slice(0, 320);
 }
 
 function selectNativeSubagentRoleAgent(

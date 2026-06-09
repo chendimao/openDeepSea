@@ -1821,7 +1821,6 @@ test('subagent_execution creates native subagent run links for implementation an
         runIds.push(run.id);
         await onRunCreated?.(run);
         linkCountsAfterRunCreated.push(agentRunLinkRepo.listByTask(task.id).length);
-        agentRunRepo.updateStatus(run.id, 'completed');
         return {
           status: 'completed',
           runId: run.id,
@@ -1837,6 +1836,33 @@ test('subagent_execution creates native subagent run links for implementation an
   assert.equal(result.status, 'completed');
   assert.deepEqual(result.run_ids, runIds);
   assert.equal(runIds.length, 4);
+  const runtimeEvents = taskEventRepo.listByTask(task.id, { layer: 'runtime' });
+  const subagentEvents = runtimeEvents.filter((event) =>
+    typeof event.payload.timeline_type === 'string' &&
+    String(event.payload.timeline_type).startsWith('subagent_')
+  );
+  assert.deepEqual(
+    subagentEvents.map((event) => event.payload.timeline_type),
+    [
+      'subagent_started',
+      'subagent_completed',
+      'subagent_started',
+      'subagent_completed',
+      'subagent_started',
+      'subagent_completed',
+    ],
+  );
+  assert.ok(subagentEvents.every((event) => event.seq > 0));
+  assert.deepEqual(
+    subagentEvents.map((event) => event.seq),
+    [...subagentEvents].sort((left, right) => left.seq - right.seq).map((event) => event.seq),
+  );
+  assert.equal(subagentEvents[0]?.payload.parent_run_id, runIds[0]);
+  assert.equal(subagentEvents[0]?.payload.child_run_id, runIds[1]);
+  assert.equal(subagentEvents[0]?.payload.child_agent_id, 'frontend-executor');
+  assert.equal(subagentEvents[0]?.payload.role, 'implementer');
+  assert.equal(subagentEvents[1]?.payload.timeline_status, 'completed');
+  assert.match(String(subagentEvents[1]?.payload.result_summary), /tddEvidence/u);
   assert.deepEqual(linkCountsAfterRunCreated, [0, 1, 2, 3]);
   const links = agentRunLinkRepo.listByTask(task.id);
   assert.deepEqual(
@@ -1859,6 +1885,75 @@ test('subagent_execution creates native subagent run links for implementation an
     ),
     true,
   );
+});
+
+test('subagent_execution persists failed native subagent lifecycle event from result status', async () => {
+  const project = projectRepo.create({
+    name: '原生子代理失败事件',
+    path: mkdtempSync(join(tmpdir(), 'openclaw-room-native-subagent-failed-event-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Room' });
+  const frontend = agentRepo.getByAgentId('frontend-executor');
+  const reviewer = agentRepo.getByAgentId('reviewer');
+  assert.ok(frontend);
+  assert.ok(reviewer);
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: frontend.id });
+  roomAgentRepo.addFromGlobalAgent({ room_id: room.id, global_agent_id: reviewer.id });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '原生子代理失败事件',
+    description: 'child result failed 时需要持久化 failed lifecycle',
+    priority: 'normal',
+    interaction_mode: 'ask_user',
+    source_message_id: null,
+  });
+  recordCompletedEvidence(room.id, task.id, 'writing_plans', {
+    implementationPlanPath: 'docs/superpowers/plans/native-subagent-failed-event-plan.md',
+  });
+  let callCount = 0;
+
+  const result = await startTaskAction({
+    roomId: room.id,
+    taskId: task.id,
+    action: 'subagent_execution',
+    runAgent: async ({ agent, prompt, onRunCreated }) => {
+      callCount += 1;
+      const run = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: agent.id,
+        agent_id: agent.agent_id,
+        backend: agent.acp_backend ?? 'codex',
+        prompt,
+        task_id: task.id,
+      });
+      await onRunCreated?.(run);
+      if (callCount === 1) {
+        agentRunRepo.updateStatus(run.id, 'completed');
+        return {
+          status: 'completed',
+          runId: run.id,
+          content: '父级编排完成',
+          error: null,
+        };
+      }
+      return {
+        status: 'failed',
+        runId: run.id,
+        content: 'child failed before adapter updated run status',
+        error: 'child boom',
+      };
+    },
+  });
+
+  assert.equal(result.status, 'failed');
+  const runtimeEvents = taskEventRepo.listByTask(task.id, { layer: 'runtime' });
+  const failedEvent = runtimeEvents.find((event) => event.payload.timeline_type === 'subagent_failed');
+  assert.ok(failedEvent);
+  assert.equal(failedEvent.payload.timeline_status, 'failed');
+  assert.equal(failedEvent.payload.role, 'implementer');
+  assert.equal(failedEvent.payload.error, 'child boom');
+  assert.match(String(failedEvent.payload.result_summary), /child failed/u);
 });
 
 test('subagent_execution sends blocking review findings back to executor and re-reviews fix', async () => {

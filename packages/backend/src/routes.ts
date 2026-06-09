@@ -2399,7 +2399,7 @@ router.get('/rooms/:roomId/task-events', (req, res) => {
     ? taskEventRepo.listByTask(taskId, { layer, limit })
     : taskEventRepo.listByRoom(room.id, { layer, limit });
   const projectedEvents = taskId && (!layer || layer === 'runtime')
-    ? createSubagentRunTaskEvents(taskId)
+    ? filterDuplicateSubagentRunTaskEvents(createSubagentRunTaskEvents(taskId), repoEvents)
     : [];
   const events = [...repoEvents, ...projectedEvents]
     .sort((left, right) => left.created_at - right.created_at || left.id.localeCompare(right.id));
@@ -2416,6 +2416,23 @@ function parseTaskEventsLimit(value: unknown): number {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed < 1) return 500;
   return Math.min(parsed, 1000);
+}
+
+function filterDuplicateSubagentRunTaskEvents(projectedEvents: TaskEvent[], persistedEvents: TaskEvent[]): TaskEvent[] {
+  const persistedKeys = new Set(persistedEvents.map(subagentRuntimeEventKey).filter((key): key is string => key !== null));
+  return projectedEvents.filter((event) => {
+    const key = subagentRuntimeEventKey(event);
+    return key === null || !persistedKeys.has(key);
+  });
+}
+
+function subagentRuntimeEventKey(event: TaskEvent): string | null {
+  if (event.type !== 'runtime_event' || event.layer !== 'runtime') return null;
+  if (typeof event.payload.timeline_type !== 'string' || !event.payload.timeline_type.startsWith('subagent_')) {
+    return null;
+  }
+  if (typeof event.payload.child_run_id !== 'string' || !event.payload.child_run_id.trim()) return null;
+  return `${event.payload.child_run_id}:${event.payload.timeline_type}`;
 }
 
 function createSubagentRunTaskEvents(taskId: string): TaskEvent[] {
