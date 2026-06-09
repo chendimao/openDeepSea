@@ -18,11 +18,7 @@ export function validateWebSocketAccess(req: WebSocketAccessRequest): WebSocketA
     return { ok: false, status: 403, reason: 'origin is not trusted' };
   }
 
-  if (token && token !== getLocalAccessToken()) {
-    return { ok: false, status: 403, reason: 'invalid local access token' };
-  }
-
-  if (!origin && token !== getLocalAccessToken()) {
+  if (!token || token !== getLocalAccessToken()) {
     return { ok: false, status: 403, reason: 'invalid local access token' };
   }
 

@@ -4,37 +4,44 @@ import path from 'node:path';
 
 const backendUrl = process.env.VITE_BACKEND_URL ?? 'http://localhost:7330';
 const backendWsUrl = backendUrl.replace(/^http/, 'ws');
-const localAccessToken = process.env.OPENDEEPSEA_LOCAL_TOKEN?.trim();
+const localAccessToken = process.env.OPENDEEPSEA_LOCAL_TOKEN?.trim() || '';
 
-export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
+export default defineConfig(({ command }) => {
+  const devLocalAccessToken = command === 'serve' ? localAccessToken : '';
+
+  return {
+    plugins: [react()],
+    define: {
+      'import.meta.env.VITE_OPENDEEPSEA_LOCAL_TOKEN': JSON.stringify(devLocalAccessToken),
     },
-  },
-  server: {
-    port: 5173,
-    proxy: {
-      '/api': {
-        target: backendUrl,
-        configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq, req) => {
-            if (!localAccessToken) return;
-            const path = req.url ?? '';
-            if (
-              /^\/api\/projects\/[^/]+\/workspace\/.+/.test(path) ||
-              path.startsWith('/api/platform-skills') ||
-              path.startsWith('/api/online-skills') ||
-              path.startsWith('/api/terminals')
-            ) {
-              proxyReq.setHeader('X-OpenDeepSea-Local-Token', localAccessToken);
-            }
-          });
-        },
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, 'src'),
       },
-      '/uploads': backendUrl,
-      '/ws': { target: backendWsUrl, ws: true },
     },
-  },
+    server: {
+      port: 5173,
+      proxy: {
+        '/api': {
+          target: backendUrl,
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq, req) => {
+              if (!localAccessToken) return;
+              const path = req.url ?? '';
+              if (
+                /^\/api\/projects\/[^/]+\/workspace\/.+/.test(path) ||
+                path.startsWith('/api/platform-skills') ||
+                path.startsWith('/api/online-skills') ||
+                path.startsWith('/api/terminals')
+              ) {
+                proxyReq.setHeader('X-OpenDeepSea-Local-Token', localAccessToken);
+              }
+            });
+          },
+        },
+        '/uploads': backendUrl,
+        '/ws': { target: backendWsUrl, ws: true },
+      },
+    },
+  };
 });

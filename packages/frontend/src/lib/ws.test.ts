@@ -38,6 +38,58 @@ class FakeWebSocket {
   }
 }
 
+function fakeWindow(token?: string): Pick<Window, 'location' | 'localStorage'> {
+  const storage = new Map<string, string>();
+  if (token) storage.set('opendeepsea.localToken', token);
+  return {
+    location: { protocol: 'http:', host: 'localhost:5173' } as Location,
+    localStorage: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
+      removeItem: (key: string) => {
+        storage.delete(key);
+      },
+      clear: () => {
+        storage.clear();
+      },
+      key: (index: number) => [...storage.keys()][index] ?? null,
+      get length() {
+        return storage.size;
+      },
+    } as Storage,
+  };
+}
+
+test('sessionSocket includes local token in websocket URL', async () => {
+  FakeWebSocket.instances = [];
+  const originalWindow = globalThis.window;
+  const originalWebSocket = globalThis.WebSocket;
+
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: fakeWindow('ws-local-token'),
+  });
+  globalThis.WebSocket = FakeWebSocket as never;
+
+  try {
+    const { sessionSocket } = await import(`./ws.ts?ws-token-test-${Date.now()}`);
+
+    sessionSocket.subscribeSession('session-1');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    assert.equal(FakeWebSocket.instances[0]?.url, 'ws://localhost:5173/ws?localToken=ws-local-token');
+    sessionSocket.destroy();
+  } finally {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: originalWindow,
+    });
+    globalThis.WebSocket = originalWebSocket;
+  }
+});
+
 test('sessionSocket cancels pending connects when unsubscribed before socket creation', async () => {
   FakeWebSocket.instances = [];
   const originalWindow = globalThis.window;

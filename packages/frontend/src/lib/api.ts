@@ -151,10 +151,15 @@ function formatApiError(status: number, text: string): string {
 }
 
 function getWorkspaceLocalToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  const token = window.localStorage.getItem(LOCAL_ACCESS_TOKEN_STORAGE_KEY);
+  if (typeof window === 'undefined') return readBuildTimeLocalToken();
+  const token = window.localStorage?.getItem(LOCAL_ACCESS_TOKEN_STORAGE_KEY) || readBuildTimeLocalToken();
   const trimmed = token?.trim();
   return trimmed || null;
+}
+
+function readBuildTimeLocalToken(): string | null {
+  const meta = import.meta as ImportMeta & { env?: Record<string, string | undefined> };
+  return meta.env?.VITE_OPENDEEPSEA_LOCAL_TOKEN?.trim() || null;
 }
 
 function buildWorkspaceHeaders(headers: HeadersInit = {}): Headers {

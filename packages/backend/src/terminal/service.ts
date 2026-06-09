@@ -117,6 +117,17 @@ export const terminalService = {
   removeSocket(socket: import('ws').WebSocket): void {
     wsHub.removeTerminalSocket(socket);
   },
+
+  shutdownAll(): void {
+    for (const session of sessions.values()) {
+      session.killed = true;
+      if (session.pty) {
+        session.pty.kill();
+      } else {
+        markEnded(session, 'killed', null, null);
+      }
+    }
+  },
 };
 
 function resolveTerminalCwd(profile: TerminalProfile, projectId?: string | null): string {

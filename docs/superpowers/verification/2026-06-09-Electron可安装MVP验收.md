@@ -98,10 +98,59 @@ ELECTRON_RUN_AS_NODE=1 release/desktop/mac/OpenDeepSea.app/Contents/MacOS/OpenDe
 - backend 日志显示 `[server] backend listening on 127.0.0.1:17330`。
 - 日志存在 `DEP0180` deprecation warning，不影响本次 smoke。
 
+### 代码审查修复回归
+
+本轮针对 Electron MVP 代码审查发现项执行修复，覆盖：
+
+- WebSocket 访问必须携带有效 `OPENDEEPSEA_LOCAL_TOKEN`，仅可信 `Origin` 不再足够。
+- 前端 WebSocket URL 从 `opendeepsea.localToken` 注入 `localToken` 查询参数；Vite dev 仅在 `serve` 模式暴露本地 token fallback。
+- Electron preload 通过同步 IPC 获取 local token，不再通过 renderer argv 传递。
+- Electron sidecar 启动失败时清理 child，退出时按平台清理 backend 进程树，并限制 `shell.openExternal` 协议。
+- backend 收到 `SIGTERM` / `SIGINT` 时主动关闭 terminal sessions 和 HTTP/WebSocket server。
+- 前端 `index.html` fallback 使用 `Cache-Control: no-store`，静态 hashed 资源继续使用 immutable cache。
+- 桌面打包脚本在打包前强制 `electron-rebuild --build-from-source`，打包后恢复 root `better-sqlite3` / `node-pty` 的普通 Node ABI。
+
+验证命令：
+
+```bash
+cd packages/backend && node --import tsx --test \
+  src/websocket-access.test.ts \
+  src/frontend-static.test.ts \
+  src/local-access.test.ts \
+  src/terminal/routes.test.ts \
+  src/platform-skills/routes.test.ts \
+  src/online-skills/routes.test.ts \
+  src/data-dir.test.ts
+```
+
+结果：26 个测试通过，0 失败。
+
+```bash
+cd packages/frontend && node --import tsx --test src/lib/ws.test.ts src/lib/api.test.ts
+```
+
+结果：26 个测试通过，0 失败。
+
+```bash
+npm run build:desktop
+npm run package:desktop
+```
+
+结果：均通过；`package:desktop` 日志包含 `electron-rebuild --build-from-source` 的 `Rebuild Complete`，并在结尾恢复 root native ABI：`rebuilt dependencies successfully`。
+
+包内 smoke 结果：
+
+- `GET /api/health` 返回 `{"ok":true,...}`。
+- `GET /` 返回前端 `index.html`，响应头包含 `Cache-Control: no-store`。
+- `ws://127.0.0.1:17330/ws` 返回 `403`。
+- `ws://127.0.0.1:17330/ws?localToken=smoke-token` 可连接。
+- 打包后 root `better-sqlite3` 可在普通 Node 下打开 `:memory:` 数据库，root `node-pty` 可在普通 Node 下加载 `spawn`。
+
 ## 兼容性修复记录
 
 - 最初使用 `electron@42.3.3` 时，包内 backend smoke 暴露 native ABI 问题：`better-sqlite3` 回退到仓库根依赖或在 Electron 42 / Node 24 ABI 下无法编译。
 - 调整为 `electron@38.8.6`、`better-sqlite3@12.10.0`，并将 backend runtime dependencies 提升到 root `dependencies` 后，electron-builder 能复制依赖并完成 `better-sqlite3`、`node-pty` 的 Electron ABI 重建。
+- 后续复查发现 electron-builder 内置 rebuild 不足以稳定切换 root native modules 到 Electron ABI；`scripts/package-desktop.mjs` 现在在打包前显式执行强制 source rebuild，打包后再恢复 root Node ABI，避免安装产物和本地开发环境互相污染。
 
 ## 代码审查记录
 

@@ -1,6 +1,6 @@
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 
 export function getConfiguredFrontendDistDir(): string | null {
   const configured = process.env.OPENDEEPSEA_FRONTEND_DIST?.trim();
@@ -15,6 +15,12 @@ export function shouldServeFrontendFallback(path: string): boolean {
   );
 }
 
+export function getFrontendCacheControl(filePath: string): string {
+  return basename(filePath) === 'index.html'
+    ? 'no-store'
+    : 'public, max-age=3600, immutable';
+}
+
 export function mountFrontendStatic(app: Express, frontendDistDir = getConfiguredFrontendDistDir()): void {
   if (!frontendDistDir) return;
 
@@ -26,14 +32,17 @@ export function mountFrontendStatic(app: Express, frontendDistDir = getConfigure
 
   app.use(express.static(frontendDistDir, {
     fallthrough: true,
-    immutable: true,
-    maxAge: '1h',
+    index: false,
+    setHeaders: (res, filePath) => {
+      res.setHeader('Cache-Control', getFrontendCacheControl(filePath));
+    },
   }));
   app.get('*', (req: Request, res: Response, next: NextFunction) => {
     if (!shouldServeFrontendFallback(req.path)) {
       next();
       return;
     }
+    res.setHeader('Cache-Control', getFrontendCacheControl(indexPath));
     res.sendFile(indexPath, (err) => {
       if (err) next(err);
     });

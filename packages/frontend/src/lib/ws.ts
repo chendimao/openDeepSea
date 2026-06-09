@@ -168,6 +168,8 @@ export type WsClientEvent =
 
 type Listener = (event: WsServerEvent) => void;
 
+const LOCAL_ACCESS_TOKEN_STORAGE_KEY = 'opendeepsea.localToken';
+
 class SessionSocket {
   private ws: WebSocket | null = null;
   private listeners = new Set<Listener>();
@@ -187,8 +189,7 @@ class SessionSocket {
       this.connectTimer = null;
     }
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
-    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const url = `${proto}://${window.location.host}/ws`;
+    const url = buildWebSocketUrl();
     const ws = new WebSocket(url);
     this.ws = ws;
     ws.addEventListener('open', () => {
@@ -492,3 +493,23 @@ class SessionSocket {
 
 export const sessionSocket = new SessionSocket();
 export const roomSocket = sessionSocket;
+
+function buildWebSocketUrl(): string {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  const url = new URL(`${proto}://${window.location.host}/ws`);
+  const token = getWorkspaceLocalToken();
+  if (token) url.searchParams.set('localToken', token);
+  return url.toString();
+}
+
+function getWorkspaceLocalToken(): string | null {
+  if (typeof window === 'undefined') return readBuildTimeLocalToken();
+  const token = window.localStorage?.getItem(LOCAL_ACCESS_TOKEN_STORAGE_KEY) || readBuildTimeLocalToken();
+  const trimmed = token?.trim();
+  return trimmed || null;
+}
+
+function readBuildTimeLocalToken(): string | null {
+  const meta = import.meta as ImportMeta & { env?: Record<string, string | undefined> };
+  return meta.env?.VITE_OPENDEEPSEA_LOCAL_TOKEN?.trim() || null;
+}

@@ -14,8 +14,8 @@
     "dev:desktop": "OPENDEEPSEA_LOCAL_TOKEN=${OPENDEEPSEA_LOCAL_TOKEN:-openclaw-room-dev-token} concurrently -n frontend,desktop -c magenta,cyan \"npm run dev:frontend\" \"npm run dev -w @openclaw-room/desktop\"",
     "build": "npm run build -w @openclaw-room/backend && npm run build -w @openclaw-room/frontend",
     "build:desktop": "npm run build:prod -w @openclaw-room/backend && npm run build:prod -w @openclaw-room/frontend && npm run build -w @openclaw-room/desktop",
-    "pack:desktop": "npm run build:desktop && electron-builder --dir --config electron-builder.json",
-    "package:desktop": "npm run build:desktop && electron-builder --config electron-builder.json",
+    "pack:desktop": "npm run build:desktop && node scripts/package-desktop.mjs --dir",
+    "package:desktop": "npm run build:desktop && node scripts/package-desktop.mjs",
     "openclaw:context": "npm run openclaw:context -w @openclaw-room/backend --",
     "openclaw:knowledge": "npm run openclaw:knowledge -w @openclaw-room/backend --",
     "start": "npm run start -w @openclaw-room/backend"

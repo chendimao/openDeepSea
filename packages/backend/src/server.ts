@@ -22,6 +22,7 @@ import { startProviderSuperpowersStartupInstall } from './provider-superpowers.j
 import { providerConfigService } from './provider-configs/service.js';
 import { handleSessionSocketEvent } from './session-socket-controller.js';
 import { handleTerminalSocketEvent, removeTerminalSocket } from './terminal/socket-controller.js';
+import { terminalService } from './terminal/service.js';
 import { buildActiveSessionSummaries } from './session-active-view-model.js';
 import { validateWebSocketAccess } from './websocket-access.js';
 import { wsHub } from './ws-hub.js';
@@ -128,6 +129,26 @@ if (HOST) {
 } else {
   httpServer.listen(PORT, onListen);
 }
+
+let shuttingDown = false;
+
+function shutdown(signal: NodeJS.Signals): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[server] received ${signal}, shutting down`);
+  terminalService.shutdownAll();
+  wss.close();
+  httpServer.close(() => {
+    process.exit(0);
+  });
+  const forceExitTimer = setTimeout(() => {
+    process.exit(0);
+  }, 5000);
+  forceExitTimer.unref();
+}
+
+process.once('SIGTERM', shutdown);
+process.once('SIGINT', shutdown);
 
 function recoverImageGenerationJobsAfterStartup(): void {
   try {

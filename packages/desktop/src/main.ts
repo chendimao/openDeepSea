@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { randomBytes } from 'node:crypto';
 import { createWriteStream, mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -24,9 +24,14 @@ type BackendRuntime = {
 type BackendProcess = ChildProcessByStdio<null, Readable, Readable>;
 
 const isDev = process.env.OPENDEEPSEA_DESKTOP_DEV === '1';
+const LOCAL_TOKEN_CHANNEL = 'opendeepsea:get-local-token';
 let mainWindow: BrowserWindow | null = null;
 let backendRuntime: BackendRuntime | null = null;
 let isQuitting = false;
+
+ipcMain.on(LOCAL_TOKEN_CHANNEL, (event) => {
+  event.returnValue = backendRuntime?.localToken ?? '';
+});
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -44,7 +49,7 @@ async function startDesktopApp(): Promise<void> {
   try {
     await app.whenReady();
     backendRuntime = await startBackend();
-    mainWindow = createMainWindow(backendRuntime.localToken);
+    mainWindow = createMainWindow();
     await loadRenderer(mainWindow, backendRuntime.baseUrl);
   } catch (err) {
     dialog.showErrorBox('OpenDeepSea 启动失败', (err as Error).message);
@@ -54,7 +59,7 @@ async function startDesktopApp(): Promise<void> {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0 && backendRuntime) {
-    mainWindow = createMainWindow(backendRuntime.localToken);
+    mainWindow = createMainWindow();
     void loadRenderer(mainWindow, backendRuntime.baseUrl);
   }
 });
@@ -68,7 +73,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-function createMainWindow(localToken: string): BrowserWindow {
+function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1440,
     height: 940,
@@ -79,7 +84,6 @@ function createMainWindow(localToken: string): BrowserWindow {
     backgroundColor: '#05070a',
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
-      additionalArguments: [`--opendeepsea-local-token=${localToken}`],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -88,7 +92,9 @@ function createMainWindow(localToken: string): BrowserWindow {
 
   win.once('ready-to-show', () => win.show());
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    if (isAllowedExternalUrl(url)) {
+      void shell.openExternal(url);
+    }
     return { action: 'deny' };
   });
   win.on('closed', () => {
@@ -120,27 +126,42 @@ async function startBackend(): Promise<BackendRuntime> {
   const baseUrl = `http://127.0.0.1:${port}`;
   const launch = buildBackendLaunch(port, localToken);
   const logStream = createBackendLogStream();
+  let suppressExitDialog = false;
   const child = spawn(launch.command, launch.args, {
     cwd: launch.cwd,
     env: launch.env,
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32',
+  });
+  const childError = new Promise<never>((_resolve, reject) => {
+    child.once('error', (err) => {
+      writeBackendLog(logStream, `\n[desktop] backend spawn error: ${(err as Error).message}\n`);
+      reject(err);
+    });
   });
 
   child.stdout.on('data', (chunk: Buffer) => {
-    logStream.write(chunk);
+    writeBackendLog(logStream, chunk);
   });
   child.stderr.on('data', (chunk: Buffer) => {
-    logStream.write(chunk);
+    writeBackendLog(logStream, chunk);
   });
   child.on('exit', (code, signal) => {
-    logStream.write(`\n[desktop] backend exited code=${code ?? 'null'} signal=${signal ?? 'null'}\n`);
-    if (!isQuitting) {
+    writeBackendLog(logStream, `\n[desktop] backend exited code=${code ?? 'null'} signal=${signal ?? 'null'}\n`);
+    if (!isQuitting && !suppressExitDialog) {
       dialog.showErrorBox('OpenDeepSea 后端已退出', `后端进程已退出：code=${code ?? 'null'} signal=${signal ?? 'null'}`);
       app.quit();
     }
   });
 
-  await waitForBackend(baseUrl, child);
+  try {
+    await Promise.race([waitForBackend(baseUrl, child), childError]);
+  } catch (err) {
+    suppressExitDialog = true;
+    terminateBackendProcess(child);
+    logStream.end();
+    throw err;
+  }
   return { baseUrl, localToken, process: child, logStream };
 }
 
@@ -184,13 +205,20 @@ function createBackendLogStream(): WriteStream {
   return createWriteStream(join(logDir, 'backend.log'), { flags: 'a' });
 }
 
+function writeBackendLog(stream: WriteStream, chunk: string | Buffer): void {
+  if (stream.destroyed || stream.writableEnded) return;
+  stream.write(chunk);
+}
+
 async function waitForBackend(baseUrl: string, child: BackendProcess): Promise<void> {
   const deadline = Date.now() + 30_000;
   let lastError: unknown = null;
 
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
-      throw new Error(`backend exited before health check completed with code ${child.exitCode}`);
+    if (hasBackendProcessExited(child)) {
+      throw new Error(
+        `backend exited before health check completed with code ${child.exitCode ?? 'null'} signal=${child.signalCode ?? 'null'}`,
+      );
     }
     try {
       const response = await fetch(`${baseUrl}/api/health`);
@@ -209,8 +237,59 @@ function stopBackend(): void {
   const runtime = backendRuntime;
   backendRuntime = null;
   if (!runtime) return;
-  runtime.process.kill();
+  terminateBackendProcess(runtime.process);
   runtime.logStream.end();
+}
+
+function terminateBackendProcess(child: BackendProcess): void {
+  if (hasBackendProcessExited(child) || child.killed) return;
+  const pid = child.pid;
+  if (!pid) {
+    child.kill('SIGTERM');
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    const killer = spawn('taskkill', ['/pid', String(pid), '/t', '/f'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    killer.on('error', () => {
+      child.kill('SIGTERM');
+    });
+    killer.unref();
+    return;
+  }
+
+  try {
+    process.kill(-pid, 'SIGTERM');
+  } catch {
+    child.kill('SIGTERM');
+    return;
+  }
+
+  const forceKillTimer = setTimeout(() => {
+    if (hasBackendProcessExited(child)) return;
+    try {
+      process.kill(-pid, 'SIGKILL');
+    } catch {
+      child.kill('SIGKILL');
+    }
+  }, 5000);
+  forceKillTimer.unref();
+}
+
+function hasBackendProcessExited(child: BackendProcess): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+function isAllowedExternalUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'mailto:';
+  } catch {
+    return false;
+  }
 }
 
 function repoRoot(): string {

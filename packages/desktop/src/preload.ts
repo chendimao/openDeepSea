@@ -1,9 +1,10 @@
+import { ipcRenderer } from 'electron';
+
 const LOCAL_ACCESS_TOKEN_STORAGE_KEY = 'opendeepsea.localToken';
 const RUNTIME_STORAGE_KEY = 'opendeepsea.runtime';
-const TOKEN_ARG_PREFIX = '--opendeepsea-local-token=';
+const TOKEN_CHANNEL = 'opendeepsea:get-local-token';
 
-const tokenArg = process.argv.find((arg) => arg.startsWith(TOKEN_ARG_PREFIX));
-const token = tokenArg?.slice(TOKEN_ARG_PREFIX.length).trim();
+const token = readLocalToken();
 
 try {
   if (token) {
@@ -12,4 +13,9 @@ try {
   }
 } catch {
   // localStorage can be unavailable before the renderer has a stable origin.
+}
+
+function readLocalToken(): string | null {
+  const value = ipcRenderer.sendSync(TOKEN_CHANNEL) as unknown;
+  return typeof value === 'string' ? value.trim() || null : null;
 }
