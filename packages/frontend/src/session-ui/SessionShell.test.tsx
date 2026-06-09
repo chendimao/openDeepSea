@@ -440,8 +440,8 @@ test('SessionShell renders failed run reason and a visible retry action', () => 
   const html = renderSessionShell(payload);
 
   assert.match(html, /listen EPERM/);
-  assert.match(html, /重新执行/);
-  assert.match(html, /aria-label="重新执行失败运行"/);
+  assert.match(html, /继续失败回复/);
+  assert.match(html, /aria-label="继续失败回复"/);
 });
 
 test('SessionShell backfills failed run reason from raw ACP tool events', () => {
@@ -1119,7 +1119,7 @@ test('SessionShell renders a retry icon next to the failed transcript status chi
   const html = renderSessionShell(payload, { onRetryRun: () => undefined });
 
   assert.match(html, /class="deepsea-run-status-group"/);
-  assert.match(html, /class="deepsea-run-status" data-tone="danger">失败<\/span><button[^>]+aria-label="重新执行失败运行"/);
+  assert.match(html, /class="deepsea-run-status" data-tone="danger">失败<\/span><button[^>]+aria-label="继续失败回复"/);
   assert.match(html, /lucide-repeat2/);
 });
 

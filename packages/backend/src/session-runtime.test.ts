@@ -11,6 +11,7 @@ const { sessionRepo, sessionRunRepo, sessionAgentEventRepo } = await import('./r
 const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
 const { sessionTokenUsageRepo } = await import('./repos/session-token-usage.js');
 const {
+  retrySessionAgentRun,
   runSessionAgent,
   setSessionRuntimeAdapterForTest,
   setSessionRuntimeGenerateImageToolDepsForTest,
@@ -96,6 +97,82 @@ test('runSessionAgent reuses provider session for same business session agent an
   await runSessionAgent({ sessionId: session.id, agentId: 'planner', prompt: '第二轮', provider: 'codex' });
 
   assert.deepEqual(observedSessionIds, [null, 'acp-provider-1']);
+});
+
+test('retrySessionAgentRun asks the provider to continue a failed partial answer', async () => {
+  const project = projectRepo.create({
+    name: 'runtime continuation retry project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-continuation-retry-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Continuation Retry',
+    mode: 'ask',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onSession, onChunk }) => {
+      onSession?.('acp-continuation-retry');
+      onChunk({
+        stream: 'stdout',
+        channel: 'answer',
+        text: '已确认第二个选择：轻量版只做本地 git 状态。\n',
+      });
+      onChunk({
+        stream: 'stdout',
+        channel: 'event',
+        text: '',
+        rawType: 'tool_call_update',
+        rawEvent: {
+          method: 'session/update',
+          params: {
+            sessionId: 'acp-continuation-retry',
+            update: {
+              sessionUpdate: 'tool_call_update',
+              rawOutput: {
+                exit_code: 1,
+                status: 'failed',
+                formatted_output: 'Error: listen EPERM: operation not permitted 127.0.0.1:55063',
+              },
+            },
+          },
+        },
+      });
+      return { exitCode: 1, sessionId: 'acp-continuation-retry', stderr: '' };
+    },
+  });
+
+  const failed = await runSessionAgent({ sessionId: session.id, prompt: 'a', provider: 'codex' });
+  assert.equal(failed.status, 'failed');
+
+  let capturedPrompt = '';
+  let capturedSessionId: string | null | undefined;
+  const retryInvoked = new Promise<void>((resolve) => {
+    setSessionRuntimeAdapterForTest({
+      backend: 'codex',
+      listSessions: async () => [],
+      invoke: async ({ prompt, sessionId }) => {
+        capturedPrompt = prompt;
+        capturedSessionId = sessionId;
+        resolve();
+        return { exitCode: 0, sessionId: sessionId ?? 'acp-continuation-retry', stderr: '' };
+      },
+    });
+  });
+
+  retrySessionAgentRun(failed.id);
+  await retryInvoked;
+
+  assert.equal(capturedSessionId, 'acp-continuation-retry');
+  assert.notEqual(capturedPrompt, 'a');
+  assert.match(capturedPrompt, /从中断点继续/u);
+  assert.match(capturedPrompt, /已确认第二个选择/u);
+  assert.match(capturedPrompt, /listen EPERM/u);
+  assert.match(capturedPrompt, /不要重新回答原始用户请求/u);
 });
 
 test('runSessionAgent passes knowledge usage env overrides to session adapter', async () => {

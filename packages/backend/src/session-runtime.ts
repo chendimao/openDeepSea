@@ -393,7 +393,7 @@ export function retrySessionAgentRun(runId: string): void {
   void runSessionAgent({
     sessionId: run.session_id,
     agentId: run.agent_id,
-    prompt: run.prompt,
+    prompt: buildSessionRunRetryPrompt(run),
     provider: run.provider,
     model: run.model,
     runtimeProfileSnapshot: run.runtime_profile_snapshot,
@@ -409,6 +409,26 @@ export function retrySessionAgentRun(runId: string): void {
     wsHub.broadcastSession(run.session_id, { type: 'session_evidence:new', sessionId: run.session_id, event });
     broadcastActiveSessionUpsert(run.session_id);
   });
+}
+
+function buildSessionRunRetryPrompt(run: SessionRun): string {
+  const partialAnswer = run.stdout.trim();
+  if (run.status !== 'failed' || !partialAnswer) return run.prompt;
+
+  const failure = (run.error || run.stderr).trim();
+  return [
+    '上一轮运行在已经输出部分回复后失败。请不要重新回答原始用户请求，也不要改写已输出内容。',
+    '把下面的“已输出内容”视为已经发送给用户，只从中断点继续完成同一轮回复。',
+    '如果失败来自工具、权限或本地环境，请简短说明降级处理，然后继续推进原本的下一步。',
+    '',
+    '## 已输出内容',
+    trimEvidenceText(partialAnswer),
+    '',
+    '## 失败信息',
+    failure ? trimEvidenceText(failure) : '未记录失败信息。',
+    '',
+    '请从中断点继续。',
+  ].join('\n');
 }
 
 function shouldAutoRetrySessionRun(input: {

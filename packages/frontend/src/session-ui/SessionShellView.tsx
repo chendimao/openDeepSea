@@ -1471,7 +1471,7 @@ function RunStatusBadge({
         <button
           type="button"
           className="deepsea-run-status-retry"
-          aria-label="重新执行失败运行"
+          aria-label={failedRunRetryLabel(run)}
           onClick={() => onRetryRun?.(run.id)}
         >
           <Repeat2 aria-hidden="true" />
@@ -1487,6 +1487,10 @@ function runStatusView(status: SessionRun['status']): { label: string; tone: 'ok
   if (status === 'paused') return { label: '已暂停', tone: 'muted' };
   if (status === 'cancelled') return { label: '已取消', tone: 'muted' };
   return { label: '运行中', tone: 'warn' };
+}
+
+function failedRunRetryLabel(run: SessionRun): string {
+  return run.stdout.trim() ? '继续失败回复' : '重试失败运行';
 }
 
 function RunStatusIcon({ tone }: { tone: ReturnType<typeof runStatusView>['tone'] }): JSX.Element {
@@ -1732,11 +1736,11 @@ function RunModule({
             <button
               type="button"
               className={run.status === 'failed' ? 'deepsea-run-row-retry-action' : undefined}
-              aria-label={run.status === 'failed' ? '重新执行失败运行' : '重新执行'}
+              aria-label={run.status === 'failed' ? failedRunRetryLabel(run) : '重新执行'}
               onClick={() => onRetryRun?.(run.id)}
             >
               <Repeat2 aria-hidden="true" />
-              {run.status === 'failed' && <span>重新执行</span>}
+              {run.status === 'failed' && <span>{failedRunRetryLabel(run)}</span>}
             </button>
           </div>
           {failureText && <p className="deepsea-run-row-error" title={failureText}>{failureText}</p>}
