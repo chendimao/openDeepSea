@@ -990,7 +990,7 @@ function TranscriptCanvas({
                   </span>
                   <time className="deepsea-mono">{formatClock(item.run.started_at)}</time>
                   <ThinkingDurationBadge run={item.run} agentEvents={runAgentEvents} now={nowTick} />
-                  <RunStatusBadge run={item.run} onRetryRun={onRetryRun} />
+                  <RunStatusBadge run={item.run} agentEvents={runAgentEvents} onRetryRun={onRetryRun} />
                   <div className="deepsea-message-tools deepsea-message-tools--run">
                     <button
                       type="button"
@@ -1619,16 +1619,18 @@ function ThinkingDurationBadge({
 
 function RunStatusBadge({
   run,
+  agentEvents = [],
   onRetryRun,
 }: {
   run: SessionRun;
+  agentEvents?: SessionAgentEvent[];
   onRetryRun?: (runId: string) => void;
 }): JSX.Element {
-  const view = runStatusView(run.status);
+  const view = sessionRunStatusView(run, agentEvents);
   const retryable = run.status === 'failed' && Boolean(onRetryRun);
   return (
     <span className="deepsea-run-status-group">
-      <span className="deepsea-run-status" data-tone={view.tone}>
+      <span className="deepsea-run-status" data-tone={view.tone} title={view.title}>
         {view.label}
       </span>
       {retryable && (
@@ -1645,7 +1647,16 @@ function RunStatusBadge({
   );
 }
 
-function runStatusView(status: SessionRun['status']): { label: string; tone: 'ok' | 'warn' | 'danger' | 'muted' } {
+type RunStatusTone = 'ok' | 'warn' | 'danger' | 'muted';
+type RunStatusViewModel = { label: string; tone: RunStatusTone; title?: string };
+
+function sessionRunStatusView(run: SessionRun, agentEvents: SessionAgentEvent[] = []): RunStatusViewModel {
+  const interruptDiagnostic = runCompletionInterruptDiagnostic(run, agentEvents);
+  if (interruptDiagnostic) return { label: '收尾中断', tone: 'warn', title: interruptDiagnostic };
+  return runStatusView(run.status);
+}
+
+function runStatusView(status: SessionRun['status']): RunStatusViewModel {
   if (status === 'failed' || status === 'interrupted') return { label: '失败', tone: 'danger' };
   if (status === 'completed') return { label: '完成', tone: 'ok' };
   if (status === 'paused') return { label: '已暂停', tone: 'muted' };
@@ -1657,7 +1668,7 @@ function failedRunRetryLabel(run: SessionRun): string {
   return run.stdout.trim() ? '继续失败回复' : '重试失败运行';
 }
 
-function RunStatusIcon({ tone }: { tone: ReturnType<typeof runStatusView>['tone'] }): JSX.Element {
+function RunStatusIcon({ tone }: { tone: RunStatusTone }): JSX.Element {
   if (tone === 'ok') return <CheckCircle2 aria-hidden="true" />;
   if (tone === 'warn') return <Ellipsis aria-hidden="true" />;
   if (tone === 'danger') return <X aria-hidden="true" />;
@@ -1870,7 +1881,7 @@ function RunModule({
 
   const provider = run.provider;
   const model = run.model;
-  const status = runStatusView(run.status);
+  const status = sessionRunStatusView(run, agentEvents ?? []);
   const cancellable = run.status === 'queued' || run.status === 'running' || run.status === 'retrying';
   const failureText = runFailureText(run, agentEvents);
   return (
@@ -1880,7 +1891,7 @@ function RunModule({
         <span>1 条记录</span>
       </div>
       <div className="deepsea-run-table">
-        <div data-tone={status.tone}>
+        <div data-tone={status.tone} title={status.title}>
           <strong>{status.label}</strong>
           <p className="deepsea-mono">{formatProviderModel(provider, model)}</p>
           <span className="deepsea-run-row-duration">{formatDuration(run.started_at, run.completed_at ?? Date.now())}</span>
@@ -1938,6 +1949,30 @@ function runFailureText(run: SessionRun, events: SessionAgentEvent[] = []): stri
   const reason = run.error?.trim() || run.stderr.trim();
   if (reason) return reason;
   return failureDiagnosticFromAgentEvents(events);
+}
+
+function runCompletionInterruptDiagnostic(run: SessionRun, events: SessionAgentEvent[]): string | null {
+  if (run.status !== 'completed') return null;
+  if (!run.stdout.trim()) return null;
+  const completedSeq = [...events].reverse().find((event) => event.event_type === 'run_completed')?.seq ?? null;
+  for (const event of [...events].reverse()) {
+    if (completedSeq !== null && event.seq <= completedSeq) continue;
+    if (completedSeq === null && run.completed_at !== null && event.created_at < run.completed_at) continue;
+    const diagnostic = failureDiagnosticFromPayload(parseAgentEventPayload(event.payload_json)) ??
+      normalizeFailureDiagnostic(event.content, false);
+    if (looksLikeProviderInterruptDiagnostic(diagnostic)) return cleanRunStatusDiagnostic(diagnostic);
+    const content = event.content.trim();
+    if (looksLikeProviderInterruptDiagnostic(content)) return cleanRunStatusDiagnostic(content);
+  }
+  return null;
+}
+
+function looksLikeProviderInterruptDiagnostic(text: string | null | undefined): text is string {
+  return Boolean(text && /(Unhandled error during turn|exceeded retry limit|Too Many Requests|429\b|rate limit|quota exceeded)/i.test(text));
+}
+
+function cleanRunStatusDiagnostic(text: string): string {
+  return text.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '').trim();
 }
 
 function failureDiagnosticFromAgentEvents(events: SessionAgentEvent[]): string | null {

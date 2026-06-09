@@ -1123,6 +1123,41 @@ test('SessionShell renders a retry icon next to the failed transcript status chi
   assert.match(html, /lucide-repeat2/);
 });
 
+test('SessionShell marks completed runs with provider wrap-up errors as interrupted', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'completed';
+  run.stdout = '已写入 spec。';
+  run.stderr = '';
+  run.error = null;
+  run.started_at = 1_000;
+  run.updated_at = 20_000;
+  run.completed_at = 19_000;
+  payload.activeSession.agentEvents = [
+    createAgentEvent({
+      id: 'run-completed',
+      seq: 1,
+      channel: 'event',
+      event_type: 'run_completed',
+      created_at: 19_000,
+    }),
+    createAgentEvent({
+      id: 'provider-error',
+      seq: 2,
+      channel: 'activity',
+      event_type: 'protocol.stderr',
+      content: '\u001b[31mERROR\u001b[0m 429 Too Many Requests',
+      created_at: 20_000,
+    }),
+  ];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /class="deepsea-run-status" data-tone="warn" title="ERROR 429 Too Many Requests">收尾中断<\/span>/);
+  assert.doesNotMatch(html, /class="deepsea-run-status" data-tone="ok">完成<\/span>/);
+  assert.match(html, /aria-label="运行状态：收尾中断"/);
+});
+
 test('SessionShell keeps run status chips aligned with the thinking chip', () => {
   assert.match(sessionOsCss, /\.deepsea-thinking-duration,\s*\.deepsea-run-status,\s*\.deepsea-run-status-retry\s*\{[^}]*--deepsea-run-chip-height:\s*18px;[^}]*height:\s*var\(--deepsea-run-chip-height\);[^}]*min-height:\s*var\(--deepsea-run-chip-height\);/s);
   assert.match(sessionOsCss, /\.deepsea-thinking-duration,\s*\.deepsea-run-status\s*\{[^}]*padding:\s*0 6px;[^}]*font-size:\s*8px;[^}]*line-height:\s*1;/s);
