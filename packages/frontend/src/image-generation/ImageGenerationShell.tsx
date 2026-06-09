@@ -8,8 +8,6 @@ import {
   ListFilter,
   Loader2,
   Maximize2,
-  MoreHorizontal,
-  PanelRight,
   Play,
   RefreshCw,
   Search,
@@ -18,7 +16,6 @@ import {
   SlidersHorizontal,
   Square,
   Trash2,
-  Upload,
   Wand2,
   Zap,
   type LucideIcon,
@@ -30,13 +27,20 @@ import { cn } from '../lib/utils';
 import type {
   ImageGenerationJob,
   ImageGenerationOutput,
+  ImageGenerationWorkflow,
+  ImageJobCreateInput,
   ImageJobDetailResponse,
   ImageJobListResponse,
   ImageProviderProfile,
+  ProjectFile,
 } from '../lib/types';
+import { ProviderProfilePanel } from './ProviderProfilePanel';
+import { SourceImagePicker } from './SourceImagePicker';
 import { useImageGenerationEvents, type ImageGenerationWsEvent } from './useImageGenerationEvents';
 
-type FormState = {
+export type FormState = {
+  workflow: ImageGenerationWorkflow;
+  sourceFiles: ProjectFile[];
   count: number;
   quality: string;
   size: string;
@@ -45,8 +49,9 @@ type FormState = {
   negativePrompt: string;
 };
 
-type ResultAsset = {
+export type ResultAsset = {
   id: string;
+  outputId: string | null;
   label: string;
   url?: string;
   gradient: string;
@@ -54,7 +59,7 @@ type ResultAsset = {
   video?: boolean;
 };
 
-type ResultGroup = {
+export type ResultGroup = {
   id: string;
   createdAt: number;
   prompt: string;
@@ -104,12 +109,14 @@ const demoResults: ResultGroup[] = [
     assets: [
       {
         id: 'city-1',
+        outputId: null,
         label: 'future-city-a.png',
         aspect: '16:9',
         gradient: 'linear-gradient(135deg, #dbeafe 0%, #f59e0b 34%, #312e81 100%)',
       },
       {
         id: 'city-2',
+        outputId: null,
         label: 'future-city-b.png',
         aspect: '16:9',
         gradient: 'linear-gradient(135deg, #0f172a 0%, #2563eb 44%, #f97316 100%)',
@@ -127,24 +134,28 @@ const demoResults: ResultGroup[] = [
     assets: [
       {
         id: 'landscape-1',
+        outputId: null,
         label: 'morning-alpine-a.png',
         aspect: '4:3',
         gradient: 'linear-gradient(135deg, #f59e0b 0%, #fef3c7 44%, #78350f 100%)',
       },
       {
         id: 'landscape-2',
+        outputId: null,
         label: 'morning-alpine-b.png',
         aspect: '4:3',
         gradient: 'linear-gradient(135deg, #0f766e 0%, #ecfeff 50%, #475569 100%)',
       },
       {
         id: 'landscape-3',
+        outputId: null,
         label: 'morning-alpine-c.png',
         aspect: '4:3',
         gradient: 'linear-gradient(135deg, #ea580c 0%, #fde68a 48%, #4d7c0f 100%)',
       },
       {
         id: 'landscape-4',
+        outputId: null,
         label: 'morning-alpine-preview.mp4',
         aspect: '4:3',
         video: true,
@@ -164,6 +175,8 @@ const demoHistory = [
 export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.Element {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>({
+    workflow: 'generate',
+    sourceFiles: [],
     count: 2,
     quality: 'high',
     size: '1792x1024',
@@ -206,14 +219,7 @@ export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.
   useImageGenerationEvents(projectId, updateJobCache);
 
   const createJob = useMutation({
-    mutationFn: () => api.createImageJob(projectId, {
-      provider_profile_id: activeProfile?.id ?? null,
-      workflow: 'generate',
-      prompt: form.prompt.trim(),
-      count: form.count,
-      quality: form.quality,
-      size: form.size,
-    }),
+    mutationFn: () => api.createImageJob(projectId, buildWorkbenchImageJobPayload(form, activeProfile?.id ?? null)),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey });
       await queryClient.invalidateQueries({ queryKey: ['image-workbench-job-details', projectId] });
@@ -235,10 +241,41 @@ export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.
     },
     onError: (error) => toast.error((error as Error).message),
   });
+  const cancelQueue = useMutation({
+    mutationFn: (queueJobs: ImageGenerationJob[]) =>
+      Promise.all(queueJobs.map((job) => api.cancelImageJob(projectId, job.id))),
+    onSuccess: async (results) => {
+      await queryClient.invalidateQueries({ queryKey });
+      toast.success(`已取消 ${results.length} 个队列任务`);
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
+  const downloadOutputs = useMutation({
+    mutationFn: (outputIds: string[]) => api.downloadImageOutputManifest(projectId, outputIds),
+    onSuccess: (manifest) => {
+      downloadJsonManifest(`opendeepsea-images-${projectId}.json`, manifest);
+      toast.success('下载清单已生成');
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
+  const deleteOutputs = useMutation({
+    mutationFn: (outputIds: string[]) => api.deleteImageOutputs(projectId, outputIds),
+    onSuccess: async (response) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['image-workbench-job-details', projectId] }),
+        queryClient.invalidateQueries({ queryKey: ['image-job-details', projectId] }),
+        queryClient.invalidateQueries({ queryKey: ['image-gallery-resources', projectId] }),
+      ]);
+      toast.success(`已删除 ${response.deleted_output_ids.length} 张图片`);
+    },
+    onError: (error) => toast.error((error as Error).message),
+  });
 
   const displayJobs = jobs.length > 0 ? jobs : demoJobs;
-  const resultGroupsFromDetails = useMemo(() => detailsToResultGroups(details, activeProfile), [activeProfile, details]);
+  const resultGroupsFromDetails = useMemo(() => detailsToResultGroups(details, profiles), [details, profiles]);
   const resultGroups = resultGroupsFromDetails.length > 0 ? resultGroupsFromDetails : demoResults;
+  const resultOutputIds = useMemo(() => collectResultOutputIds(resultGroupsFromDetails), [resultGroupsFromDetails]);
+  const hasCancelableJobs = useMemo(() => jobs.some(isCancelableJob), [jobs]);
   const stats = buildStats(jobs);
 
   return (
@@ -254,10 +291,12 @@ export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.
           form={form}
           busy={createJob.isPending}
           onFormChange={(patch) => setForm((current) => ({ ...current, ...patch }))}
-          onClear={() => setForm((current) => ({ ...current, prompt: '', negativePrompt: '' }))}
+          onClear={() => setForm((current) => ({ ...current, prompt: '', negativePrompt: '', sourceFiles: [] }))}
           onSubmit={() => {
-            if (!form.prompt.trim()) {
-              toast.error('请填写提示词');
+            if (!canSubmitWorkbenchImageJob(form)) {
+              toast.error(form.workflow === 'image-to-image' && form.sourceFiles.length === 0
+                ? '图生图需要至少选择一张源图'
+                : '请填写提示词');
               return;
             }
             createJob.mutate();
@@ -268,11 +307,51 @@ export function ImageGenerationShell({ projectId }: { projectId: string }): JSX.
             jobs={displayJobs}
             demoMode={jobs.length === 0}
             modelName={activeProfile?.model ?? 'gpt-image-2'}
-            busyJobId={cancelJob.isPending || retryJob.isPending ? 'busy' : null}
+            busyJobId={cancelJob.isPending || retryJob.isPending || cancelQueue.isPending ? 'busy' : null}
+            clearQueueDisabled={!hasCancelableJobs}
+            downloadDisabled={resultOutputIds.length === 0 || downloadOutputs.isPending}
             onCancel={(job) => cancelJob.mutate(job)}
             onRetry={(job) => retryJob.mutate(job)}
+            onClearQueue={() => {
+              const queueJobs = jobs.filter(isCancelableJob);
+              if (queueJobs.length === 0) {
+                toast.info('没有可取消的队列任务');
+                return;
+              }
+              cancelQueue.mutate(queueJobs);
+            }}
+            onDownloadAll={() => {
+              if (resultOutputIds.length === 0) {
+                toast.info('没有可下载的生成结果');
+                return;
+              }
+              downloadOutputs.mutate(resultOutputIds);
+            }}
           />
-          <GenerationResultsPanel groups={resultGroups} />
+          <GenerationResultsPanel
+            groups={resultGroups}
+            demoMode={resultGroupsFromDetails.length === 0}
+            deleting={deleteOutputs.isPending}
+            downloading={downloadOutputs.isPending}
+            onReusePrompt={(prompt) => {
+              setForm((current) => ({ ...current, prompt }));
+              toast.success('提示词已填入左侧配置');
+            }}
+            onDownload={(group) => {
+              const outputIds = collectGroupOutputIds(group);
+              if (outputIds.length === 0) {
+                toast.info('没有可下载的生成结果');
+                return;
+              }
+              downloadOutputs.mutate(outputIds);
+            }}
+            onDelete={(group) => {
+              const outputIds = collectGroupOutputIds(group);
+              if (outputIds.length === 0) return;
+              if (!window.confirm(`删除此组 ${outputIds.length} 张生成图片？此操作会从项目文件库移除这些图片。`)) return;
+              deleteOutputs.mutate(outputIds);
+            }}
+          />
         </section>
         <RightInspectorPanel jobs={jobs} results={resultGroups} stats={stats} />
       </main>
@@ -299,7 +378,7 @@ function ModelConfigPanel({
   onSubmit: () => void;
 }): JSX.Element {
   const model = profile?.model || 'gpt-image-2';
-  const apiKeyPlaceholder = profile?.has_api_key ? 'sk-••••••••••••••••••••••••••••••' : 'sk-••••••••••••••••••••••••••••••';
+  const submitDisabled = busy || !canSubmitWorkbenchImageJob(form);
 
   return (
     <aside
@@ -309,31 +388,50 @@ function ModelConfigPanel({
     >
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <h2 id="image-generation-config-heading" className="mb-4 text-sm font-bold">模型配置</h2>
-        <Field label="模型">
-          <div className="relative">
-            <select
-              className="h-8 w-full appearance-none rounded border border-[#e5e7eb] bg-[#f9fafb] px-2 pr-14 text-xs outline-none focus:border-[#2563eb]"
-              value={model}
-              onChange={() => undefined}
-              aria-label="模型"
-            >
-              <option>{model}</option>
-            </select>
-            <span className="pointer-events-none absolute right-7 top-2 rounded bg-[#dbeafe] px-1 text-[10px] leading-4 text-[#2563eb]">最新</span>
-            <PanelRight className="pointer-events-none absolute right-2 top-2 h-3.5 w-3.5 text-[#9ca3af]" aria-hidden="true" />
+        <div className="rounded-lg border border-[#e5e7eb] bg-[#f9fafb] p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-xs font-bold text-[#111827]">{profile?.name ?? '尚未配置 Provider'}</p>
+              <p className="mt-1 truncate font-mono text-[10px] text-[#64748b]">{model}</p>
+            </div>
+            <span className={cn(
+              'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold',
+              profile ? 'bg-[#dcfce7] text-[#15803d]' : 'bg-[#fee2e2] text-[#dc2626]',
+            )}>
+              {profile ? '可用' : '待配置'}
+            </span>
           </div>
-        </Field>
-        <Field label="API Key" className="mt-4">
-          <input
-            className="h-8 w-full rounded border border-[#e5e7eb] bg-[#f9fafb] px-2 text-xs outline-none focus:border-[#2563eb]"
-            value={apiKeyPlaceholder}
-            type="password"
-            readOnly
-            aria-label="API Key"
-          />
-        </Field>
+        </div>
+        <details className="mt-3 rounded-lg border border-[#e5e7eb] bg-white p-3" open={!profile}>
+          <summary className="cursor-pointer text-xs font-bold text-[#374151]">Provider 管理</summary>
+          <div className="mt-3 text-xs">
+            <ProviderProfilePanel projectId={projectId} />
+          </div>
+        </details>
 
         <h3 className="mb-4 mt-6 text-sm font-bold">输出设置</h3>
+        <Field label="生成模式">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className={modeButtonClass(form.workflow === 'generate')}
+              aria-pressed={form.workflow === 'generate'}
+              onClick={() => onFormChange({ workflow: 'generate', sourceFiles: [] })}
+            >
+              <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />
+              文生图
+            </button>
+            <button
+              type="button"
+              className={modeButtonClass(form.workflow === 'image-to-image')}
+              aria-pressed={form.workflow === 'image-to-image'}
+              onClick={() => onFormChange({ workflow: 'image-to-image' })}
+            >
+              <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
+              图生图
+            </button>
+          </div>
+        </Field>
         <Field label="生成数量">
           <div className="grid grid-cols-4 gap-2">
             {[1, 2, 3, 4].map((count) => (
@@ -417,16 +515,15 @@ function ModelConfigPanel({
             <option value="cinematic">电影感 (Cinematic)</option>
           </select>
         </Field>
-        <Field label="参考图 (可选)" className="mt-4">
-          <button
-            type="button"
-            className="group flex min-h-24 w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-[#e5e7eb] bg-[#f9fafb] p-4 text-center transition-colors hover:border-[#93c5fd] hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]"
-          >
-            <Upload className="h-7 w-7 text-[#cbd5e1] group-hover:text-[#60a5fa]" aria-hidden="true" />
-            <span className="mt-2 text-[10px] text-[#64748b]">点击或拖拽上传参考图</span>
-            <span className="text-[9px] text-[#94a3b8]">支持 JPG / PNG / WebP, 最大 10MB</span>
-          </button>
-        </Field>
+        {form.workflow === 'image-to-image' && (
+          <Field label="参考图" className="mt-4">
+            <SourceImagePicker
+              projectId={projectId}
+              selectedFiles={form.sourceFiles}
+              onChange={(sourceFiles) => onFormChange({ sourceFiles })}
+            />
+          </Field>
+        )}
         <Field label="提示词 (Prompt)" className="mt-4">
           <div className="relative">
             <textarea
@@ -457,11 +554,11 @@ function ModelConfigPanel({
         <button
           type="button"
           className="col-span-2 inline-flex items-center justify-center gap-1 rounded bg-[#2563eb] py-2 text-xs font-bold text-white transition-colors hover:bg-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={busy || !form.prompt.trim()}
+          disabled={submitDisabled}
           onClick={onSubmit}
         >
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Zap className="h-3.5 w-3.5" aria-hidden="true" />}
-          生成图片 <span className="ml-1 opacity-80">15</span>
+          生成图片
         </button>
       </div>
     </aside>
@@ -473,23 +570,31 @@ function TaskQueuePanel({
   demoMode,
   modelName,
   busyJobId,
+  clearQueueDisabled,
+  downloadDisabled,
   onCancel,
   onRetry,
+  onClearQueue,
+  onDownloadAll,
 }: {
   jobs: ImageGenerationJob[];
   demoMode: boolean;
   modelName: string;
   busyJobId: string | null;
+  clearQueueDisabled: boolean;
+  downloadDisabled: boolean;
   onCancel: (job: ImageGenerationJob) => void;
   onRetry: (job: ImageGenerationJob) => void;
+  onClearQueue: () => void;
+  onDownloadAll: () => void;
 }): JSX.Element {
   return (
     <section className="mb-8" aria-labelledby="image-generation-jobs-heading" data-purpose="image-workbench-task-queue">
       <div className="mb-4 flex items-center justify-between">
         <h2 id="image-generation-jobs-heading" className="text-sm font-bold">任务队列</h2>
         <div className="flex gap-2">
-          <ToolButton icon={Trash2} label="清空队列" disabled={demoMode} />
-          <ToolButton icon={Download} label="全部下载" disabled={demoMode} />
+          <ToolButton icon={Trash2} label="清空队列" disabled={demoMode || clearQueueDisabled || Boolean(busyJobId)} onClick={onClearQueue} />
+          <ToolButton icon={Download} label="全部下载" disabled={demoMode || downloadDisabled} onClick={onDownloadAll} />
         </div>
       </div>
       <div className="space-y-3">
@@ -542,7 +647,23 @@ function TaskQueuePanel({
   );
 }
 
-function GenerationResultsPanel({ groups }: { groups: ResultGroup[] }): JSX.Element {
+function GenerationResultsPanel({
+  groups,
+  demoMode,
+  deleting,
+  downloading,
+  onReusePrompt,
+  onDownload,
+  onDelete,
+}: {
+  groups: ResultGroup[];
+  demoMode: boolean;
+  deleting: boolean;
+  downloading: boolean;
+  onReusePrompt: (prompt: string) => void;
+  onDownload: (group: ResultGroup) => void;
+  onDelete: (group: ResultGroup) => void;
+}): JSX.Element {
   return (
     <section aria-labelledby="image-generation-gallery-heading" data-purpose="image-workbench-generation-results">
       <h2 id="image-generation-gallery-heading" className="mb-4 text-sm font-bold">生成结果</h2>
@@ -559,9 +680,9 @@ function GenerationResultsPanel({ groups }: { groups: ResultGroup[] }): JSX.Elem
               </div>
             </div>
             <div className="flex shrink-0 gap-1">
-              <IconButton icon={Wand2} label="复用提示词" />
-              <IconButton icon={Download} label="下载结果" />
-              <IconButton icon={MoreHorizontal} label="更多操作" />
+              <IconButton icon={Wand2} label="复用提示词" onClick={() => onReusePrompt(group.prompt)} />
+              <IconButton icon={Download} label="下载结果" disabled={demoMode || downloading} onClick={() => onDownload(group)} />
+              <IconButton icon={Trash2} label="删除结果" disabled={demoMode || deleting} onClick={() => onDelete(group)} />
             </div>
           </div>
           <div className={cn('grid gap-4', group.assets.length <= 2 ? 'grid-cols-2 max-sm:grid-cols-1' : 'grid-cols-4 max-xl:grid-cols-2 max-sm:grid-cols-1')}>
@@ -581,13 +702,17 @@ function GenerationResultsPanel({ groups }: { groups: ResultGroup[] }): JSX.Elem
                     </span>
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                    aria-label={`放大查看 ${asset.label}`}
-                  >
-                    <Maximize2 className="h-4 w-4" aria-hidden="true" />
-                  </button>
+                  asset.url ? (
+                    <a
+                      href={asset.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                      aria-label={`放大查看 ${asset.label}`}
+                    >
+                      <Maximize2 className="h-4 w-4" aria-hidden="true" />
+                    </a>
+                  ) : null
                 )}
               </div>
             ))}
@@ -608,7 +733,12 @@ function RightInspectorPanel({
   results: ResultGroup[];
   stats: ReturnType<typeof buildStats>;
 }): JSX.Element {
+  const [historyQuery, setHistoryQuery] = useState('');
   const history = jobs.length > 0 ? jobs.slice(0, 5).map(jobToHistoryItem) : demoHistory;
+  const normalizedHistoryQuery = historyQuery.trim().toLowerCase();
+  const visibleHistory = normalizedHistoryQuery
+    ? history.filter((item) => `${item.title} ${item.meta} ${item.status}`.toLowerCase().includes(normalizedHistoryQuery))
+    : history;
 
   return (
     <aside
@@ -639,14 +769,26 @@ function RightInspectorPanel({
         <div className="mb-4 flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-2 h-3.5 w-3.5 text-[#9ca3af]" aria-hidden="true" />
-            <input className="h-8 w-full rounded border border-[#e5e7eb] bg-[#f9fafb] px-8 text-xs outline-none focus:border-[#2563eb]" placeholder="搜索历史记录..." type="text" />
+            <input
+              className="h-8 w-full rounded border border-[#e5e7eb] bg-[#f9fafb] px-8 text-xs outline-none focus:border-[#2563eb]"
+              placeholder="搜索历史记录..."
+              type="text"
+              value={historyQuery}
+              onChange={(event) => setHistoryQuery(event.currentTarget.value)}
+            />
           </div>
-          <button type="button" className="flex h-8 w-8 items-center justify-center rounded border border-[#e5e7eb] bg-white text-[#64748b]" aria-label="历史筛选">
+          <button
+            type="button"
+            className="flex h-8 w-8 items-center justify-center rounded border border-[#e5e7eb] bg-white text-[#94a3b8] disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label="历史筛选"
+            disabled
+            title="预留扩展能力"
+          >
             <ListFilter className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
         <div className="space-y-4">
-          {history.map((item, index) => (
+          {visibleHistory.map((item, index) => (
             <div key={item.id} className="group -mx-2 flex cursor-pointer gap-3 rounded-lg p-2 transition-colors hover:bg-[#f9fafb]">
               <HistoryPreview failed={item.tone === 'danger'} seed={index} results={results} />
               <div className="min-w-0 flex-1">
@@ -665,6 +807,11 @@ function RightInspectorPanel({
               </div>
             </div>
           ))}
+          {visibleHistory.length === 0 && (
+            <div className="rounded-lg border border-dashed border-[#e5e7eb] bg-[#f9fafb] p-3 text-xs text-[#94a3b8]">
+              没有匹配的历史记录
+            </div>
+          )}
         </div>
       </section>
       <section aria-labelledby="image-workbench-quick-actions-heading">
@@ -722,12 +869,23 @@ function Field({
   );
 }
 
-function ToolButton({ icon: Icon, label, disabled = false }: { icon: LucideIcon; label: string; disabled?: boolean }): JSX.Element {
+function ToolButton({
+  icon: Icon,
+  label,
+  disabled = false,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+}): JSX.Element {
   return (
     <button
       type="button"
       className="inline-flex items-center gap-1 rounded border border-[#e5e7eb] bg-white px-3 py-1 text-xs text-[#374151] transition-colors hover:bg-[#f9fafb] disabled:cursor-not-allowed disabled:opacity-50"
       disabled={disabled}
+      onClick={onClick}
     >
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
       {label}
@@ -735,9 +893,25 @@ function ToolButton({ icon: Icon, label, disabled = false }: { icon: LucideIcon;
   );
 }
 
-function IconButton({ icon: Icon, label }: { icon: LucideIcon; label: string }): JSX.Element {
+function IconButton({
+  icon: Icon,
+  label,
+  disabled = false,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+}): JSX.Element {
   return (
-    <button type="button" className="flex h-7 w-7 items-center justify-center rounded border border-[#e5e7eb] bg-white text-[#64748b] transition-colors hover:bg-[#f9fafb]" aria-label={label}>
+    <button
+      type="button"
+      className="flex h-7 w-7 items-center justify-center rounded border border-[#e5e7eb] bg-white text-[#64748b] transition-colors hover:bg-[#f9fafb] disabled:cursor-not-allowed disabled:opacity-50"
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
     </button>
   );
@@ -745,7 +919,12 @@ function IconButton({ icon: Icon, label }: { icon: LucideIcon; label: string }):
 
 function QuickAction({ icon: Icon, label, wide = false }: { icon: LucideIcon; label: string; wide?: boolean }): JSX.Element {
   return (
-    <button type="button" className={cn('inline-flex items-center gap-2 rounded border border-[#e5e7eb] bg-[#f9fafb] px-3 py-2 text-left text-xs text-[#374151] transition-colors hover:bg-[#f3f4f6]', wide && 'w-full')}>
+    <button
+      type="button"
+      className={cn('inline-flex items-center gap-2 rounded border border-[#e5e7eb] bg-[#f9fafb] px-3 py-2 text-left text-xs text-[#94a3b8] opacity-75', wide && 'w-full')}
+      disabled
+      title="预留扩展能力"
+    >
       <Icon className="h-3.5 w-3.5 shrink-0 text-[#64748b]" aria-hidden="true" />
       <span className="min-w-0 truncate">{label}</span>
     </button>
@@ -776,14 +955,15 @@ function HistoryPreview({ failed, seed, results }: { failed: boolean; seed: numb
   );
 }
 
-function detailsToResultGroups(details: ImageJobDetailResponse[], profile: ImageProviderProfile | null): ResultGroup[] {
+export function detailsToResultGroups(details: ImageJobDetailResponse[], profiles: ImageProviderProfile[] = []): ResultGroup[] {
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
   return details
     .filter((detail) => detail.outputs.length > 0)
     .map((detail) => ({
       id: detail.job.id,
       createdAt: detail.job.created_at,
       prompt: detail.job.prompt,
-      model: profile?.model ?? 'gpt-image-2',
+      model: profileById.get(detail.job.provider_profile_id)?.model ?? 'gpt-image-2',
       size: sizeLabel(detail.job.size),
       quality: qualityLabel(detail.job.quality),
       count: detail.outputs.length,
@@ -795,6 +975,7 @@ function outputToAsset(output: ImageGenerationOutput): ResultAsset {
   const aspect = output.width && output.height && output.width / Math.max(output.height, 1) < 1.45 ? '4:3' : '16:9';
   return {
     id: output.id,
+    outputId: output.id,
     label: output.name,
     url: output.url,
     aspect,
@@ -855,6 +1036,82 @@ function optionButtonClass(active: boolean): string {
     'relative rounded border py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]',
     active ? 'border-[#2563eb] bg-[#eff6ff] text-[#2563eb]' : 'border-[#e5e7eb] bg-[#f9fafb] text-[#374151] hover:border-[#93c5fd]',
   );
+}
+
+function modeButtonClass(active: boolean): string {
+  return cn(
+    'inline-flex h-8 items-center justify-center gap-1.5 rounded border px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563eb]',
+    active ? 'border-[#2563eb] bg-[#eff6ff] text-[#2563eb]' : 'border-[#e5e7eb] bg-[#f9fafb] text-[#64748b] hover:border-[#93c5fd] hover:text-[#374151]',
+  );
+}
+
+export function buildWorkbenchImageJobPayload(
+  form: FormState,
+  providerProfileId: string | null,
+): ImageJobCreateInput {
+  const payload: ImageJobCreateInput = {
+    provider_profile_id: providerProfileId,
+    workflow: form.workflow,
+    prompt: buildPromptWithWorkbenchOptions(form),
+    count: form.count,
+    quality: form.quality,
+    size: form.size,
+  };
+  if (form.workflow === 'image-to-image') {
+    payload.source_file_ids = form.sourceFiles.map((file) => normalizeSourceFileId(file.id));
+  }
+  return payload;
+}
+
+export function canSubmitWorkbenchImageJob(form: FormState): boolean {
+  if (!form.prompt.trim()) return false;
+  if (form.workflow === 'image-to-image' && form.sourceFiles.length === 0) return false;
+  return true;
+}
+
+function buildPromptWithWorkbenchOptions(form: FormState): string {
+  const parts = [form.prompt.trim()];
+  if (form.style !== 'natural') {
+    parts.push(`风格偏好: ${styleLabel(form.style)}`);
+  }
+  if (form.negativePrompt.trim()) {
+    parts.push(`避免出现: ${form.negativePrompt.trim()}`);
+  }
+  return parts.join('\n\n');
+}
+
+function normalizeSourceFileId(fileId: string): string {
+  return fileId.startsWith('file:') ? fileId.slice('file:'.length) : fileId;
+}
+
+function styleLabel(style: string): string {
+  if (style === 'vivid') return '鲜明 Vivid';
+  if (style === 'cinematic') return '电影感 Cinematic';
+  return '自然 Natural';
+}
+
+function isCancelableJob(job: ImageGenerationJob): boolean {
+  return job.status === 'queued' || job.status === 'running' || job.status === 'canceling';
+}
+
+export function collectResultOutputIds(groups: ResultGroup[]): string[] {
+  return groups.flatMap(collectGroupOutputIds);
+}
+
+function collectGroupOutputIds(group: ResultGroup): string[] {
+  return group.assets
+    .map((asset) => asset.outputId)
+    .filter((outputId): outputId is string => Boolean(outputId));
+}
+
+function downloadJsonManifest(filename: string, data: unknown): void {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 function sizeLabel(size: string): string {
