@@ -229,6 +229,7 @@ function createContentKnowledgeSource(input: {
     project_id: input.projectId,
     room_id: input.roomId,
   })));
+  // Imports keep local indexing deterministic; true provider rebuild is explicit via Phase 4B API.
   rebuildSourceEmbeddings(source.id);
 
   return {

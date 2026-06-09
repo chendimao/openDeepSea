@@ -497,7 +497,7 @@ git commit -m "feat(knowledge): 增加真实embedding provider"
 - Modify: `packages/backend/src/knowledge-imports.ts`
 - Modify: `packages/backend/src/knowledge-embedding.ts`
 
-- [ ] **Step 1: Write failing rebuild tests**
+- [x] **Step 1: Write failing rebuild tests**
 
 Create `packages/backend/src/knowledge-embedding-rebuild.test.ts`:
 
@@ -553,7 +553,7 @@ test('rebuildKnowledgeEmbeddings rebuilds stale chunks and skips unchanged chunk
 });
 ```
 
-- [ ] **Step 2: Run failing rebuild test**
+- [x] **Step 2: Run failing rebuild test**
 
 Run:
 
@@ -564,7 +564,7 @@ cd packages/backend
 
 Expected: FAIL because rebuild service does not exist.
 
-- [ ] **Step 3: Create rebuild service**
+- [x] **Step 3: Create rebuild service**
 
 Create `packages/backend/src/knowledge-embedding-rebuild.ts`:
 
@@ -653,7 +653,7 @@ function listReadySources(projectId: string, sourceId?: string): KnowledgeSource
 }
 ```
 
-- [ ] **Step 4: Keep import indexing deterministic**
+- [x] **Step 4: Keep import indexing deterministic**
 
 In `packages/backend/src/knowledge-imports.ts`, keep direct synchronous `rebuildSourceEmbeddings(source.id)` calls for imports. Add this comment above the call if it is not already obvious:
 
@@ -662,7 +662,7 @@ In `packages/backend/src/knowledge-imports.ts`, keep direct synchronous `rebuild
 rebuildSourceEmbeddings(source.id);
 ```
 
-- [ ] **Step 5: Run rebuild tests**
+- [x] **Step 5: Run rebuild tests**
 
 Run:
 
@@ -673,7 +673,7 @@ cd packages/backend
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 ```bash
 git add packages/backend/src/knowledge-embedding-rebuild.ts packages/backend/src/knowledge-embedding-rebuild.test.ts packages/backend/src/knowledge-imports.ts packages/backend/src/knowledge-embedding.ts
