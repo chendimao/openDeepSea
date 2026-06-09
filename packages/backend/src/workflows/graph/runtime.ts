@@ -506,27 +506,40 @@ function resetWorkflowPlanTasksForRetry(
 export async function cancelGraphWorkflow(id: string): Promise<WorkflowRun> {
   const run = requireGraphRun(id);
   const tools = createGraphTools();
+  const parsedState = tryParseGraphState(run);
+  const state = parsedState.ok ? parsedState.state : null;
+  const childTaskIdSet = new Set(state?.childTaskIds ?? []);
+  const cancelledChildTaskIds = new Set<string>();
   for (const agentRun of tools.listActiveAgentRunsByWorkflow(run.id)) {
     runRegistry.cancel(agentRun.id);
     const cancelledRun = agentRunRepo.updateStatus(agentRun.id, 'cancelled', { error: 'Workflow cancelled' });
     if (cancelledRun) tools.broadcastAgentRunUpdated(run.room_id, cancelledRun);
   }
   for (const step of workflowRepo.listSteps(run.id).filter((item) => item.status === 'running')) {
+    if (step.task_id && childTaskIdSet.has(step.task_id)) {
+      cancelledChildTaskIds.add(step.task_id);
+    }
     const cancelledStep = workflowRepo.updateStep(step.id, {
       status: 'cancelled',
       error: 'Workflow cancelled',
     });
     if (cancelledStep) tools.broadcastStepUpdated(run.room_id, cancelledStep);
   }
+  for (const childTaskId of cancelledChildTaskIds) {
+    const child = taskRepo.get(childTaskId);
+    if (child?.status !== 'in_progress') continue;
+    const cancelledChild = taskRepo.updateStatus(child.id, 'failed');
+    if (cancelledChild) tools.broadcastTaskUpdated(cancelledChild);
+  }
   const updated = workflowRepo.updateRun(run.id, {
     status: 'cancelled',
     error: null,
   });
   if (!updated) throw new Error('workflow not found');
-  const state = tryParseGraphState(run);
-  if (state.ok && state.state) {
+  if (state) {
     workflowRepo.updateGraphState(run.id, serializeGraphState({
-      ...state.state,
+      ...state,
+      workflowPlan: markWorkflowPlanTasksBlockedByChildIds(state, cancelledChildTaskIds),
       status: 'cancelled',
       error: null,
     }));
@@ -554,6 +567,23 @@ export async function cancelGraphWorkflow(id: string): Promise<WorkflowRun> {
     }
   }
   return latest;
+}
+
+function markWorkflowPlanTasksBlockedByChildIds(
+  state: AgentWorkflowState,
+  childTaskIds: Set<string>,
+): AgentWorkflowState['workflowPlan'] {
+  if (!state.workflowPlan || childTaskIds.size === 0) return state.workflowPlan ?? null;
+  const planIndexes = new Set(Object.entries(state.childTaskPlanIndexes ?? {})
+    .filter(([childTaskId]) => childTaskIds.has(childTaskId))
+    .map(([, planIndex]) => planIndex));
+  if (planIndexes.size === 0) return state.workflowPlan;
+  return {
+    ...state.workflowPlan,
+    tasks: state.workflowPlan.tasks.map((task, index) =>
+      planIndexes.has(index) ? { ...task, status: 'blocked' } : task
+    ),
+  };
 }
 
 function blockGraphWorkflowRun(

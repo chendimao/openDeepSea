@@ -376,6 +376,78 @@ test('workflowOrchestrator.cancel delegates graph cancellation to runtime', asyn
   assert.equal(controller.signal.aborted, true);
 });
 
+test('workflowOrchestrator.cancel marks running child and workflowPlan task stopped', async () => {
+  const task = createTask('graph-facade-cancel-child-plan', 'Facade graph child plan cancellation');
+  const executor = addWorkflowAgent(task.room_id, 'executor');
+  const child = taskRepo.create({
+    room_id: task.room_id,
+    project_id: task.project_id,
+    parent_task_id: task.id,
+    title: 'Running cancel child task',
+    description: 'Cancellation should stop this child.',
+    assigned_agent_id: executor.id,
+  });
+  taskRepo.updateStatus(child.id, 'in_progress');
+  const run = createAwaitingGraphRun(task, {
+    status: 'running',
+    currentNode: 'execute',
+    childTaskIds: [child.id],
+    childTaskPlanIndexes: { [child.id]: 0 },
+    workflowPlan: {
+      workflow_name: task.title,
+      source_message_id: task.id,
+      goal: task.title,
+      summary: 'Cancel running workflowPlan task.',
+      tasks: [{
+        id: 'task-1-running-cancel-child-task',
+        title: child.title,
+        description: child.description ?? '',
+        role: 'executor',
+        agent_id: executor.id,
+        mode: 'parallel',
+        depends_on: [],
+        status: 'running',
+        progress: 35,
+        result_refs: [],
+      }],
+    },
+  });
+  const step = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: child.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'running',
+    assigned_room_agent_id: executor.id,
+    room_agent_id: executor.id,
+    prompt: 'running child graph work',
+    sort_order: 1,
+  });
+  const agentRun = agentRunRepo.create({
+    room_id: task.room_id,
+    room_agent_id: executor.id,
+    agent_id: executor.agent_id,
+    backend: 'codex',
+    task_id: child.id,
+    workflow_run_id: run.id,
+    workflow_step_id: step.id,
+    workflow_stage: 'implementation',
+    prompt: 'running child graph work',
+  });
+  const controller = runRegistry.create(agentRun.id);
+
+  const cancelled = await workflowOrchestrator.cancel(run.id);
+  const cancelledState = parseGraphState(cancelled.graph_state);
+
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelledState?.status, 'cancelled');
+  assert.equal(workflowRepo.getStep(step.id)?.status, 'cancelled');
+  assert.equal(agentRunRepo.get(agentRun.id)?.status, 'cancelled');
+  assert.equal(taskRepo.get(child.id)?.status, 'failed');
+  assert.equal(cancelledState?.workflowPlan?.tasks[0]?.status, 'blocked');
+  assert.equal(controller.signal.aborted, true);
+});
+
 test('workflowOrchestrator.cancel cancels graph workflow with invalid graph_state', async () => {
   const task = createTask('graph-facade-cancel-invalid-state', 'Facade invalid graph state cancellation');
   const run = createAwaitingGraphRun(task, { status: 'running', currentNode: 'execute' });
