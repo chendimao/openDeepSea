@@ -1,8 +1,10 @@
 import {
   Brain,
   BookOpen,
+  Check,
   CheckCircle2,
   ChevronDown,
+  Copy,
   Edit3,
   Ellipsis,
   FileText,
@@ -28,6 +30,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import type {
@@ -806,9 +809,22 @@ function TranscriptCanvas({
   );
   const latestUserMessageKey = useMemo(() => getLatestUserMessageKey(detail.messages), [detail.messages]);
   const [displayModes, setDisplayModes] = useState<Record<string, SessionMessageDisplayMode>>({});
+  const [copiedActionKey, setCopiedActionKey] = useState<string | null>(null);
   const displayModeFor = (key: string): SessionMessageDisplayMode => displayModes[key] ?? 'preview';
   const setDisplayModeFor = (key: string, mode: SessionMessageDisplayMode) => {
     setDisplayModes((current) => ({ ...current, [key]: mode }));
+  };
+  const copyTranscriptText = async (content: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedActionKey(key);
+      window.setTimeout(() => {
+        setCopiedActionKey((current) => (current === key ? null : current));
+      }, 1200);
+    } catch {
+      setCopiedActionKey(null);
+      toast.error('复制失败，请检查浏览器剪贴板权限');
+    }
   };
   const agentNamesById = buildAgentNamesById(detail.messages, projectAgents);
 
@@ -878,6 +894,8 @@ function TranscriptCanvas({
                 onDisplayModeChange={(mode) => setDisplayModeFor(item.key, mode)}
                 onSaveKnowledge={onSaveKnowledge}
                 savingKnowledgeKey={savingKnowledgeKey}
+                copiedActionKey={copiedActionKey}
+                onCopyText={(content, key) => void copyTranscriptText(content, key)}
               />
             );
           }
@@ -886,6 +904,12 @@ function TranscriptCanvas({
           const output = runOutputText(item.run, runAgentEvents);
           const displayMode = displayModeFor(item.key);
           const runLabel = agentNamesById.get(item.run.agent_id) ?? item.run.agent_id;
+          const runKnowledgeActionKey = buildSessionKnowledgeActionKey('run', item.run.id);
+          const runCopyActionKey = `copy:${runKnowledgeActionKey}`;
+          const runCopied = copiedActionKey === runCopyActionKey;
+          const canSaveRunKnowledge = Boolean(onSaveKnowledge && output.trim());
+          const savingRunKnowledge = savingKnowledgeKey === runKnowledgeActionKey;
+          const runKnowledgeTitle = `智能体回复 - ${runLabel} - ${formatClock(item.run.started_at)}`;
           return (
             <article key={item.key} className="deepsea-message deepsea-message--agent-run" data-role="assistant">
               <section className="deepsea-run-log" aria-label={`${runLabel} 回复`}>
@@ -896,11 +920,40 @@ function TranscriptCanvas({
                   <time className="deepsea-mono">{formatClock(item.run.started_at)}</time>
                   <ThinkingDurationBadge run={item.run} agentEvents={runAgentEvents} now={nowTick} />
                   <RunStatusBadge status={item.run.status} />
-                  <MarkdownDisplaySwitch
-                    content={output}
-                    mode={displayMode}
-                    onModeChange={(mode) => setDisplayModeFor(item.key, mode)}
-                  />
+                  <div className="deepsea-message-tools deepsea-message-tools--run">
+                    <button
+                      type="button"
+                      className="deepsea-message__action"
+                      aria-label="复制智能体输出"
+                      onClick={() => void copyTranscriptText(output, runCopyActionKey)}
+                    >
+                      {runCopied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                      <span>{runCopied ? '已复制' : '复制'}</span>
+                    </button>
+                    {canSaveRunKnowledge ? (
+                      <button
+                        type="button"
+                        className="deepsea-message__action"
+                        aria-label="保存智能体输出为知识"
+                        disabled={savingRunKnowledge}
+                        onClick={() => onSaveKnowledge?.({
+                          kind: 'run',
+                          key: runKnowledgeActionKey,
+                          run: item.run,
+                          title: runKnowledgeTitle,
+                          content: output,
+                        })}
+                      >
+                        <BookOpen aria-hidden="true" />
+                        <span>{savingRunKnowledge ? '保存中' : '保存为知识'}</span>
+                      </button>
+                    ) : null}
+                    <MarkdownDisplaySwitch
+                      content={output}
+                      mode={displayMode}
+                      onModeChange={(mode) => setDisplayModeFor(item.key, mode)}
+                    />
+                  </div>
                 </div>
                 <AgentThoughtPanel run={item.run} evidence={runEvidence} agentEvents={runAgentEvents} />
                 <div className="deepsea-run-log-body">
@@ -1005,6 +1058,8 @@ function TranscriptMessage({
   onDisplayModeChange,
   onSaveKnowledge,
   savingKnowledgeKey,
+  copiedActionKey,
+  onCopyText,
 }: {
   projectId: string;
   message: SessionMessage;
@@ -1012,10 +1067,14 @@ function TranscriptMessage({
   onDisplayModeChange: (mode: SessionMessageDisplayMode) => void;
   onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
   savingKnowledgeKey?: SessionKnowledgeActionKey | null;
+  copiedActionKey: string | null;
+  onCopyText: (content: string, key: string) => void;
 }): JSX.Element {
   const metadata = parseMessageMetadata(message.metadata);
   const imageJobId = metadata.image_generation_job_id;
   const knowledgeActionKey = buildSessionKnowledgeActionKey('message', message.id);
+  const copyActionKey = `copy:${knowledgeActionKey}`;
+  const copied = copiedActionKey === copyActionKey;
   const savingKnowledge = savingKnowledgeKey === knowledgeActionKey;
   const canSaveKnowledge = Boolean(onSaveKnowledge && message.role === 'assistant' && message.content.trim());
   return (
@@ -1029,18 +1088,31 @@ function TranscriptMessage({
         attachments={metadata.attachments}
         displayMode={displayMode}
         onDisplayModeChange={onDisplayModeChange}
-        actions={canSaveKnowledge ? (
-          <button
-            type="button"
-            className="deepsea-message__action"
-            aria-label="保存消息为知识"
-            disabled={savingKnowledge}
-            onClick={() => onSaveKnowledge?.({ kind: 'message', key: knowledgeActionKey, message })}
-          >
-            <BookOpen aria-hidden="true" />
-            <span>{savingKnowledge ? '保存中' : '保存为知识'}</span>
-          </button>
-        ) : undefined}
+        actions={(
+          <>
+            <button
+              type="button"
+              className="deepsea-message__action"
+              aria-label="复制消息内容"
+              onClick={() => onCopyText(message.content, copyActionKey)}
+            >
+              {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+              <span>{copied ? '已复制' : '复制'}</span>
+            </button>
+            {canSaveKnowledge ? (
+              <button
+                type="button"
+                className="deepsea-message__action"
+                aria-label="保存消息为知识"
+                disabled={savingKnowledge}
+                onClick={() => onSaveKnowledge?.({ kind: 'message', key: knowledgeActionKey, message })}
+              >
+                <BookOpen aria-hidden="true" />
+                <span>{savingKnowledge ? '保存中' : '保存为知识'}</span>
+              </button>
+            ) : null}
+          </>
+        )}
       />
       {imageJobId && <ImageJobStatusCard projectId={projectId} jobId={imageJobId} />}
     </>

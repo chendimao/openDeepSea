@@ -43,8 +43,10 @@ export function SessionMessageBubble({
         <span>{label}</span>
         <time className="deepsea-mono">{timeLabel}</time>
         {statusLabel && <strong>{statusLabel}</strong>}
-        {actions}
-        <MarkdownDisplaySwitch content={content} mode={activeDisplayMode} onModeChange={setDisplayMode} />
+        <div className="deepsea-message-tools">
+          {actions}
+          <MarkdownDisplaySwitch content={content} mode={activeDisplayMode} onModeChange={setDisplayMode} />
+        </div>
       </header>
       <div className="deepsea-message-body">
         {previewContent && activeDisplayMode === 'preview' ? (
