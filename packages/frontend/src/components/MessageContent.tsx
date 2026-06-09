@@ -564,6 +564,14 @@ function renderInlineSuffix(suffix: ReactNode): ReactNode {
   return <>{'\u2060'}{suffix}</>;
 }
 
+type MarkdownPositionNode = {
+  position?: {
+    end?: {
+      offset?: number;
+    };
+  };
+};
+
 function countMarkdownInlineSuffixTargets(source: string): number {
   const lines = source.split(/\r?\n/);
   let count = 0;
@@ -597,6 +605,12 @@ function countMarkdownInlineSuffixTargets(source: string): number {
   return count;
 }
 
+function shouldRenderInlineSuffixAtNode(node: unknown, suffixTargetEndOffset: number | null): boolean {
+  if (suffixTargetEndOffset === null) return false;
+  if (!node || typeof node !== 'object') return false;
+  return (node as MarkdownPositionNode).position?.end?.offset === suffixTargetEndOffset;
+}
+
 function MarkdownText({
   text,
   streaming = false,
@@ -611,10 +625,11 @@ function MarkdownText({
   inlineSuffix?: ReactNode;
 }): JSX.Element {
   const source = streaming ? `${text}${streamingCursorToken}` : text;
-  const suffixTargetCount = inlineSuffix ? countMarkdownInlineSuffixTargets(source) : 0;
+  const hasSuffixTarget = inlineSuffix ? countMarkdownInlineSuffixTargets(source) > 0 : false;
+  const suffixTargetEndOffset = hasSuffixTarget ? source.trimEnd().length : null;
   const components = createMarkdownComponents(agentNameById, taskTitleById, {
     inlineSuffix,
-    suffixTargetCount,
+    suffixTargetEndOffset,
   });
 
   return (
@@ -626,7 +641,7 @@ function MarkdownText({
     >
       {source}
     </ReactMarkdown>
-    {inlineSuffix && suffixTargetCount === 0 ? renderInlineSuffix(inlineSuffix) : null}
+    {inlineSuffix && !hasSuffixTarget ? renderInlineSuffix(inlineSuffix) : null}
     </>
   );
 }
@@ -634,15 +649,15 @@ function MarkdownText({
 function createMarkdownComponents(
   agentNameById?: Map<string, string>,
   taskTitleById?: Map<string, string>,
-  suffixOptions: { inlineSuffix?: ReactNode; suffixTargetCount: number } = { suffixTargetCount: 0 },
+  suffixOptions: { inlineSuffix?: ReactNode; suffixTargetEndOffset: number | null } = { suffixTargetEndOffset: null },
 ): Components {
   const renderChildren = (children: ReactNode) => renderMarkdownReferenceChildren(children, agentNameById, taskTitleById);
-  let suffixTargetIndex = 0;
 
-  const renderWithOptionalSuffix = (children: ReactNode) => {
+  const renderWithOptionalSuffix = (children: ReactNode, node: unknown) => {
     const content = renderChildren(children);
-    suffixTargetIndex += 1;
-    if (!suffixOptions.inlineSuffix || suffixTargetIndex !== suffixOptions.suffixTargetCount) return content;
+    if (!suffixOptions.inlineSuffix || !shouldRenderInlineSuffixAtNode(node, suffixOptions.suffixTargetEndOffset)) {
+      return content;
+    }
     return <>{content}{renderInlineSuffix(suffixOptions.inlineSuffix)}</>;
   };
 
@@ -656,14 +671,14 @@ function createMarkdownComponents(
         </a>
       );
     },
-    h1: ({ children }) => <h1>{renderWithOptionalSuffix(children)}</h1>,
-    h2: ({ children }) => <h2>{renderWithOptionalSuffix(children)}</h2>,
-    h3: ({ children }) => <h3>{renderWithOptionalSuffix(children)}</h3>,
-    h4: ({ children }) => <h4>{renderWithOptionalSuffix(children)}</h4>,
-    h5: ({ children }) => <h5>{renderWithOptionalSuffix(children)}</h5>,
-    h6: ({ children }) => <h6>{renderWithOptionalSuffix(children)}</h6>,
-    p: ({ children }) => <p>{renderWithOptionalSuffix(children)}</p>,
-    li: ({ children }) => <li>{renderWithOptionalSuffix(children)}</li>,
+    h1: ({ node, children }) => <h1>{renderWithOptionalSuffix(children, node)}</h1>,
+    h2: ({ node, children }) => <h2>{renderWithOptionalSuffix(children, node)}</h2>,
+    h3: ({ node, children }) => <h3>{renderWithOptionalSuffix(children, node)}</h3>,
+    h4: ({ node, children }) => <h4>{renderWithOptionalSuffix(children, node)}</h4>,
+    h5: ({ node, children }) => <h5>{renderWithOptionalSuffix(children, node)}</h5>,
+    h6: ({ node, children }) => <h6>{renderWithOptionalSuffix(children, node)}</h6>,
+    p: ({ node, children }) => <p>{renderWithOptionalSuffix(children, node)}</p>,
+    li: ({ node, children }) => <li>{renderWithOptionalSuffix(children, node)}</li>,
     blockquote: ({ children }) => <blockquote>{renderChildren(children)}</blockquote>,
     td: ({ children }) => <td>{renderChildren(children)}</td>,
     th: ({ children }) => <th>{renderChildren(children)}</th>,
