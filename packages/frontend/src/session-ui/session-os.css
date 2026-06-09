@@ -2550,14 +2550,14 @@
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
   margin-left: auto;
   flex-wrap: wrap;
   justify-content: flex-end;
   border: 1px solid rgba(226, 232, 240, 0.76);
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.05);
-  padding: 2px;
+  padding: 1px;
 }
 .deepsea-message-tools:empty {
   display: none;
@@ -2567,14 +2567,14 @@
 }
 .deepsea-message-tools .deepsea-message__action {
   display: inline-flex;
-  min-height: 22px;
+  min-height: 20px;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   border: 0;
   border-radius: 999px;
   background: transparent;
   color: rgba(67, 70, 85, 0.72);
-  padding: 2px 7px;
+  padding: 1px 6px;
   font-size: 10px;
   font-weight: 800;
   line-height: 1;
@@ -2592,7 +2592,7 @@
 .deepsea-message-tools .deepsea-message__action[data-state="copied"] {
   background: var(--deepsea-primary-bright);
   color: #fff;
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.18);
+  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.16);
 }
 .deepsea-message-tools .deepsea-message__action:focus-visible {
   outline: 2px solid rgba(37, 99, 235, 0.35);
@@ -2603,27 +2603,27 @@
   opacity: 0.58;
 }
 .deepsea-message-tools .deepsea-message__action svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
 }
 .deepsea-markdown-switch {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
   border: 0;
   background: transparent;
   padding: 0;
 }
 .deepsea-markdown-switch button {
   display: inline-flex;
-  min-height: 22px;
+  min-height: 20px;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   border: 0;
   border-radius: 999px;
   background: transparent;
   color: rgba(67, 70, 85, 0.72);
-  padding: 2px 7px;
+  padding: 1px 6px;
   font-size: 10px;
   font-weight: 800;
   line-height: 1;
@@ -2636,11 +2636,11 @@
 .deepsea-markdown-switch button.is-active {
   background: var(--deepsea-primary-bright);
   color: #fff;
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.18);
+  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.16);
 }
 .deepsea-markdown-switch svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
 }
 .deepsea-thinking-duration {
   display: inline-flex;
