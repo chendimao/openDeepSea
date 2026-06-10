@@ -485,6 +485,52 @@ test('AgentTimeline treats native subagent run events as structured subagent evi
   assert.match(html, /已收到结构化子代理 ACP 事件或子代理 run/);
 });
 
+test('AgentTimeline renders structured agent decision request', () => {
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <AgentTimeline
+        events={[
+          {
+            id: 'event-1',
+            message_id: 'message-1',
+            run_id: 'run-1',
+            agent_id: 'workflow-executor',
+            seq: 1,
+            type: 'runtime_event',
+            status: 'started',
+            title: '执行智能体请求决策',
+            created_at: 1000,
+            payload: {
+              timeline_type: 'agent_decision_request',
+              agent_event: {
+                workflowRunId: 'workflow',
+                stepId: 'step',
+                agentRunId: 'agent-run',
+                type: 'decision_request',
+                summary: '需要确认写入范围。',
+                requestedDecision: {
+                  question: '是否允许修改 shared types?',
+                  recommendation: '允许',
+                  impact: '会影响 API contract。',
+                },
+                createdAt: 1,
+              },
+            },
+          },
+        ]}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /需要确认写入范围/);
+  assert.match(html, /决策问题/);
+  assert.match(html, /是否允许修改 shared types/);
+  assert.match(html, /建议/);
+  assert.match(html, /允许/);
+  assert.match(html, /影响/);
+  assert.match(html, /API contract/);
+});
+
 test('AgentTimeline diagnoses text-only subagent claims without subagent run events', () => {
   const html = renderToStaticMarkup(
     <I18nProvider>

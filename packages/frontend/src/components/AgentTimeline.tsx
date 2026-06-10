@@ -267,11 +267,50 @@ function renderEventBody(event: AgentTimelineEvent): ReactNode {
     return <EventKeyValue payload={event.payload} />;
   }
 
+  if (event.type === 'runtime_event') {
+    return renderStructuredAgentEvent(event.payload) ?? <EventKeyValue payload={event.payload} />;
+  }
+
   if (event.type === 'raw') {
     return <EventKeyValue payload={{ ...event.payload, ...(event.raw ?? {}) }} />;
   }
 
   return <EventKeyValue payload={event.payload} />;
+}
+
+function renderStructuredAgentEvent(payload: Record<string, unknown>): JSX.Element | null {
+  const event = readRecord(payload.agent_event);
+  const summary = readString(event?.summary);
+  if (!event || !summary) return null;
+
+  const requestedDecision = readRecord(event.requestedDecision);
+  const question = readString(requestedDecision?.question);
+  const recommendation = readString(requestedDecision?.recommendation);
+  const impact = readString(requestedDecision?.impact);
+  const progress = typeof event.progress === 'number' ? event.progress : null;
+
+  return (
+    <div className="agent-timeline-detail-stack">
+      <p>{summary}</p>
+      {progress !== null ? <p>进度：{progress}%</p> : null}
+      {requestedDecision ? (
+        <dl className="agent-timeline-kv">
+          <div>
+            <dt>决策问题</dt>
+            <dd>{question ?? '未提供'}</dd>
+          </div>
+          <div>
+            <dt>建议</dt>
+            <dd>{recommendation ?? '未提供'}</dd>
+          </div>
+          <div>
+            <dt>影响</dt>
+            <dd>{impact ?? '未提供'}</dd>
+          </div>
+        </dl>
+      ) : null}
+    </div>
+  );
 }
 
 function EventKeyValue({ payload }: { payload: Record<string, unknown> }): JSX.Element {
@@ -591,6 +630,11 @@ function getEventSummary(event: AgentTimelineEvent): string {
     return compactJoin([getEventLabel(event.type), childAgent, summary], ' · ') || event.title;
   }
 
+  if (event.type === 'runtime_event') {
+    const agentEvent = readRecord(event.payload.agent_event);
+    return readString(agentEvent?.summary) ?? event.title;
+  }
+
   return event.title;
 }
 
@@ -670,6 +714,8 @@ function getEventLabel(type: AgentTimelineEvent['type']): string {
       return '子代理完成';
     case 'subagent_failed':
       return '子代理失败';
+    case 'runtime_event':
+      return '运行事件';
     case 'raw':
       return '原始事件';
     default:
@@ -710,6 +756,12 @@ function formatKnownValue(value: string): string {
 
 function readString(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
 function stringifyPayload(value: unknown): string {
