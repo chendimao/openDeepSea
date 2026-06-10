@@ -18,6 +18,7 @@ const { messageRepo } = await import('../../repos/messages.js');
 const { wsHub } = await import('../../ws-hub.js');
 const { createGraphNodes } = await import('./nodes.js');
 const { createGraphTools } = await import('./tools.js');
+const { parseGraphState } = await import('./state.js');
 
 test('execute node starts assigned ACP agent and records completed implementation step', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-execute-${Date.now()}`);
@@ -186,6 +187,20 @@ test('execute node starts assigned ACP agent and records completed implementatio
   assert.equal(nextState.currentNode, 'execute');
   assert.equal(nextState.currentStepId, step?.id ?? null);
   assert.equal(nextState.activeAgentRunId, fakeRunId);
+  const agentEvents = nextState.agentEvents ?? [];
+  assert.deepEqual(agentEvents.map((event) => event.type), ['started', 'completed']);
+  assert.equal(agentEvents[0]?.agentRunId, fakeRunId);
+  assert.equal(agentEvents[1]?.agentRunId, fakeRunId);
+
+  const persistedState = parseGraphState(workflowRepo.getRun(run.id)?.graph_state ?? null);
+  assert.deepEqual((persistedState?.agentEvents ?? []).map((event) => event.type), ['started', 'completed']);
+
+  const runtimeEventMetadata = messageRepo.listByRoom(room.id, 200)
+    .map((message) => parseMessageMetadata(message.metadata))
+    .filter((metadata) => metadata?.event_type === 'runtime_event');
+  assert.deepEqual(runtimeEventMetadata.map((metadata) => metadata?.timeline_type), ['agent_started', 'agent_completed']);
+  assert.deepEqual(runtimeEventMetadata.map((metadata) => metadata?.timeline_status), ['running', 'completed']);
+  assert.deepEqual(runtimeEventMetadata.map((metadata) => metadata?.agent_event?.type), ['started', 'completed']);
 });
 
 test('execute node starts independent ready implementation children in parallel', async () => {
@@ -230,11 +245,36 @@ test('execute node starts independent ready implementation children in parallel'
   const release: Record<string, () => void> = {};
   const tools = createGraphTools({
     runAcpAgent: async (input) => {
+      const runRow = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: input.agent.acp_backend ?? 'codex',
+        task_id: input.taskId ?? null,
+        workflow_run_id: input.workflowRunId ?? null,
+        workflow_step_id: input.workflowStepId ?? null,
+        workflow_stage: input.workflowStage ?? null,
+        prompt: input.prompt,
+      });
+      await input.onRunCreated?.(runRow);
       started.push(input.agent.id);
       await new Promise<void>((resolve) => {
         release[input.agent.id] = resolve;
       });
-      return createCompletedGraphAgentRun(room.id, input, 'parallel implementation done');
+      const completedRun = agentRunRepo.updateStatus(runRow.id, 'completed', { stdout: 'parallel implementation done' }) ?? runRow;
+      const message = messageRepo.create({
+        room_id: room.id,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: 'parallel implementation done',
+        message_type: 'agent_stream',
+      });
+      return {
+        run: completedRun,
+        message,
+        status: 'completed',
+      };
     },
   });
   const nodes = createGraphNodes(tools);
@@ -328,6 +368,8 @@ test('execute node starts independent ready implementation children in parallel'
   });
 
   await waitForExecuteTest(() => started.includes(backend.id) && started.includes(frontend.id));
+  const startedState = parseGraphState(workflowRepo.getRun(run.id)?.graph_state ?? null);
+  assert.deepEqual((startedState?.agentEvents ?? []).map((event) => event.type), ['started', 'started']);
   assert.deepEqual([...started].sort(), [backend.id, frontend.id].sort());
   release[backend.id]?.();
   release[frontend.id]?.();
@@ -337,6 +379,22 @@ test('execute node starts independent ready implementation children in parallel'
   assert.equal(taskRepo.get(frontendChild.id)?.status, 'review');
   assert.deepEqual(nextState.workflowPlan?.tasks.map((task) => task.status), ['completed', 'completed']);
   assert.equal(workflowRepo.listSteps(run.id).filter((step) => step.node_name === 'execute').length, 2);
+  const agentEvents = nextState.agentEvents ?? [];
+  assert.deepEqual(agentEvents.map((event) => event.type), ['started', 'started', 'completed', 'completed']);
+  assert.equal(new Set(agentEvents.map((event) => event.agentRunId)).size, 2);
+  assert.deepEqual(
+    agentEvents.slice(2).map((event) => event.agentRunId).sort(),
+    agentEvents.slice(0, 2).map((event) => event.agentRunId).sort(),
+  );
+  const runtimeEventMetadata = messageRepo.listByRoom(room.id, 200)
+    .map((message) => parseMessageMetadata(message.metadata))
+    .filter((metadata) => metadata?.event_type === 'runtime_event');
+  assert.deepEqual(runtimeEventMetadata.map((metadata) => metadata?.agent_event?.type), [
+    'started',
+    'started',
+    'completed',
+    'completed',
+  ]);
 });
 
 test('execute node settles parallel batch when one agent throws and another completes', async () => {
@@ -378,10 +436,24 @@ test('execute node settles parallel batch when one agent throws and another comp
     graph_version: 'phase-b-v1',
   });
   const started: string[] = [];
+  let failedRunId: string | null = null;
   const nodes = createGraphNodes(createGraphTools({
     runAcpAgent: async (input) => {
       started.push(input.agent.id);
       if (input.agent.id === backend.id) {
+        const runRow = agentRunRepo.create({
+          room_id: room.id,
+          room_agent_id: input.agent.id,
+          agent_id: input.agent.agent_id,
+          backend: input.agent.acp_backend ?? 'codex',
+          task_id: input.taskId ?? null,
+          workflow_run_id: input.workflowRunId ?? null,
+          workflow_step_id: input.workflowStepId ?? null,
+          workflow_stage: input.workflowStage ?? null,
+          prompt: input.prompt,
+        });
+        failedRunId = runRow.id;
+        await input.onRunCreated?.(runRow);
         throw new Error('backend agent crashed');
       }
       return createCompletedGraphAgentRun(room.id, input, 'frontend implementation done');
@@ -489,6 +561,9 @@ test('execute node settles parallel batch when one agent throws and another comp
   assert.equal(frontendStep?.status, 'completed');
   assert.deepEqual(nextState.workflowPlan?.tasks.map((task) => task.status), ['failed', 'completed']);
   assert.equal(nextState.workflowPlan?.tasks[1]?.progress, 100);
+  assert.deepEqual(nextState.agentEvents?.map((event) => event.type), ['started', 'failed', 'started', 'completed']);
+  assert.equal(nextState.agentEvents?.[0]?.agentRunId, failedRunId);
+  assert.equal(nextState.agentEvents?.[1]?.agentRunId, failedRunId);
 });
 
 test('execute node does not parallelize implementation children with conflicting write scopes', async () => {
@@ -2198,6 +2273,7 @@ test('execute node fails workflow step and child task when ACP agent fails', asy
     current_stage: 'implementation',
     graph_version: 'phase-b-v1',
   });
+  let failedRunId: string | null = null;
   const tools = createGraphTools({
     runAcpAgent: async (input) => {
       const runRow = agentRunRepo.create({
@@ -2211,10 +2287,12 @@ test('execute node fails workflow step and child task when ACP agent fails', asy
         workflow_stage: input.workflowStage ?? null,
         prompt: input.prompt,
       });
+      await input.onRunCreated?.(runRow);
       const failedRun = agentRunRepo.updateStatus(runRow.id, 'failed', {
         error: 'implementation failed',
         stdout: 'partial output',
       }) ?? runRow;
+      failedRunId = failedRun.id;
       const message = messageRepo.create({
         room_id: room.id,
         sender_type: 'agent',
@@ -2278,6 +2356,19 @@ test('execute node fails workflow step and child task when ACP agent fails', asy
   assert.equal(workflowRepo.getRun(run.id)?.status, 'blocked');
   assert.equal(nextState.status, 'blocked');
   assert.match(nextState.error ?? '', /implementation failed/);
+  const agentEvents = nextState.agentEvents ?? [];
+  assert.deepEqual(agentEvents.map((event) => event.type), ['started', 'failed']);
+  assert.deepEqual(agentEvents.map((event) => event.agentRunId), [failedRunId, failedRunId]);
+
+  const persistedState = parseGraphState(workflowRepo.getRun(run.id)?.graph_state ?? null);
+  assert.deepEqual((persistedState?.agentEvents ?? []).map((event) => event.type), ['started', 'failed']);
+
+  const runtimeEventMetadata = messageRepo.listByRoom(room.id, 200)
+    .map((message) => parseMessageMetadata(message.metadata))
+    .filter((metadata) => metadata?.event_type === 'runtime_event');
+  assert.deepEqual(runtimeEventMetadata.map((metadata) => metadata?.timeline_type), ['agent_started', 'agent_failed']);
+  assert.deepEqual(runtimeEventMetadata.map((metadata) => metadata?.timeline_status), ['running', 'failed']);
+  assert.deepEqual(runtimeEventMetadata.map((metadata) => metadata?.agent_event?.type), ['started', 'failed']);
 });
 
 function captureRoomEvents(roomId: string): { events: WsServerEvent[]; cleanup: () => void } {
@@ -2344,6 +2435,18 @@ function createCompletedGraphAgentRun(roomId: string, input: RespondAsAgentInput
     message,
     status: 'completed' as const,
   };
+}
+
+function parseMessageMetadata(value: string | null): Record<string, any> | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, any>
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 async function waitForExecuteTest(predicate: () => boolean, attempts = 20): Promise<void> {

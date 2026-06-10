@@ -8,6 +8,7 @@ import { resolveWorkflowExecutor } from '../role-resolver.js';
 import { ensureWorkflowAgentsForRun } from '../agent-provisioning.js';
 import { buildCoordinatorWorkflowPlan, deriveCoordinatorPlanFromProductManagerBackground } from './coordinator-plan.js';
 import { selectCoordinatorAgentForTask, type CoordinatorWorkflowTask } from './coordinator-agents.js';
+import { toTaskEventMetadata, type StructuredAgentEvent } from './agent-events.js';
 import { inferTaskProfile, type TaskProfile } from '../task-profile.js';
 import { assessTaskRisk, buildApprovalCard } from '../task-risk.js';
 import { getBuiltInAgentTemplate } from '../../crew-templates.js';
@@ -723,6 +724,28 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       });
       if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
 
+      let eventState: AgentWorkflowState = {
+        ...state,
+        workflowPlan: runningWorkflowPlan,
+        childTaskPlanIndexes,
+        currentNode: 'execute',
+        currentStepId: step.id,
+        activeAgentRunId: null,
+        error: null,
+      };
+      const startedAgentRunIds = new Set<string>();
+      const recordStarted = (run: AgentRun) => {
+        eventState = recordAgentStartedOnce({
+          tools,
+          context,
+          state: eventState,
+          stepId: step.id,
+          agentRun: run,
+          childTitle: nextChild.title,
+          startedAgentRunIds,
+        });
+      };
+
       const runResult = await tools.runAcpAgent({
         agent: executor,
         projectPath: context.project.path,
@@ -732,19 +755,27 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         workflowRunId: context.run.id,
         workflowStepId: step.id,
         workflowStage: 'implementation',
+        onRunCreated: recordStarted,
       });
-      tools.updateGraphState(context.run.id, serializeGraphState({
-        ...state,
-        workflowPlan: runningWorkflowPlan,
-        childTaskPlanIndexes,
-        currentNode: 'execute',
-        currentStepId: step.id,
-        activeAgentRunId: runResult.run.id,
-        error: null,
-      }));
+      recordStarted(runResult.run);
 
       if (runResult.status !== 'completed') {
         const error = runResult.run.error ?? (runResult.status === 'cancelled' ? 'Agent run cancelled' : 'Agent run failed');
+        eventState = recordStructuredAgentEvent({
+          tools,
+          context,
+          state: eventState,
+          event: {
+            workflowRunId: context.run.id,
+            stepId: step.id,
+            agentRunId: runResult.run.id,
+            type: 'failed',
+            summary: `子任务「${nextChild.title}」执行失败。`,
+            detail: error,
+            createdAt: Date.now(),
+          },
+        });
+        tools.updateGraphState(context.run.id, serializeGraphState(eventState));
         const failedStep = tools.updateGraphStep(step.id, {
           status: runResult.status === 'cancelled' ? 'cancelled' : 'failed',
           agent_run_id: runResult.run.id,
@@ -780,7 +811,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         });
         if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
         const nextState: AgentWorkflowState = {
-          ...state,
+          ...eventState,
           workflowPlan: updateWorkflowPlanTaskByIndex(runningWorkflowPlan, originalPlanTaskIndex, {
             status: runResult.status === 'cancelled' ? 'blocked' : 'failed',
             progress: 35,
@@ -810,6 +841,22 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         });
         return nextState;
       }
+
+      eventState = recordStructuredAgentEvent({
+        tools,
+        context,
+        state: eventState,
+        event: {
+          workflowRunId: context.run.id,
+          stepId: step.id,
+          agentRunId: runResult.run.id,
+          type: 'completed',
+          summary: `子任务「${nextChild.title}」执行完成。`,
+          progress: 100,
+          createdAt: Date.now(),
+        },
+      });
+      tools.updateGraphState(context.run.id, serializeGraphState(eventState));
 
       const implementationArtifact = tools.createArtifact({
         task_id: nextChild.id,
@@ -871,7 +918,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       });
 
       const nextState: AgentWorkflowState = {
-        ...state,
+        ...eventState,
         workflowPlan: updateWorkflowPlanTaskByIndex(runningWorkflowPlan, originalPlanTaskIndex, {
           status: 'completed',
           progress: 100,
@@ -1915,6 +1962,30 @@ async function runParallelImplementationChildren(input: {
       runError: Error;
     };
 
+  let eventState: AgentWorkflowState = {
+    ...input.state,
+    workflowPlan: runningWorkflowPlan,
+    childTaskPlanIndexes: input.childTaskPlanIndexes,
+    currentNode: 'execute',
+    currentStepId: prepared.at(-1)?.step.id ?? input.state.currentStepId,
+    activeAgentRunId: null,
+    error: null,
+  };
+  const startedAgentRunIds = new Set<string>();
+  const startedAgentRunIdsByStep = new Map<string, string>();
+  const recordStarted = (item: typeof prepared[number], run: AgentRun) => {
+    startedAgentRunIdsByStep.set(item.step.id, run.id);
+    eventState = recordAgentStartedOnce({
+      tools: input.tools,
+      context: input.context,
+      state: eventState,
+      stepId: item.step.id,
+      agentRun: run,
+      childTitle: item.child.title,
+      startedAgentRunIds,
+    });
+  };
+
   const results: ParallelBatchRunResult[] = await Promise.all(prepared.map(async (item) => {
     try {
       return {
@@ -1928,6 +1999,7 @@ async function runParallelImplementationChildren(input: {
           workflowRunId: input.context.run.id,
           workflowStepId: item.step.id,
           workflowStage: 'implementation',
+          onRunCreated: (run) => recordStarted(item, run),
         }),
         runError: null,
       };
@@ -1946,8 +2018,27 @@ async function runParallelImplementationChildren(input: {
   for (const { item, runResult, runError } of results) {
     if (runError) {
       const error = runError.message || 'Agent run failed';
+      const agentRunId = startedAgentRunIdsByStep.get(item.step.id) ?? null;
+      if (agentRunId) {
+        eventState = recordStructuredAgentEvent({
+          tools: input.tools,
+          context: input.context,
+          state: eventState,
+          event: {
+            workflowRunId: input.context.run.id,
+            stepId: item.step.id,
+            agentRunId,
+            type: 'failed',
+            summary: `子任务「${item.child.title}」执行失败。`,
+            detail: error,
+            createdAt: Date.now(),
+          },
+        });
+        input.tools.updateGraphState(input.context.run.id, serializeGraphState(eventState));
+      }
       const failedStep = input.tools.updateGraphStep(item.step.id, {
         status: 'failed',
+        ...(agentRunId ? { agent_run_id: agentRunId } : {}),
         result: error,
         error,
       });
@@ -1956,7 +2047,7 @@ async function runParallelImplementationChildren(input: {
         task: item.child,
         workflowStepId: item.step.id,
         roomAgentId: item.executor.id,
-        agentRunId: null,
+        agentRunId,
         sourceType: 'workflow_step',
         sourceId: `${item.step.id}:implementation-error`,
         entryType: 'handoff',
@@ -1967,6 +2058,7 @@ async function runParallelImplementationChildren(input: {
           graph_node: 'execute',
           workflow_stage: 'implementation',
           status: 'failed',
+          agent_run_id: agentRunId ?? undefined,
           error,
         },
       });
@@ -1995,12 +2087,12 @@ async function runParallelImplementationChildren(input: {
         },
       });
       failedState = {
-        ...input.state,
+        ...eventState,
         workflowPlan: nextWorkflowPlan,
         childTaskPlanIndexes: input.childTaskPlanIndexes,
         currentNode: 'execute',
         currentStepId: item.step.id,
-        activeAgentRunId: null,
+        activeAgentRunId: agentRunId,
         status: 'blocked',
         error,
       };
@@ -2009,8 +2101,24 @@ async function runParallelImplementationChildren(input: {
 
     lastAgentRunId = runResult.run.id;
     const output = runResult.run.stdout || runResult.message.content;
+    recordStarted(item, runResult.run);
     if (runResult.status !== 'completed') {
       const error = runResult.run.error ?? (runResult.status === 'cancelled' ? 'Agent run cancelled' : 'Agent run failed');
+      eventState = recordStructuredAgentEvent({
+        tools: input.tools,
+        context: input.context,
+        state: eventState,
+        event: {
+          workflowRunId: input.context.run.id,
+          stepId: item.step.id,
+          agentRunId: runResult.run.id,
+          type: 'failed',
+          summary: `子任务「${item.child.title}」执行失败。`,
+          detail: error,
+          createdAt: Date.now(),
+        },
+      });
+      input.tools.updateGraphState(input.context.run.id, serializeGraphState(eventState));
       const failedStep = input.tools.updateGraphStep(item.step.id, {
         status: runResult.status === 'cancelled' ? 'cancelled' : 'failed',
         agent_run_id: runResult.run.id,
@@ -2065,7 +2173,7 @@ async function runParallelImplementationChildren(input: {
         },
       });
       failedState = {
-        ...input.state,
+        ...eventState,
         workflowPlan: nextWorkflowPlan,
         childTaskPlanIndexes: input.childTaskPlanIndexes,
         currentNode: 'execute',
@@ -2076,6 +2184,22 @@ async function runParallelImplementationChildren(input: {
       };
       continue;
     }
+
+    eventState = recordStructuredAgentEvent({
+      tools: input.tools,
+      context: input.context,
+      state: eventState,
+      event: {
+        workflowRunId: input.context.run.id,
+        stepId: item.step.id,
+        agentRunId: runResult.run.id,
+        type: 'completed',
+        summary: `子任务「${item.child.title}」执行完成。`,
+        progress: 100,
+        createdAt: Date.now(),
+      },
+    });
+    input.tools.updateGraphState(input.context.run.id, serializeGraphState(eventState));
 
     const implementationArtifact = input.tools.createArtifact({
       task_id: item.child.id,
@@ -2144,6 +2268,7 @@ async function runParallelImplementationChildren(input: {
   if (failedState) {
     const nextState = {
       ...failedState,
+      agentEvents: eventState.agentEvents,
       workflowPlan: nextWorkflowPlan,
     };
     input.tools.updateGraphState(input.context.run.id, serializeGraphState(nextState));
@@ -2151,7 +2276,7 @@ async function runParallelImplementationChildren(input: {
   }
 
   const nextState: AgentWorkflowState = {
-    ...input.state,
+    ...eventState,
     workflowPlan: nextWorkflowPlan,
     childTaskPlanIndexes: input.childTaskPlanIndexes,
     currentNode: 'execute',
@@ -2225,6 +2350,73 @@ function resolveParallelImplementationExecutors(input: {
   }
 
   return { ok: true, executionAgents, items };
+}
+
+function recordStructuredAgentEvent(input: {
+  tools: GraphTools;
+  context: {
+    room: { id: string };
+    task: Task;
+    run: { id: string };
+  };
+  state: AgentWorkflowState;
+  event: StructuredAgentEvent;
+}): AgentWorkflowState {
+  try {
+    input.tools.recordWorkflowEvent({
+      roomId: input.context.room.id,
+      taskId: input.context.task.id,
+      taskTitle: input.context.task.title,
+      workflowRunId: input.context.run.id,
+      workflowStepId: input.event.stepId,
+      eventType: 'runtime_event',
+      origin: 'workflow_assignment',
+      content: input.event.summary,
+      metadata: toTaskEventMetadata(input.event),
+    });
+  } catch (err) {
+    console.warn(`[graph-events] failed to record structured agent event: ${(err as Error).message}`);
+  }
+  return {
+    ...input.state,
+    agentEvents: [...(input.state.agentEvents ?? []), input.event],
+  };
+}
+
+function recordAgentStartedOnce(input: {
+  tools: GraphTools;
+  context: {
+    room: { id: string };
+    task: Task;
+    run: { id: string };
+  };
+  state: AgentWorkflowState;
+  stepId: string;
+  agentRun: Pick<AgentRun, 'id'>;
+  childTitle: string;
+  startedAgentRunIds: Set<string>;
+}): AgentWorkflowState {
+  if (input.startedAgentRunIds.has(input.agentRun.id)) return input.state;
+  input.startedAgentRunIds.add(input.agentRun.id);
+  const nextState = recordStructuredAgentEvent({
+    tools: input.tools,
+    context: input.context,
+    state: {
+      ...input.state,
+      currentStepId: input.stepId,
+      activeAgentRunId: input.agentRun.id,
+    },
+    event: {
+      workflowRunId: input.context.run.id,
+      stepId: input.stepId,
+      agentRunId: input.agentRun.id,
+      type: 'started',
+      summary: `子任务「${input.childTitle}」的执行智能体已启动。`,
+      createdAt: Date.now(),
+    },
+  });
+  input.tools.updateGraphState(input.context.run.id, serializeGraphState(nextState));
+  return nextState;
 }
 
 function recordEventSafely(
