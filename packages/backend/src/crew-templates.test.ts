@@ -70,10 +70,10 @@ test('room creation applies the selected crew template with executable workflow 
   const planner = agents.find((agent) => agent.agent_id === 'planner');
   const backend = agents.find((agent) => agent.agent_id === 'backend-executor');
   const reviewer = agents.find((agent) => agent.agent_id === 'reviewer');
-  assert.equal(planner?.acp_permission_mode, 'read-only');
-  assert.deepEqual(planner?.tool_policy, { allowed: ['read_files'] });
-  assert.deepEqual(planner?.workspace_policy, { read: ['.'], write: [] });
-  assert.equal(planner?.memory_scope, 'room');
+  assert.equal(planner?.acp_permission_mode, 'workspace-write');
+  assert.deepEqual(planner?.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell', 'commit'] });
+  assert.deepEqual(planner?.workspace_policy, { read: ['.'], write: ['.'] });
+  assert.equal(planner?.memory_scope, 'agent');
   assert.equal(backend?.acp_permission_mode, 'workspace-write');
   assert.deepEqual(backend?.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell'] });
   assert.deepEqual(backend?.workspace_policy, { read: ['.'], write: ['.'] });

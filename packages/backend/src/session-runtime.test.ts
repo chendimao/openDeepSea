@@ -155,9 +155,10 @@ test('retrySessionAgentRun asks the provider to continue a failed partial answer
     setSessionRuntimeAdapterForTest({
       backend: 'codex',
       listSessions: async () => [],
-      invoke: async ({ prompt, sessionId }) => {
+      invoke: async ({ prompt, sessionId, acpPermissionMode }) => {
         capturedPrompt = prompt;
         capturedSessionId = sessionId;
+        assert.equal(acpPermissionMode, 'workspace-write');
         resolve();
         return { exitCode: 0, sessionId: sessionId ?? 'acp-continuation-retry', stderr: '' };
       },
@@ -618,6 +619,37 @@ test('runSessionAgent keeps the retry-triggering ACP diagnostic when retry also 
   assert.equal(stored.status, 'failed');
   assert.match(stored.error ?? '', /listen EPERM/);
   assert.match(stored.stderr, /listen EPERM/);
+});
+
+test('runSessionAgent records a fallback error when runtime exits non-zero without stderr', async () => {
+  const project = projectRepo.create({
+    name: 'runtime silent failure project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-silent-failure-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Silent Failure',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onChunk }) => {
+      onChunk({ stream: 'stdout', channel: 'answer', text: '我会继续收尾。' });
+      return { exitCode: 1, sessionId: 'acp-silent-failure', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({ sessionId: session.id, prompt: '继续', provider: 'codex' });
+  const stored = sessionRunRepo.get(run.id)!;
+  const blocker = sessionEvidenceRepo.listBySession(session.id).find((event) => event.event_type === 'blocker');
+
+  assert.equal(stored.status, 'failed');
+  assert.match(stored.error ?? '', /exited with code 1 without error output/);
+  assert.match(stored.stderr, /exited with code 1 without error output/);
+  assert.match(blocker?.summary ?? '', /exited with code 1 without error output/);
 });
 
 test('runSessionAgent stores runtime profile snapshot on session run', async () => {

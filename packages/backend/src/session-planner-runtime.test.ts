@@ -33,6 +33,18 @@ test('resolveSessionPlannerRuntime inherits built-in planner backend and profile
   assert.equal(runtime.memoryScope, planner.default_memory_scope);
 });
 
+test('resolveSessionPlannerRuntime gives the session planner workspace write permission', () => {
+  const project = projectRepo.create({
+    name: 'Planner Runtime Workspace Write',
+    path: mkdtempSync(join(tmpdir(), 'session-planner-runtime-write-')),
+  });
+
+  const runtime = resolveSessionPlannerRuntime(project.id);
+
+  assert.equal(runtime.permissionMode, 'workspace-write');
+  assert.ok(runtime.workspacePolicy.write.includes('.'));
+});
+
 test('resolveSessionPlannerRuntime prefers project backend override', () => {
   const project = projectRepo.create({
     name: 'Planner Runtime Override',

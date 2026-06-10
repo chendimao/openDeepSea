@@ -70,7 +70,7 @@ export type AgentDeleteResult =
 const ACP_PERMISSION_MODES = new Set<AcpPermissionMode>(['bypass', 'workspace-write', 'read-only']);
 const RUNTIME_BACKENDS = new Set<AgentRuntimeBackend>(['acp', 'model', 'none']);
 const MEMORY_SCOPES = new Set<AgentMemoryScope>(['project', 'room', 'agent', 'task', 'none']);
-const BUILT_IN_RUNTIME_PROFILE_VERSION = 4;
+const BUILT_IN_RUNTIME_PROFILE_VERSION = 5;
 const LEGACY_RUNTIME_BOUNDARY = {
   default_acp_permission_mode: 'bypass',
   default_runtime_backend: 'acp',
@@ -220,6 +220,16 @@ function isTechnicalWriterDefaultBoundary(agent: AgentWithRuntimeProfileVersion)
     && (isReadOnlyDefault || isDocsOnlyDefault);
 }
 
+function isPlannerReadOnlyDefaultBoundary(agent: AgentWithRuntimeProfileVersion): boolean {
+  return agent.builtin_key === 'planner'
+    && agent.default_acp_permission_mode === 'read-only'
+    && agent.default_runtime_backend === 'acp'
+    && agent.default_memory_scope === 'room'
+    && agent.default_tool_policy.allowed.join('\n') === ['read_files'].join('\n')
+    && agent.default_workspace_policy.read.join('\n') === ['.'].join('\n')
+    && agent.default_workspace_policy.write.length === 0;
+}
+
 function resolveBuiltInRuntimeBoundary(
   existing: AgentWithRuntimeProfileVersion,
   template: ReturnType<typeof listBuiltInAgentTemplates>[number],
@@ -236,12 +246,18 @@ function resolveBuiltInRuntimeBoundary(
 
   const shouldRefreshAll = isLegacyRuntimeBoundary(existing);
   const shouldUpgradeTechnicalWriter = isTechnicalWriterDefaultBoundary(existing);
-  const shouldRefreshPermission = shouldRefreshAll || shouldUpgradeTechnicalWriter;
+  const shouldUpgradePlanner = isPlannerReadOnlyDefaultBoundary(existing);
+  const shouldRefreshPermission = shouldRefreshAll || shouldUpgradeTechnicalWriter || shouldUpgradePlanner;
   const shouldRefreshRuntimeBackend = existing.default_runtime_backend === LEGACY_RUNTIME_BOUNDARY.default_runtime_backend;
-  const shouldRefreshToolPolicy = isLegacyToolPolicy(existing.default_tool_policy) || shouldUpgradeTechnicalWriter;
-  const shouldRefreshWorkspacePolicy = isLegacyWorkspacePolicy(existing.default_workspace_policy) || shouldUpgradeTechnicalWriter;
+  const shouldRefreshToolPolicy = isLegacyToolPolicy(existing.default_tool_policy) ||
+    shouldUpgradeTechnicalWriter ||
+    shouldUpgradePlanner;
+  const shouldRefreshWorkspacePolicy = isLegacyWorkspacePolicy(existing.default_workspace_policy) ||
+    shouldUpgradeTechnicalWriter ||
+    shouldUpgradePlanner;
   const shouldRefreshMemoryScope = existing.default_memory_scope === LEGACY_RUNTIME_BOUNDARY.default_memory_scope
-    || shouldUpgradeTechnicalWriter;
+    || shouldUpgradeTechnicalWriter
+    || shouldUpgradePlanner;
 
   return {
     default_acp_permission_mode: shouldRefreshAll || shouldRefreshPermission

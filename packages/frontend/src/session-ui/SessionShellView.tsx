@@ -965,7 +965,8 @@ function TranscriptCanvas({
           }
           const runEvidence = evidence.filter((event) => event.source_run_id === item.run.id);
           const runAgentEvents = (detail.agentEvents ?? []).filter((event) => event.run_id === item.run.id);
-          const output = runOutputText(item.run, runAgentEvents);
+          const output = runOutputText(item.run);
+          const failureDetails = runFailureDetails(item.run, runAgentEvents);
           const displayMode = displayModeFor(item.key);
           const runLabel = agentNamesById.get(item.run.agent_id) ?? item.run.agent_id;
           const runKnowledgeActionKey = buildSessionKnowledgeActionKey('run', item.run.id);
@@ -1056,6 +1057,7 @@ function TranscriptCanvas({
                   )}
                 </div>
                 <GeneratedImageEvidencePanel evidence={runEvidence} />
+                <RunFailureDetails details={failureDetails} />
               </section>
             </article>
           );
@@ -1681,6 +1683,31 @@ function RunStatusIcon({ tone }: { tone: RunStatusTone }): JSX.Element {
   return <Square aria-hidden="true" />;
 }
 
+interface RunFailureDetail {
+  label: 'error' | 'stderr' | 'diagnostic';
+  text: string;
+}
+
+function RunFailureDetails({ details }: { details: RunFailureDetail[] }): JSX.Element | null {
+  if (details.length === 0) return null;
+  return (
+    <details className="deepsea-run-error-details">
+      <summary>
+        <X aria-hidden="true" />
+        <span>错误详情</span>
+      </summary>
+      <div>
+        {details.map((detail) => (
+          <section key={detail.label}>
+            <span>{detail.label}</span>
+            <pre>{detail.text}</pre>
+          </section>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function AgentThoughtPanel({
   run,
   evidence,
@@ -1936,11 +1963,11 @@ function isRunLive(status: SessionRun['status']): boolean {
   return status === 'queued' || status === 'running' || status === 'retrying';
 }
 
-function runOutputText(run: SessionRun, events: SessionAgentEvent[] = []): string {
+function runOutputText(run: SessionRun): string {
   if (run.status === 'failed') {
-    const failureText = runFailureText(run, events);
-    if (failureText) return failureText;
-    return '运行失败，暂无错误详情。';
+    const output = run.stdout.trim();
+    if (output) return output;
+    return '运行失败，暂无回复内容。';
   }
   const output = run.stdout.trim() || run.stderr.trim();
   if (output) return output;
@@ -1956,6 +1983,20 @@ function runFailureText(run: SessionRun, events: SessionAgentEvent[] = []): stri
   const reason = run.error?.trim() || run.stderr.trim();
   if (reason) return reason;
   return failureDiagnosticFromAgentEvents(events);
+}
+
+function runFailureDetails(run: SessionRun, events: SessionAgentEvent[] = []): RunFailureDetail[] {
+  if (run.status !== 'failed') return [];
+  const details: RunFailureDetail[] = [];
+  const error = run.error?.trim();
+  const stderr = run.stderr.trim();
+  if (error) details.push({ label: 'error', text: error });
+  if (stderr && stderr !== error) details.push({ label: 'stderr', text: stderr });
+  if (details.length === 0) {
+    const diagnostic = failureDiagnosticFromAgentEvents(events);
+    if (diagnostic) details.push({ label: 'diagnostic', text: diagnostic });
+  }
+  return details;
 }
 
 function runCompletionInterruptDiagnostic(run: SessionRun, events: SessionAgentEvent[]): string | null {

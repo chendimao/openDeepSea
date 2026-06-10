@@ -427,18 +427,24 @@ test('SessionShell renders active run danger state without success semantics', (
   assert.doesNotMatch(html, /aria-label="运行状态：完成"/);
 });
 
-test('SessionShell renders failed run reason and a visible retry action', () => {
+test('SessionShell renders failed run output with collapsed error details and a visible retry action', () => {
   const payload = createPayload();
   payload.activeSession.runs[0] = {
     ...payload.activeSession.runs[0]!,
     status: 'failed',
     stdout: '准备启动可视化辅助。',
-    stderr: '',
+    stderr: 'fatal: Unable to create .git/index.lock: Operation not permitted',
     error: 'Error: listen EPERM: operation not permitted 127.0.0.1:55063',
   };
 
   const html = renderSessionShell(payload);
 
+  assert.match(html, /准备启动可视化辅助。/);
+  assert.match(html, /<details class="deepsea-run-error-details"/);
+  assert.doesNotMatch(html, /<details class="deepsea-run-error-details" open/);
+  assert.match(html, /错误详情/);
+  assert.match(html, /stderr/);
+  assert.match(html, /fatal: Unable to create \.git\/index\.lock/);
   assert.match(html, /listen EPERM/);
   assert.match(html, /继续失败回复/);
   assert.match(html, /aria-label="继续失败回复"/);

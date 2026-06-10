@@ -41,6 +41,13 @@ const ROOT_WRITE_RUNTIME_BOUNDARY = {
   memory_scope: 'agent',
 } satisfies Pick<BuiltInAgentTemplate, 'runtime_backend' | 'tool_policy' | 'workspace_policy' | 'memory_scope'>;
 
+const PLANNER_WRITE_RUNTIME_BOUNDARY = {
+  runtime_backend: 'acp',
+  tool_policy: { allowed: ['read_files', 'write_files', 'run_shell', 'commit'] },
+  workspace_policy: { read: ['.'], write: ['.'] },
+  memory_scope: 'agent',
+} satisfies Pick<BuiltInAgentTemplate, 'runtime_backend' | 'tool_policy' | 'workspace_policy' | 'memory_scope'>;
+
 const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
   {
     id: 'planner',
@@ -53,8 +60,8 @@ const BUILT_IN_AGENT_TEMPLATES: BuiltInAgentTemplate[] = [
     workflow_role: 'planner',
     acp_enabled: true,
     acp_backend: 'codex',
-    acp_permission_mode: 'read-only',
-    ...CONSERVATIVE_RUNTIME_BOUNDARY,
+    acp_permission_mode: 'workspace-write',
+    ...PLANNER_WRITE_RUNTIME_BOUNDARY,
     capabilities: ['planning', 'architecture'],
   },
   {

@@ -50,10 +50,12 @@ test('built-in templates define hard runtime boundaries', () => {
   const templates = Object.fromEntries(listBuiltInAgentTemplates().map((item) => [item.id, item]));
 
   assert.equal(templates['planner']?.runtime_backend, 'acp');
-  assert.equal(templates['planner']?.acp_permission_mode, 'read-only');
-  assert.deepEqual(templates['planner']?.tool_policy, { allowed: ['read_files'] });
-  assert.deepEqual(templates['planner']?.workspace_policy, { read: ['.'], write: [] });
-  assert.equal(templates['planner']?.memory_scope, 'room');
+  assert.equal(templates['planner']?.acp_permission_mode, 'workspace-write');
+  assert.deepEqual(templates['planner']?.tool_policy, {
+    allowed: ['read_files', 'write_files', 'run_shell', 'commit'],
+  });
+  assert.deepEqual(templates['planner']?.workspace_policy, { read: ['.'], write: ['.'] });
+  assert.equal(templates['planner']?.memory_scope, 'agent');
 
   assert.equal(templates['backend-executor']?.acp_permission_mode, 'workspace-write');
   assert.deepEqual(templates['backend-executor']?.tool_policy, {

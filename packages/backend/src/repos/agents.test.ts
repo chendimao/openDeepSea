@@ -130,10 +130,12 @@ test('built-in agent seeding persists template runtime boundaries', () => {
   const acceptor = agentRepo.getByAgentId('acceptor');
 
   assert.equal(planner?.default_runtime_backend, 'acp');
-  assert.equal(planner?.default_acp_permission_mode, 'read-only');
-  assert.deepEqual(planner?.default_tool_policy, { allowed: ['read_files'] });
-  assert.deepEqual(planner?.default_workspace_policy, { read: ['.'], write: [] });
-  assert.equal(planner?.default_memory_scope, 'room');
+  assert.equal(planner?.default_acp_permission_mode, 'workspace-write');
+  assert.deepEqual(planner?.default_tool_policy, {
+    allowed: ['read_files', 'write_files', 'run_shell', 'commit'],
+  });
+  assert.deepEqual(planner?.default_workspace_policy, { read: ['.'], write: ['.'] });
+  assert.equal(planner?.default_memory_scope, 'agent');
 
   for (const agent of [backend, frontend, computerAssistant, devopsEngineer, technicalWriter, salesAssistant]) {
     assert.ok(agent);
@@ -163,6 +165,32 @@ test('built-in agent seeding persists template runtime boundaries', () => {
   assert.deepEqual(acceptor?.default_tool_policy, { allowed: ['read_files'] });
   assert.deepEqual(acceptor?.default_workspace_policy, { read: ['.'], write: [] });
   assert.equal(acceptor?.default_memory_scope, 'room');
+});
+
+test('built-in seed upgrades default read-only planner to workspace-write', () => {
+  const planner = agentRepo.getByAgentId('planner');
+  assert.ok(planner);
+
+  db.prepare(
+    `UPDATE agents
+     SET default_acp_permission_mode = 'read-only',
+         default_runtime_backend = 'acp',
+         default_tool_policy = '{"allowed":["read_files"]}',
+         default_workspace_policy = '{"read":["."],"write":[]}',
+         default_memory_scope = 'room',
+         runtime_profile_version = 4
+     WHERE id = ?`,
+  ).run(planner.id);
+
+  agentRepo.ensureBuiltInAgents();
+  const afterSeed = agentRepo.get(planner.id);
+
+  assert.equal(afterSeed?.default_acp_permission_mode, 'workspace-write');
+  assert.deepEqual(afterSeed?.default_tool_policy, {
+    allowed: ['read_files', 'write_files', 'run_shell', 'commit'],
+  });
+  assert.deepEqual(afterSeed?.default_workspace_policy, { read: ['.'], write: ['.'] });
+  assert.equal(afterSeed?.default_memory_scope, 'agent');
 });
 
 test('built-in seed keeps customized global runtime boundaries until restore defaults', () => {
@@ -293,9 +321,9 @@ test('agentRepo falls back for invalid persisted runtime boundary defaults', () 
 test('built-in agents expose default runtime boundary fields', () => {
   const expectedByAgentId = {
     planner: {
-      default_tool_policy: { allowed: ['read_files'] },
-      default_workspace_policy: { read: ['.'], write: [] },
-      default_memory_scope: 'room',
+      default_tool_policy: { allowed: ['read_files', 'write_files', 'run_shell', 'commit'] },
+      default_workspace_policy: { read: ['.'], write: ['.'] },
+      default_memory_scope: 'agent',
     },
     'backend-executor': {
       default_tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
@@ -362,9 +390,9 @@ test('room agents expose runtime boundary overrides with defaults and invalid JS
   });
 
   assert.equal(roomAgent.runtime_backend, 'acp');
-  assert.deepEqual(roomAgent.tool_policy, { allowed: ['read_files'] });
-  assert.deepEqual(roomAgent.workspace_policy, { read: ['.'], write: [] });
-  assert.equal(roomAgent.memory_scope, 'room');
+  assert.deepEqual(roomAgent.tool_policy, { allowed: ['read_files', 'write_files', 'run_shell', 'commit'] });
+  assert.deepEqual(roomAgent.workspace_policy, { read: ['.'], write: ['.'] });
+  assert.equal(roomAgent.memory_scope, 'agent');
 
   const backend = agentRepo.create({
     agent_id: 'runtime-backend',

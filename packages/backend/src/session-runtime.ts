@@ -17,6 +17,7 @@ import {
 } from './repos/sessions.js';
 import { runRegistry } from './run-registry.js';
 import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
+import { buildSessionPlannerRuntimeSnapshot, resolveSessionPlannerRuntime } from './session-planner-runtime.js';
 import type { SessionAgentEventChannel } from './session-types.js';
 import { buildSessionBottomStatus, buildSessionInspectorSnapshot } from './session-workspace-view-model.js';
 import { wsHub } from './ws-hub.js';
@@ -168,7 +169,10 @@ export async function runSessionAgent(input: {
         });
       }
       if (latestFailureDiagnostic) fallbackFailureDiagnostic = latestFailureDiagnostic;
-      const failureError = result.stderr || latestFailureDiagnostic || fallbackFailureDiagnostic;
+      const failureError = result.stderr ||
+        latestFailureDiagnostic ||
+        fallbackFailureDiagnostic ||
+        (!controller.signal.aborted ? runtimeExitFailureDiagnostic(result.exitCode) : null);
       if (
         !controller.signal.aborted &&
         shouldAutoRetrySessionRun({ attempt, exitCode: result.exitCode, stderr: result.stderr, diagnostic: latestFailureDiagnostic })
@@ -392,13 +396,15 @@ function canUseProjectTools(permissionMode: AcpPermissionMode): boolean {
 export function retrySessionAgentRun(runId: string): void {
   const run = sessionRunRepo.get(runId);
   if (!run) throw new Error(`Session run ${runId} not found`);
+  const retryRuntime = resolveRetryRuntime(run);
   void runSessionAgent({
     sessionId: run.session_id,
     agentId: run.agent_id,
     prompt: buildSessionRunRetryPrompt(run),
-    provider: run.provider,
-    model: run.model,
-    runtimeProfileSnapshot: run.runtime_profile_snapshot,
+    provider: retryRuntime.provider,
+    model: retryRuntime.model,
+    permissionMode: retryRuntime.permissionMode,
+    runtimeProfileSnapshot: retryRuntime.runtimeProfileSnapshot,
   }).catch((error) => {
     const event = sessionEvidenceRepo.create({
       session_id: run.session_id,
@@ -411,6 +417,44 @@ export function retrySessionAgentRun(runId: string): void {
     wsHub.broadcastSession(run.session_id, { type: 'session_evidence:new', sessionId: run.session_id, event });
     broadcastActiveSessionUpsert(run.session_id);
   });
+}
+
+function resolveRetryRuntime(run: SessionRun): {
+  provider: AcpBackend;
+  model: string | null;
+  permissionMode: AcpPermissionMode | null;
+  runtimeProfileSnapshot: string | null;
+} {
+  if (run.agent_id !== DEFAULT_SESSION_AGENT_ID) {
+    return {
+      provider: run.provider,
+      model: run.model,
+      permissionMode: parsePermissionModeFromRuntimeSnapshot(run.runtime_profile_snapshot),
+      runtimeProfileSnapshot: run.runtime_profile_snapshot,
+    };
+  }
+  const session = requireSession(run.session_id);
+  const plannerRuntime = resolveSessionPlannerRuntime(session.project_id);
+  return {
+    provider: plannerRuntime.backend,
+    model: run.model,
+    permissionMode: plannerRuntime.permissionMode,
+    runtimeProfileSnapshot: buildSessionPlannerRuntimeSnapshot(plannerRuntime),
+  };
+}
+
+function parsePermissionModeFromRuntimeSnapshot(snapshot: string | null | undefined): AcpPermissionMode | null {
+  if (!snapshot) return null;
+  try {
+    const parsed = JSON.parse(snapshot) as { permission_mode?: unknown };
+    const permissionMode = parsed.permission_mode;
+    if (permissionMode === 'bypass' || permissionMode === 'workspace-write' || permissionMode === 'read-only') {
+      return permissionMode;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function buildSessionRunRetryPrompt(run: SessionRun): string {
@@ -490,6 +534,11 @@ function shouldAutoRetrySessionRun(input: {
     input.exitCode !== 0 &&
     !input.stderr.trim() &&
     Boolean(input.diagnostic?.trim());
+}
+
+function runtimeExitFailureDiagnostic(exitCode: number): string | null {
+  if (exitCode === 0) return null;
+  return `Session runtime exited with code ${exitCode} without error output.`;
 }
 
 function recordSessionAutoRetry(input: {
