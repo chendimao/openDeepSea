@@ -822,8 +822,8 @@
   }
 
   .app-shell--knowledge {
-    background: #f8fafc;
-    color: #1e293b;
+    background: var(--color-bg);
+    color: var(--color-fg);
   }
 
   .app-shell--knowledge .app-grid {
@@ -835,7 +835,7 @@
   }
 
   .app-shell--image-workbench {
-    background: #f5f7fa;
+    background: var(--color-bg);
   }
 
   .app-shell--image-workbench .liquid-backdrop {
@@ -11275,6 +11275,447 @@
   .knowledge-governance-save:disabled {
     cursor: not-allowed;
     opacity: 0.62;
+  }
+
+  .knowledge-command-page {
+    --knowledge-bg: var(--color-bg);
+    --knowledge-surface: var(--color-panel);
+    --knowledge-surface-muted: var(--color-surface-muted);
+    --knowledge-surface-soft: var(--color-bg-soft);
+    --knowledge-border: var(--color-border);
+    --knowledge-border-strong: var(--color-border-strong);
+    --knowledge-text: var(--color-fg);
+    --knowledge-muted: var(--color-fg-muted);
+    --knowledge-subtle: var(--color-fg-subtle);
+    --knowledge-primary: var(--color-primary);
+    --knowledge-primary-hover: var(--color-primary-hover);
+    --knowledge-primary-soft: color-mix(in srgb, var(--color-primary) 12%, transparent);
+    --knowledge-on-primary: var(--color-primary-fg);
+    --knowledge-success: var(--color-success);
+    --knowledge-success-soft: color-mix(in srgb, var(--color-success) 14%, transparent);
+    --knowledge-warning: var(--color-warning);
+    --knowledge-warning-soft: color-mix(in srgb, var(--color-warning) 14%, transparent);
+    --knowledge-danger: var(--color-danger);
+    --knowledge-danger-soft: color-mix(in srgb, var(--color-danger) 14%, transparent);
+    background: var(--knowledge-bg);
+    color: var(--knowledge-text);
+  }
+
+  .knowledge-scrollbar {
+    scrollbar-color: var(--color-scrollbar-thumb) transparent;
+  }
+
+  .knowledge-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--color-scrollbar-thumb);
+  }
+
+  .knowledge-sidebar,
+  .knowledge-main,
+  .knowledge-details,
+  .knowledge-action-group,
+  .knowledge-view-toggle,
+  .knowledge-stat-card,
+  .knowledge-resource-search,
+  .knowledge-filter-button,
+  .knowledge-sort-button,
+  .knowledge-mode-toggle,
+  .knowledge-insight-chip,
+  .knowledge-table-wrap,
+  .knowledge-pagination,
+  .knowledge-page-buttons,
+  .knowledge-mobile-card {
+    border-color: var(--knowledge-border);
+    background: var(--knowledge-surface);
+    color: var(--knowledge-text);
+  }
+
+  .knowledge-sidebar,
+  .knowledge-details {
+    border-color: var(--knowledge-border);
+  }
+
+  .knowledge-main {
+    background: var(--knowledge-surface);
+  }
+
+  .knowledge-sidebar-item,
+  .knowledge-sidebar-status,
+  .knowledge-action-group button,
+  .knowledge-action-group button:last-child,
+  .knowledge-view-toggle button,
+  .knowledge-view-toggle button:first-child,
+  .knowledge-mode-toggle button,
+  .knowledge-mode-toggle button:first-child,
+  .knowledge-filter-button,
+  .knowledge-sort-button,
+  .knowledge-detail-secondary,
+  .knowledge-detail-more,
+  .knowledge-resource-search input,
+  .knowledge-import-panel__grid input,
+  .knowledge-import-panel__grid textarea,
+  .knowledge-governance-field textarea {
+    color: var(--knowledge-muted);
+  }
+
+  .knowledge-sidebar-item:hover,
+  .knowledge-sidebar-status:hover,
+  .knowledge-action-group button:hover,
+  .knowledge-filter-button:hover,
+  .knowledge-sort-button:hover,
+  .knowledge-mode-toggle button:hover,
+  .knowledge-detail-secondary:hover,
+  .knowledge-detail-more:hover,
+  .knowledge-page-buttons button:disabled {
+    background: var(--knowledge-surface-muted);
+  }
+
+  .knowledge-sidebar-item.is-active,
+  .knowledge-view-toggle button.is-active,
+  .knowledge-mode-toggle button.is-active,
+  .knowledge-ranking-flag,
+  .knowledge-mobile-card.is-selected,
+  .knowledge-table-wrap tbody tr:hover,
+  .knowledge-table-wrap tbody tr.is-selected {
+    background: var(--knowledge-primary-soft);
+    color: var(--knowledge-primary);
+  }
+
+  .knowledge-upload-button,
+  .knowledge-detail-primary,
+  .knowledge-governance-save,
+  .knowledge-page-buttons button.is-active,
+  .knowledge-import-panel__tabs button.is-active,
+  .knowledge-import-panel__actions button[type="submit"] {
+    background: var(--knowledge-primary);
+    color: var(--knowledge-on-primary);
+  }
+
+  .knowledge-upload-button:hover,
+  .knowledge-detail-primary:hover {
+    background: var(--knowledge-primary-hover);
+  }
+
+  .knowledge-resource-search,
+  .knowledge-filter-button,
+  .knowledge-filter-button:has(select:disabled),
+  .knowledge-mode-toggle,
+  .knowledge-action-group button,
+  .knowledge-action-group button:last-child,
+  .knowledge-view-toggle button,
+  .knowledge-view-toggle button:first-child,
+  .knowledge-mode-toggle button,
+  .knowledge-mode-toggle button:first-child,
+  .knowledge-insights-strip,
+  .knowledge-import-panel,
+  .knowledge-import-panel__tabs button,
+  .knowledge-import-panel__actions button,
+  .knowledge-import-panel__grid input,
+  .knowledge-import-panel__grid textarea,
+  .knowledge-governance-field textarea,
+  .knowledge-detail-pre,
+  .knowledge-ranking-chip,
+  .knowledge-ranking-flag,
+  .knowledge-page-buttons button,
+  .knowledge-page-buttons span {
+    border-color: var(--knowledge-border);
+  }
+
+  .knowledge-insights-strip,
+  .knowledge-import-panel,
+  .knowledge-detail-pre,
+  .knowledge-ranking-chip {
+    background: var(--knowledge-surface-muted);
+    color: var(--knowledge-muted);
+  }
+
+  .knowledge-table-wrap thead,
+  .knowledge-list-load-state {
+    background: var(--knowledge-surface-muted);
+    color: var(--knowledge-muted);
+  }
+
+  .knowledge-table-wrap tbody tr,
+  .knowledge-table-wrap thead,
+  .knowledge-pagination,
+  .knowledge-detail-tabs,
+  .knowledge-details > .border-b,
+  .knowledge-details__body .border-t,
+  .knowledge-mobile-card {
+    border-color: var(--knowledge-border);
+  }
+
+  .knowledge-ranking-chip strong,
+  .knowledge-mobile-card__title,
+  .knowledge-detail-tabs button:hover,
+  .knowledge-detail-tabs button.is-active {
+    color: var(--knowledge-text);
+  }
+
+  .knowledge-detail-tabs {
+    border-color: var(--knowledge-border);
+    color: var(--knowledge-subtle);
+  }
+
+  .knowledge-detail-tabs button.is-active {
+    border-bottom-color: var(--knowledge-primary);
+    color: var(--knowledge-primary);
+  }
+
+  .knowledge-insight-chip.is-warning {
+    border-color: color-mix(in srgb, var(--knowledge-warning) 34%, var(--knowledge-border));
+    background: var(--knowledge-warning-soft);
+    color: var(--knowledge-warning);
+  }
+
+  .knowledge-insight-chip.is-danger,
+  .knowledge-detail-more.is-danger {
+    border-color: color-mix(in srgb, var(--knowledge-danger) 34%, var(--knowledge-border));
+    background: var(--knowledge-danger-soft);
+    color: var(--knowledge-danger);
+  }
+
+  .knowledge-insight-chip.is-info {
+    border-color: color-mix(in srgb, var(--knowledge-primary) 34%, var(--knowledge-border));
+    background: var(--knowledge-primary-soft);
+    color: var(--knowledge-primary);
+  }
+
+  .knowledge-command-page .bg-white,
+  .knowledge-command-page .bg-slate-50,
+  .knowledge-command-page .bg-slate-100,
+  .knowledge-command-page [class*="bg-blue-100"],
+  .knowledge-command-page [class*="bg-blue-50"],
+  .knowledge-command-page [class*="bg-green-100"],
+  .knowledge-command-page [class*="bg-green-50"],
+  .knowledge-command-page [class*="bg-orange-50"],
+  .knowledge-command-page [class*="bg-amber-50"],
+  .knowledge-command-page [class*="bg-purple-50"],
+  .knowledge-command-page [class*="bg-red-50"] {
+    background-color: var(--knowledge-surface-muted) !important;
+  }
+
+  .knowledge-command-page .bg-slate-200,
+  .knowledge-command-page .bg-slate-300 {
+    background-color: var(--knowledge-border-strong) !important;
+  }
+
+  .knowledge-command-page .bg-green-200,
+  .knowledge-command-page .bg-green-500 {
+    background-color: var(--knowledge-success) !important;
+  }
+
+  .knowledge-command-page .bg-blue-100,
+  .knowledge-command-page .bg-blue-500,
+  .knowledge-command-page [class*="bg-[#004AC6]"] {
+    background-color: var(--knowledge-primary) !important;
+  }
+
+  .knowledge-command-page [class*="bg-blue-50"],
+  .knowledge-command-page [class*="bg-purple-50"] {
+    background-color: var(--knowledge-primary-soft) !important;
+  }
+
+  .knowledge-command-page [class*="bg-green-50"],
+  .knowledge-command-page .bg-green-100 {
+    background-color: var(--knowledge-success-soft) !important;
+  }
+
+  .knowledge-command-page [class*="bg-orange-50"],
+  .knowledge-command-page [class*="bg-amber-50"] {
+    background-color: var(--knowledge-warning-soft) !important;
+  }
+
+  .knowledge-command-page [class*="bg-red-50"],
+  .knowledge-command-page .bg-red-100 {
+    background-color: var(--knowledge-danger-soft) !important;
+  }
+
+  .knowledge-command-page .text-slate-950,
+  .knowledge-command-page .text-slate-800,
+  .knowledge-command-page .text-slate-700 {
+    color: var(--knowledge-text) !important;
+  }
+
+  .knowledge-command-page .text-slate-600,
+  .knowledge-command-page .text-slate-500,
+  .knowledge-command-page .text-slate-400 {
+    color: var(--knowledge-muted) !important;
+  }
+
+  .knowledge-command-page .text-blue-600,
+  .knowledge-command-page .text-blue-700,
+  .knowledge-command-page [class*="text-blue-500"],
+  .knowledge-command-page [class*="text-[#004AC6]"] {
+    color: var(--knowledge-primary) !important;
+  }
+
+  .knowledge-command-page [class*="text-purple-500"] {
+    color: var(--knowledge-primary) !important;
+  }
+
+  .knowledge-command-page .text-green-500,
+  .knowledge-command-page .text-green-600,
+  .knowledge-command-page .text-green-700 {
+    color: var(--knowledge-success) !important;
+  }
+
+  .knowledge-command-page .text-orange-500,
+  .knowledge-command-page .text-orange-600,
+  .knowledge-command-page .text-amber-700,
+  .knowledge-command-page .text-amber-800 {
+    color: var(--knowledge-warning) !important;
+  }
+
+  .knowledge-command-page .text-red-500,
+  .knowledge-command-page .text-red-600,
+  .knowledge-command-page .text-red-700 {
+    color: var(--knowledge-danger) !important;
+  }
+
+  .knowledge-command-page .border-slate-200,
+  .knowledge-command-page .border-slate-300,
+  .knowledge-command-page [class*="border-blue-200"],
+  .knowledge-command-page [class*="border-blue-100"],
+  .knowledge-command-page [class*="border-green-200"],
+  .knowledge-command-page [class*="border-green-100"],
+  .knowledge-command-page [class*="border-orange-100"],
+  .knowledge-command-page [class*="border-amber-100"],
+  .knowledge-command-page [class*="border-purple-100"],
+  .knowledge-command-page [class*="border-red-100"] {
+    border-color: var(--knowledge-border) !important;
+  }
+
+  .knowledge-command-page input[type="checkbox"] {
+    accent-color: var(--knowledge-primary);
+  }
+
+  .knowledge-filter-button:has(select:disabled) {
+    background: var(--knowledge-surface-muted);
+    color: var(--knowledge-subtle);
+  }
+
+  [data-purpose="image-workbench-shell"] {
+    --image-bg: var(--color-bg);
+    --image-surface: var(--color-panel);
+    --image-surface-muted: var(--color-surface-muted);
+    --image-surface-soft: var(--color-bg-soft);
+    --image-border: var(--color-border);
+    --image-border-strong: var(--color-border-strong);
+    --image-text: var(--color-fg);
+    --image-muted: var(--color-fg-muted);
+    --image-subtle: var(--color-fg-subtle);
+    --image-primary: var(--color-primary);
+    --image-primary-hover: var(--color-primary-hover);
+    --image-primary-soft: color-mix(in srgb, var(--color-primary) 13%, transparent);
+    --image-on-primary: var(--color-primary-fg);
+    --image-success: var(--color-success);
+    --image-success-soft: color-mix(in srgb, var(--color-success) 14%, transparent);
+    --image-warning: var(--color-warning);
+    --image-danger: var(--color-danger);
+    --image-danger-soft: color-mix(in srgb, var(--color-danger) 14%, transparent);
+    background: var(--image-bg);
+    color: var(--image-text);
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="bg-[#f5f7fa]"] {
+    background-color: var(--image-bg) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] .bg-white,
+  [data-purpose="image-workbench-shell"] [class*="bg-[#f9fafb]"],
+  [data-purpose="image-workbench-shell"] [class*="bg-[#f3f4f6]"],
+  [data-purpose="image-workbench-shell"] [class*="bg-[#e5e7eb]"] {
+    background-color: var(--image-surface-muted) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] aside.bg-white,
+  [data-purpose="image-workbench-shell"] footer.bg-white,
+  [data-purpose="image-workbench-shell"] [data-purpose="image-workbench-model-config"],
+  [data-purpose="image-workbench-shell"] [data-purpose="image-workbench-status-footer"] {
+    background-color: var(--image-surface) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="border-[#e5e7eb]"],
+  [data-purpose="image-workbench-shell"] [class*="border-[#f3f4f6]"],
+  [data-purpose="image-workbench-shell"] [class*="border-slate"],
+  [data-purpose="image-workbench-shell"] .border-white\/30 {
+    border-color: var(--image-border) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="text-[#111827]"],
+  [data-purpose="image-workbench-shell"] [class*="text-[#374151]"] {
+    color: var(--image-text) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="text-[#64748b]"],
+  [data-purpose="image-workbench-shell"] [class*="text-[#6b7280]"],
+  [data-purpose="image-workbench-shell"] [class*="text-[#94a3b8]"],
+  [data-purpose="image-workbench-shell"] [class*="text-[#9ca3af]"],
+  [data-purpose="image-workbench-shell"] [class*="text-[#cbd5e1]"] {
+    color: var(--image-muted) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="text-[#2563eb]"],
+  [data-purpose="image-workbench-shell"] [class*="hover:text-[#2563eb]"]:hover {
+    color: var(--image-primary) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="text-[#10b981]"],
+  [data-purpose="image-workbench-shell"] [class*="text-[#15803d]"] {
+    color: var(--image-success) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="text-[#f59e0b]"] {
+    color: var(--image-warning) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="text-[#ef4444]"],
+  [data-purpose="image-workbench-shell"] [class*="text-[#dc2626]"],
+  [data-purpose="image-workbench-shell"] [class*="hover:text-[#dc2626]"]:hover {
+    color: var(--image-danger) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="bg-[#2563eb]"],
+  [data-purpose="image-workbench-shell"] [class*="bg-[#111827]"] {
+    background-color: var(--image-primary) !important;
+    color: var(--image-on-primary) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="hover:bg-[#1d4ed8]"]:hover,
+  [data-purpose="image-workbench-shell"] [class*="hover:bg-[#1f2937]"]:hover {
+    background-color: var(--image-primary-hover) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="border-[#2563eb]"],
+  [data-purpose="image-workbench-shell"] [class*="border-[#60a5fa]"],
+  [data-purpose="image-workbench-shell"] [class*="hover:border-[#93c5fd]"]:hover {
+    border-color: var(--image-primary) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="bg-[#eff6ff]"] {
+    background-color: var(--image-primary-soft) !important;
+    color: var(--image-primary) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="bg-[#dcfce7]"] {
+    background-color: var(--image-success-soft) !important;
+    color: var(--image-success) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] [class*="bg-[#fee2e2]"] {
+    background-color: var(--image-danger-soft) !important;
+    color: var(--image-danger) !important;
+  }
+
+  [data-purpose="image-workbench-shell"] input,
+  [data-purpose="image-workbench-shell"] textarea,
+  [data-purpose="image-workbench-shell"] select {
+    color: var(--image-text);
+  }
+
+  [data-purpose="image-workbench-shell"] input::placeholder,
+  [data-purpose="image-workbench-shell"] textarea::placeholder {
+    color: var(--image-subtle);
   }
 
   @media (prefers-reduced-motion: reduce) {
