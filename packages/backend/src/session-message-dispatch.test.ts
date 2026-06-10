@@ -10,18 +10,27 @@ process.env.HOME = platformSkillsHome;
 process.env.CODEX_HOME = join(platformSkillsHome, '.codex');
 
 const { projectRepo } = await import('./repos/projects.js');
+const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { fileRepo } = await import('./repos/files.js');
+const { messageRepo } = await import('./repos/messages.js');
+const { roomAgentRepo } = await import('./repos/rooms.js');
 const { settingsRepo } = await import('./repos/settings.js');
 const { sessionMessageRepo, sessionRepo, sessionRunRepo } = await import('./repos/sessions.js');
+const { taskRepo } = await import('./repos/tasks.js');
+const { workflowRepo } = await import('./repos/workflows.js');
 const {
   dispatchSessionUserMessage,
   recordSessionImageGenerationJobMessage,
   recordSessionImageGenerationToolResultEvidence,
 } = await import('./session-message-dispatch.js');
 const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
+const { setWorkflowOrchestratorGraphDeps } = await import('./workflows/orchestrator.js');
+const { setVerificationCommandRunnerForTests } = await import('./workflows/graph/verification.js');
 
 afterEach(() => {
   setSessionRuntimeAdapterForTest(undefined);
+  setWorkflowOrchestratorGraphDeps({});
+  setVerificationCommandRunnerForTests(null);
   settingsRepo.updateSystem({ global_session_prompt: null });
 });
 
@@ -132,17 +141,24 @@ test('dispatchSessionUserMessage gates medium-risk development tasks before star
   const updatedMessage = sessionMessageRepo.get(message.id);
   const metadata = JSON.parse(updatedMessage?.metadata ?? '{}') as {
     risk_assessment?: { riskLevel?: string; requiresApproval?: boolean };
-    approval_card?: { riskLevel?: string; taskKind?: string };
+    approval_card?: { riskLevel?: string; taskKind?: string; agents?: string[] };
     session_approval?: { status?: string; originalContent?: string };
   };
   assert.equal(metadata.risk_assessment?.riskLevel, 'medium');
   assert.equal(metadata.risk_assessment?.requiresApproval, true);
   assert.equal(metadata.approval_card?.riskLevel, 'medium');
+  assert.deepEqual(metadata.approval_card?.agents, [
+    'planner',
+    'frontend-executor',
+    'backend-executor',
+    'reviewer',
+    'acceptor',
+  ]);
   assert.equal(metadata.session_approval?.status, 'pending');
   assert.equal(metadata.session_approval?.originalContent, GIT_STATUS_BAR_TASK);
 });
 
-test('dispatchSessionUserMessage resumes approved session task with original content', async () => {
+test('dispatchSessionUserMessage starts graph workflow for approved fullstack session task', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Session Risk Approval',
     path: mkdtempSync(join(tmpdir(), 'session-dispatch-risk-approval-')),
@@ -153,13 +169,82 @@ test('dispatchSessionUserMessage resumes approved session task with original con
     provider: 'codex',
     workspace_path: project.path,
   });
-  const prompts: string[] = [];
+  const workflowAgentCalls: Array<{ agentId: string; stage: string | null | undefined }> = [];
   setSessionRuntimeAdapterForTest({
     backend: 'codex',
     listSessions: async () => [],
-    invoke: async ({ prompt }) => {
-      prompts.push(prompt);
-      return { exitCode: 0, sessionId: 'codex-risk-approved', stderr: '' };
+    invoke: async () => ({ exitCode: 0, sessionId: 'codex-risk-approved', stderr: '' }),
+  });
+  setVerificationCommandRunnerForTests(async (command) => ({
+    command,
+    status: 'passed',
+    exitCode: 0,
+    stdout: 'session workflow verification passed',
+    stderr: '',
+  }));
+  setWorkflowOrchestratorGraphDeps({
+    planner: async () => ({
+      goal: GIT_STATUS_BAR_TASK,
+      summary: 'Implement backend API and frontend title badge.',
+      assumptions: [],
+      tasks: [
+        {
+          title: 'Update session todo API',
+          description: 'Add backend route and stats helper.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Backend route returns todo stats'],
+          scopeRead: ['packages/backend/src/session.routes.ts'],
+          scopeWrite: ['packages/backend/src/session.routes.ts'],
+          dependsOn: [],
+        },
+        {
+          title: 'Update session title badge',
+          description: 'Add frontend badge and refresh behavior.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Frontend title shows todo count'],
+          scopeRead: ['packages/frontend/src/pages/SessionWorkspacePage.tsx'],
+          scopeWrite: ['packages/frontend/src/pages/SessionWorkspacePage.tsx'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: ['API contract and title badge refresh'],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed verification', required: true },
+      ],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => {
+      workflowAgentCalls.push({ agentId: input.agent.agent_id, stage: input.workflowStage });
+      const output = outputForWorkflowStage(input.workflowStage);
+      const run = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      const message = messageRepo.create({
+        room_id: input.roomId,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: output,
+        message_type: 'text',
+      });
+      return {
+        run: { ...run, stdout: output },
+        message,
+        status: 'completed',
+      };
     },
   });
 
@@ -171,21 +256,63 @@ test('dispatchSessionUserMessage resumes approved session task with original con
     sessionId: session.id,
     content: '确认',
   });
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await waitFor(
+    () => workflowAgentCalls.some((call) => call.stage === 'acceptance'),
+    1000,
+    () => {
+      const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
+      const runs = workflowTasks.flatMap((task) => workflowRepo.listByTask(task.id));
+      return `calls=${JSON.stringify(workflowAgentCalls)} runs=${JSON.stringify(runs.map((run) => ({
+        status: run.status,
+        stage: run.current_stage,
+        error: run.error,
+      })))}`;
+    },
+  );
 
-  const runs = sessionRunRepo.listBySession(session.id);
-  assert.equal(runs.length, 1);
-  assert.match(prompts[0] ?? '', new RegExp(escapeRegExp(GIT_STATUS_BAR_TASK)));
-  assert.doesNotMatch(prompts[0] ?? '', /## User Request\n\n确认$/);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  assert.deepEqual(
+    workflowAgentCalls
+      .filter((call) => call.stage !== 'planning')
+      .map((call) => `${call.stage}:${call.agentId}`),
+    [
+      'implementation:backend-executor',
+      'implementation:frontend-executor',
+      'code_review:reviewer',
+      'code_review:reviewer',
+      'acceptance:acceptor',
+    ],
+  );
+
+  const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
+  assert.equal(workflowTasks.length, 1);
+  assert.equal(workflowTasks[0]?.title, GIT_STATUS_BAR_TASK);
+
+  const workflowRuns = workflowRepo.listByTask(workflowTasks[0]!.id);
+  assert.equal(workflowRuns.length, 1);
+  assert.equal(typeof workflowRuns[0]?.graph_version, 'string');
+  assert.equal(workflowRuns[0]?.approved_by, 'session-risk-gate');
+
+  const agents = roomAgentRepo.listByRoom(workflowTasks[0]!.room_id).map((agent) => agent.agent_id);
+  assert.deepEqual(agents, ['planner', 'backend-executor', 'frontend-executor', 'reviewer', 'acceptor']);
 
   const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
   const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
-    session_approval?: { status?: string; decidedByMessageId?: string };
+    session_approval?: {
+      status?: string;
+      decidedByMessageId?: string;
+      executionPath?: string;
+      workflowRunId?: string;
+      workflowTaskId?: string;
+    };
   };
   assert.equal(metadata.session_approval?.status, 'approved');
+  assert.equal(metadata.session_approval?.executionPath, 'workflow_graph');
+  assert.equal(metadata.session_approval?.workflowTaskId, workflowTasks[0]?.id);
+  assert.equal(metadata.session_approval?.workflowRunId, workflowRuns[0]?.id);
 
   const messages = sessionMessageRepo.listBySession(session.id);
-  assert.ok(messages.some((item) => item.sender_id === 'risk-gate' && /已确认/.test(item.content)));
+  assert.ok(messages.some((item) => item.sender_id === 'risk-gate' && /启动 workflow/.test(item.content)));
 });
 
 test('dispatchSessionUserMessage gates high-risk referenced files for edit requests', async () => {
@@ -902,6 +1029,48 @@ function createPlatformSkill(provider: 'codex' | 'claudecode' | 'opencode', name
 
 const GIT_STATUS_BAR_TASK = '请实现一个开发任务：在会话页面底部状态栏显示当前项目的 Git 分支、未提交改动数量和最后一次提交摘要。后端需要提供读取 Git 状态的接口，前端需要展示并在状态变化后刷新。';
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+async function waitFor(predicate: () => boolean, timeoutMs = 1000, describe?: () => string): Promise<void> {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`timed out waiting for condition${describe ? `: ${describe()}` : ''}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+function outputForWorkflowStage(stage: string | null | undefined): string {
+  if (stage === 'code_review') {
+    return JSON.stringify({
+      verdict: 'pass',
+      findings: [],
+      requiredFixes: [],
+      riskLevel: 'low',
+    });
+  }
+  if (stage === 'acceptance') {
+    return JSON.stringify({
+      verdict: 'pass',
+      acceptedCriteria: ['Session workflow dispatch completed'],
+      failedCriteria: [],
+      notes: 'Accepted by test stub.',
+    });
+  }
+  if (stage === 'implementation') {
+    return [
+      'implementation completed',
+      '',
+      '```json',
+      JSON.stringify({
+        superpowers: {
+          tddEvidence: [
+            { stage: 'RED', command: 'node --test session-dispatch', passed: false, summary: 'failed as expected' },
+            { stage: 'GREEN', command: 'node --test session-dispatch', passed: true, summary: 'passed' },
+          ],
+        },
+      }),
+      '```',
+    ].join('\n');
+  }
+  return `${stage ?? 'workflow'} completed`;
 }

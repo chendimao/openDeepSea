@@ -2,18 +2,22 @@ import { lstat } from 'node:fs/promises';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
 import { fileRepo } from './repos/files.js';
 import { projectRepo } from './repos/projects.js';
+import { roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import {
   DEFAULT_SESSION_AGENT_ID,
   sessionMessageRepo,
   sessionRepo,
 } from './repos/sessions.js';
+import { taskRepo } from './repos/tasks.js';
 import { createContextManifest } from './session.routes.js';
 import { buildKnowledgeAgentToolPrompt } from './knowledge-rag.js';
 import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
 import { buildSessionFileReferenceContext } from './session-file-reference-context.js';
 import { buildSessionPlannerRuntimeSnapshot, resolveSessionPlannerRuntime } from './session-planner-runtime.js';
 import { runSessionAgent } from './session-runtime.js';
+import { recordTaskCreatedEvent } from './task-conversation.js';
+import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { assessTaskRisk, buildApprovalCard, type ApprovalCard, type TaskRiskAssessment } from './workflows/task-risk.js';
 import { wsHub } from './ws-hub.js';
 import { getPlatformSkill } from './platform-skills/service.js';
@@ -57,6 +61,10 @@ interface SessionApprovalMetadata {
   createdAt: number;
   decidedAt?: number;
   decidedByMessageId?: string;
+  executionPath?: 'session_planner' | 'workflow_graph';
+  workflowRoomId?: string;
+  workflowTaskId?: string;
+  workflowRunId?: string;
 }
 
 export async function dispatchSessionUserMessage(input: {
@@ -419,14 +427,17 @@ async function handleSessionApprovalDecision(input: {
   });
 
   const approved = input.decision === 'approved';
+  const shouldStartWorkflow = approved && shouldStartWorkflowForApproval(nextApproval);
   const gateMessage = sessionMessageRepo.create({
     session_id: input.session.id,
     role: 'system',
     sender_id: 'risk-gate',
     sender_name: '风险门禁',
     content: approved
-      ? '风险确认已确认，正在启动 planner 执行原任务。'
-      : '风险确认已取消，本次任务不会启动 planner。',
+      ? shouldStartWorkflow
+        ? '风险确认已确认，正在启动 workflow 执行原任务。'
+        : '风险确认已确认，正在启动 planner 执行原任务。'
+      : '风险确认已取消，本次任务不会启动执行流程。',
     message_type: 'system',
     metadata: {
       session_approval: nextApproval,
@@ -460,6 +471,15 @@ async function handleSessionApprovalDecision(input: {
   broadcastActiveSessionUpsert(input.session.id);
 
   if (!approved) return;
+  if (shouldStartWorkflow) {
+    startApprovedSessionWorkflow({
+      project: input.project,
+      session: input.session,
+      approval: nextApproval,
+      sourceMessageId: input.pendingApproval.message.id,
+    });
+    return;
+  }
   await startSessionPlannerRun({
     project: input.project,
     session: input.session,
@@ -470,6 +490,179 @@ async function handleSessionApprovalDecision(input: {
     platformSkillRefs: nextApproval.platformSkillRefs ?? input.platformSkillRefs,
     plannerRuntime: input.plannerRuntime,
   });
+}
+
+function startApprovedSessionWorkflow(input: {
+  project: Project;
+  session: Session;
+  approval: SessionApprovalMetadata;
+  sourceMessageId: string;
+}): void {
+  void runApprovedSessionWorkflow(input).catch((error) => {
+    const event = sessionEvidenceRepo.create({
+      session_id: input.session.id,
+      event_type: 'blocker',
+      severity: 'error',
+      source_message_id: input.sourceMessageId,
+      title: 'Session workflow failed',
+      summary: (error as Error).message,
+      payload: {
+        session_approval: input.approval,
+        source_message_id: input.sourceMessageId,
+      },
+    });
+    wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
+    broadcastActiveSessionUpsert(input.session.id);
+  });
+}
+
+async function runApprovedSessionWorkflow(input: {
+  project: Project;
+  session: Session;
+  approval: SessionApprovalMetadata;
+  sourceMessageId: string;
+}): Promise<void> {
+  const room = roomRepo.create({
+    project_id: input.project.id,
+    name: buildSessionWorkflowRoomName(input.session),
+    description: `SessionOS workflow bridge for session ${input.session.id}`,
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: input.project.id,
+    title: buildSessionWorkflowTaskTitle(input.approval.originalContent),
+    description: buildSessionWorkflowTaskDescription(input),
+    interaction_mode: 'auto_recommended',
+    source_message_id: input.sourceMessageId,
+    created_from: 'chat_plan',
+  });
+  recordTaskCreatedEvent({
+    roomId: room.id,
+    task,
+    origin: 'chat_plan',
+    content: `SessionOS 已创建开发任务「${task.title}」。`,
+    metadata: {
+      session_id: input.session.id,
+      source_message_id: input.sourceMessageId,
+      approval_decision_message_id: input.approval.decidedByMessageId,
+      approval_risk_level: input.approval.riskAssessment.riskLevel,
+      approval_task_kind: input.approval.riskAssessment.taskKind,
+    },
+  });
+
+  const started = await workflowOrchestrator.start(task.id);
+  const run = started.status === 'awaiting_approval'
+    ? await workflowOrchestrator.approvePlan(started.id, 'session-risk-gate')
+    : started;
+  const approvalPatch: Partial<SessionApprovalMetadata> = {
+    executionPath: 'workflow_graph',
+    workflowRoomId: room.id,
+    workflowTaskId: task.id,
+    workflowRunId: run.id,
+  };
+  mergeSessionApprovalMetadata({
+    sessionId: input.session.id,
+    sourceMessageId: input.sourceMessageId,
+    patch: approvalPatch,
+  });
+  const event = sessionEvidenceRepo.create({
+    session_id: input.session.id,
+    event_type: 'status',
+    source_message_id: input.sourceMessageId,
+    title: 'Workflow started',
+    summary: `已启动 workflow：${task.title}`,
+    payload: {
+      execution_path: 'workflow_graph',
+      room_id: room.id,
+      task_id: task.id,
+      workflow_run_id: run.id,
+      workflow_status: run.status,
+      workflow_stage: run.current_stage,
+    },
+  });
+  wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
+  broadcastActiveSessionUpsert(input.session.id);
+}
+
+function mergeSessionApprovalMetadata(input: {
+  sessionId: string;
+  sourceMessageId: string;
+  patch: Partial<SessionApprovalMetadata>;
+}): void {
+  const message = sessionMessageRepo.get(input.sourceMessageId);
+  if (!message) return;
+  const approval = parseSessionApprovalMetadata(message);
+  if (!approval) return;
+  const metadata = parseSessionMessageMetadata(message.metadata);
+  const nextApproval: SessionApprovalMetadata = {
+    ...approval,
+    ...input.patch,
+  };
+  const updated = sessionMessageRepo.updateMetadata(message.id, {
+    ...metadata,
+    risk_assessment: nextApproval.riskAssessment,
+    approval_card: nextApproval.approvalCard,
+    session_approval: nextApproval,
+  });
+  if (updated) {
+    wsHub.broadcastSession(input.sessionId, {
+      type: 'session_message:new',
+      sessionId: input.sessionId,
+      message: updated,
+    });
+  }
+}
+
+function shouldStartWorkflowForApproval(approval: SessionApprovalMetadata): boolean {
+  if (approval.status !== 'approved') return false;
+  return [
+    'fullstack_change',
+    'frontend_change',
+    'backend_change',
+    'bug_fix',
+    'test_only',
+    'ops_or_config',
+  ].includes(approval.riskAssessment.taskKind);
+}
+
+function buildSessionWorkflowRoomName(session: Session): string {
+  const title = session.title?.trim() || DEFAULT_SESSION_TITLE;
+  return truncateText(`Session Workflow: ${title}`, 80);
+}
+
+function buildSessionWorkflowTaskTitle(content: string): string {
+  return truncateText(content.trim() || 'Session development task', 180);
+}
+
+function buildSessionWorkflowTaskDescription(input: {
+  session: Session;
+  approval: SessionApprovalMetadata;
+  sourceMessageId: string;
+}): string {
+  const scopeRead = input.approval.approvalCard.scopeRead.length > 0
+    ? input.approval.approvalCard.scopeRead.join(', ')
+    : '无';
+  const scopeWrite = input.approval.approvalCard.scopeWrite.length > 0
+    ? input.approval.approvalCard.scopeWrite.join(', ')
+    : '由 planner 分析后确定';
+  return [
+    input.approval.originalContent,
+    '',
+    'SessionOS 风险确认已通过，请按 workflow graph 执行：先规划，再按前后端/审查/验收阶段分派子智能体。',
+    '',
+    `来源会话：${input.session.id}`,
+    `来源消息：${input.sourceMessageId}`,
+    `风险等级：${input.approval.riskAssessment.riskLevel}`,
+    `任务类型：${input.approval.riskAssessment.taskKind}`,
+    `审批原因：${input.approval.riskAssessment.approvalReason}`,
+    `执行方式：${input.approval.approvalCard.executionMode}`,
+    `读取范围：${scopeRead}`,
+    `写入范围：${scopeWrite}`,
+  ].join('\n');
+}
+
+function truncateText(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : `${value.slice(0, Math.max(0, maxLength - 1))}…`;
 }
 
 function findLatestPendingSessionApproval(sessionId: string): PendingSessionApproval | null {
@@ -502,6 +695,12 @@ function parseSessionApprovalMetadata(message: SessionMessage): SessionApprovalM
     createdAt: typeof approval.createdAt === 'number' ? approval.createdAt : message.created_at,
     decidedAt: typeof approval.decidedAt === 'number' ? approval.decidedAt : undefined,
     decidedByMessageId: typeof approval.decidedByMessageId === 'string' ? approval.decidedByMessageId : undefined,
+    executionPath: approval.executionPath === 'workflow_graph' || approval.executionPath === 'session_planner'
+      ? approval.executionPath
+      : undefined,
+    workflowRoomId: typeof approval.workflowRoomId === 'string' ? approval.workflowRoomId : undefined,
+    workflowTaskId: typeof approval.workflowTaskId === 'string' ? approval.workflowTaskId : undefined,
+    workflowRunId: typeof approval.workflowRunId === 'string' ? approval.workflowRunId : undefined,
   };
 }
 
@@ -530,7 +729,7 @@ function buildSessionApprovalRequestContent(approvalCard: ApprovalCard): string 
     ...approvalCard.scopeWrite.map((item) => `写：${item}`),
   ];
   return [
-    `风险确认：该任务被判定为 ${approvalCard.riskLevel} 风险，需要确认后再启动 planner。`,
+    `风险确认：该任务被判定为 ${approvalCard.riskLevel} 风险，需要确认后再启动执行流程。`,
     `任务类型：${approvalCard.taskKind}`,
     `原因：${approvalCard.approvalReason}`,
     `执行方式：${approvalCard.executionMode}`,
@@ -583,14 +782,14 @@ function dedupeStringList(values: string[]): string[] {
 function approvalAgentsForAssessment(assessment: TaskRiskAssessment): string[] {
   switch (assessment.taskKind) {
     case 'fullstack_change':
-      return ['planner', 'frontend-executor', 'backend-executor', 'test-runner'];
+      return ['planner', 'frontend-executor', 'backend-executor', 'reviewer', 'acceptor'];
     case 'frontend_change':
-      return ['planner', 'frontend-executor', 'test-runner'];
+      return ['planner', 'frontend-executor', 'reviewer', 'acceptor'];
     case 'backend_change':
     case 'bug_fix':
-      return ['planner', 'backend-executor', 'test-runner'];
+      return ['planner', 'backend-executor', 'reviewer', 'acceptor'];
     default:
-      return ['planner', 'test-runner'];
+      return ['planner', 'reviewer'];
   }
 }
 
