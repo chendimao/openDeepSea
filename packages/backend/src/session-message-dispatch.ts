@@ -14,6 +14,7 @@ import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
 import { buildSessionFileReferenceContext } from './session-file-reference-context.js';
 import { buildSessionPlannerRuntimeSnapshot, resolveSessionPlannerRuntime } from './session-planner-runtime.js';
 import { runSessionAgent } from './session-runtime.js';
+import { assessTaskRisk, buildApprovalCard, type ApprovalCard, type TaskRiskAssessment } from './workflows/task-risk.js';
 import { wsHub } from './ws-hub.js';
 import { getPlatformSkill } from './platform-skills/service.js';
 import { isIgnoredWorkspacePath, normalizeWorkspacePath, resolveWorkspacePath } from './workspace-files.js';
@@ -23,6 +24,7 @@ import type { PlatformSkill } from './platform-skills/types.js';
 import type {
   MessageAttachmentMetadata,
   PlatformSkillRef,
+  Project,
   ProjectFile,
   Session,
   SessionMessage,
@@ -37,6 +39,25 @@ const MAX_PLATFORM_SKILL_REFS = 8;
 type ResolvedPlatformSkillRef = PlatformSkillRef & {
   description: string | null;
 };
+
+interface PendingSessionApproval {
+  message: SessionMessage;
+  metadata: SessionApprovalMetadata;
+}
+
+interface SessionApprovalMetadata {
+  status: 'pending' | 'approved' | 'rejected';
+  sourceMessageId: string;
+  originalContent: string;
+  riskAssessment: TaskRiskAssessment;
+  approvalCard: ApprovalCard;
+  workspaceFileRefs: string[];
+  libraryFileRefs: string[];
+  platformSkillRefs: ResolvedPlatformSkillRef[];
+  createdAt: number;
+  decidedAt?: number;
+  decidedByMessageId?: string;
+}
 
 export async function dispatchSessionUserMessage(input: {
   sessionId: string;
@@ -97,39 +118,98 @@ export async function dispatchSessionUserMessage(input: {
     message,
   });
   broadcastActiveSessionUpsert(runtimeSession.id);
-  const fileReferenceContext = await buildSessionFileReferenceContext({
+
+  const approvalDecision = getSessionApprovalDecision(input.content);
+  const pendingApproval = approvalDecision ? findLatestPendingSessionApproval(runtimeSession.id) : null;
+  if (approvalDecision && pendingApproval) {
+    await handleSessionApprovalDecision({
+      project,
+      session: runtimeSession,
+      decisionMessage: message,
+      pendingApproval,
+      decision: approvalDecision,
+      plannerRuntime,
+      workspacePath,
+      workspaceFileRefs,
+      libraryFileRefs,
+      platformSkillRefs,
+    });
+    return message;
+  }
+
+  const riskGate = assessSessionMessageRisk({
+    content: input.content,
+    workspaceFileRefs,
+    platformSkillRefs,
+  });
+  if (riskGate.requiresApproval && riskGate.approvalCard) {
+    recordSessionApprovalRequest({
+      session: runtimeSession,
+      sourceMessage: message,
+      assessment: riskGate.assessment,
+      approvalCard: riskGate.approvalCard,
+      workspaceFileRefs,
+      libraryFileRefs,
+      platformSkillRefs,
+    });
+    return message;
+  }
+
+  await startSessionPlannerRun({
     project,
+    session: runtimeSession,
+    content: message.content,
     workspacePath,
     workspaceFileRefs,
     libraryFileRefs,
+    platformSkillRefs,
+    plannerRuntime,
+  });
+  return message;
+}
+
+async function startSessionPlannerRun(input: {
+  project: Project;
+  session: Session;
+  content: string;
+  workspacePath: string;
+  workspaceFileRefs: string[];
+  libraryFileRefs: string[];
+  platformSkillRefs: ResolvedPlatformSkillRef[];
+  plannerRuntime: ReturnType<typeof resolveSessionPlannerRuntime>;
+}): Promise<void> {
+  const fileReferenceContext = await buildSessionFileReferenceContext({
+    project: input.project,
+    workspacePath: input.workspacePath,
+    workspaceFileRefs: input.workspaceFileRefs,
+    libraryFileRefs: input.libraryFileRefs,
   });
   void runSessionAgent({
-    sessionId: runtimeSession.id,
-    agentId: plannerRuntime.agentId,
+    sessionId: input.session.id,
+    agentId: input.plannerRuntime.agentId,
     prompt: buildRuntimePrompt(
-      runtimeSession,
-      message.content,
+      input.session,
+      input.content,
       fileReferenceContext.promptAddition,
-      buildPlatformSkillsPrompt(platformSkillRefs),
+      buildPlatformSkillsPrompt(input.platformSkillRefs),
       settingsRepo.getSystem().global_session_prompt,
     ),
-    provider: plannerRuntime.backend,
-    model: runtimeSession.model,
-    permissionMode: plannerRuntime.permissionMode,
-    runtimeProfileSnapshot: buildSessionPlannerRuntimeSnapshot(plannerRuntime),
+    provider: input.plannerRuntime.backend,
+    model: input.session.model,
+    permissionMode: input.plannerRuntime.permissionMode,
+    runtimeProfileSnapshot: buildSessionPlannerRuntimeSnapshot(input.plannerRuntime),
     imagePaths: fileReferenceContext.imagePaths,
   }).catch((error) => {
     const event = sessionEvidenceRepo.create({
-      session_id: runtimeSession.id,
+      session_id: input.session.id,
       event_type: 'blocker',
       severity: 'error',
       title: 'Session runtime failed',
       summary: (error as Error).message,
     });
-    wsHub.broadcastSession(runtimeSession.id, { type: 'session_evidence:new', sessionId: runtimeSession.id, event });
-    broadcastActiveSessionUpsert(runtimeSession.id);
+    wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
+    broadcastActiveSessionUpsert(input.session.id);
   });
-  return message;
 }
 
 export function assertSessionCanReceiveImageGenerationJob(
@@ -196,6 +276,348 @@ export function recordSessionImageGenerationToolResultEvidence(input: {
   });
   broadcastActiveSessionUpsert(input.sessionId);
   return event;
+}
+
+function assessSessionMessageRisk(input: {
+  content: string;
+  workspaceFileRefs: string[];
+  platformSkillRefs: ResolvedPlatformSkillRef[];
+}): {
+  assessment: TaskRiskAssessment;
+  requiresApproval: boolean;
+  approvalCard: ApprovalCard | null;
+} {
+  const applies = shouldApplySessionRiskGate(input.content, input.platformSkillRefs);
+  const scopeWrite = applies
+    ? dedupeStringList([...extractPathLikeScopes(input.content), ...input.workspaceFileRefs])
+    : extractPathLikeScopes(input.content);
+  const assessment = assessTaskRisk({
+    title: input.content,
+    description: input.content,
+    scopeRead: input.workspaceFileRefs,
+    scopeWrite,
+    verificationCommands: [],
+  });
+  const lowConfidenceOnly = assessment.approvalReason === 'low-confidence task profile requires approval';
+  const requiresApproval = applies &&
+    assessment.requiresApproval &&
+    assessment.riskLevel !== 'low' &&
+    !lowConfidenceOnly;
+  const approvalCard = requiresApproval
+    ? buildApprovalCard({
+        assessment,
+        agents: approvalAgentsForAssessment(assessment),
+        executionMode: approvalExecutionModeForAssessment(assessment),
+        risks: ['中高风险开发任务在用户确认前不会启动 planner 或执行代码改动。'],
+        assumptions: ['确认后将使用原始任务内容和原始引用上下文继续执行。'],
+      })
+    : null;
+  return { assessment, requiresApproval, approvalCard };
+}
+
+function recordSessionApprovalRequest(input: {
+  session: Session;
+  sourceMessage: SessionMessage;
+  assessment: TaskRiskAssessment;
+  approvalCard: ApprovalCard;
+  workspaceFileRefs: string[];
+  libraryFileRefs: string[];
+  platformSkillRefs: ResolvedPlatformSkillRef[];
+}): void {
+  const existingMetadata = parseSessionMessageMetadata(input.sourceMessage.metadata);
+  const sessionApproval: SessionApprovalMetadata = {
+    status: 'pending',
+    sourceMessageId: input.sourceMessage.id,
+    originalContent: input.sourceMessage.content,
+    riskAssessment: input.assessment,
+    approvalCard: input.approvalCard,
+    workspaceFileRefs: input.workspaceFileRefs,
+    libraryFileRefs: input.libraryFileRefs,
+    platformSkillRefs: input.platformSkillRefs,
+    createdAt: Date.now(),
+  };
+  const updatedSourceMessage = sessionMessageRepo.updateMetadata(input.sourceMessage.id, {
+    ...existingMetadata,
+    risk_assessment: input.assessment,
+    approval_card: input.approvalCard,
+    session_approval: sessionApproval,
+  }) ?? input.sourceMessage;
+  wsHub.broadcastSession(input.session.id, {
+    type: 'session_message:new',
+    sessionId: input.session.id,
+    message: updatedSourceMessage,
+  });
+
+  const gateMessage = sessionMessageRepo.create({
+    session_id: input.session.id,
+    role: 'system',
+    sender_id: 'risk-gate',
+    sender_name: '风险门禁',
+    content: buildSessionApprovalRequestContent(input.approvalCard),
+    message_type: 'system',
+    metadata: {
+      risk_assessment: input.assessment,
+      approval_card: input.approvalCard,
+      session_approval: sessionApproval,
+    },
+  });
+  const event = sessionEvidenceRepo.create({
+    session_id: input.session.id,
+    event_type: 'status',
+    source_message_id: input.sourceMessage.id,
+    title: '风险确认待处理',
+    summary: input.approvalCard.summary,
+    payload: {
+      risk_assessment: input.assessment,
+      approval_card: input.approvalCard,
+      session_approval: sessionApproval,
+      gate_message_id: gateMessage.id,
+    },
+  });
+  wsHub.broadcastSession(input.session.id, {
+    type: 'session_message:new',
+    sessionId: input.session.id,
+    message: gateMessage,
+  });
+  wsHub.broadcastSession(input.session.id, {
+    type: 'session_evidence:new',
+    sessionId: input.session.id,
+    event,
+  });
+  broadcastActiveSessionUpsert(input.session.id);
+}
+
+async function handleSessionApprovalDecision(input: {
+  project: Project;
+  session: Session;
+  decisionMessage: SessionMessage;
+  pendingApproval: PendingSessionApproval;
+  decision: 'approved' | 'rejected';
+  plannerRuntime: ReturnType<typeof resolveSessionPlannerRuntime>;
+  workspacePath: string;
+  workspaceFileRefs: string[];
+  libraryFileRefs: string[];
+  platformSkillRefs: ResolvedPlatformSkillRef[];
+}): Promise<void> {
+  const existingMetadata = parseSessionMessageMetadata(input.pendingApproval.message.metadata);
+  const nextApproval: SessionApprovalMetadata = {
+    ...input.pendingApproval.metadata,
+    status: input.decision,
+    decidedAt: Date.now(),
+    decidedByMessageId: input.decisionMessage.id,
+  };
+  const updatedSourceMessage = sessionMessageRepo.updateMetadata(input.pendingApproval.message.id, {
+    ...existingMetadata,
+    risk_assessment: nextApproval.riskAssessment,
+    approval_card: nextApproval.approvalCard,
+    session_approval: nextApproval,
+  }) ?? input.pendingApproval.message;
+  wsHub.broadcastSession(input.session.id, {
+    type: 'session_message:new',
+    sessionId: input.session.id,
+    message: updatedSourceMessage,
+  });
+
+  const approved = input.decision === 'approved';
+  const gateMessage = sessionMessageRepo.create({
+    session_id: input.session.id,
+    role: 'system',
+    sender_id: 'risk-gate',
+    sender_name: '风险门禁',
+    content: approved
+      ? '风险确认已确认，正在启动 planner 执行原任务。'
+      : '风险确认已取消，本次任务不会启动 planner。',
+    message_type: 'system',
+    metadata: {
+      session_approval: nextApproval,
+      source_message_id: input.pendingApproval.message.id,
+      decision_message_id: input.decisionMessage.id,
+    },
+  });
+  const event = sessionEvidenceRepo.create({
+    session_id: input.session.id,
+    event_type: 'status',
+    source_message_id: input.decisionMessage.id,
+    title: approved ? '风险确认已确认' : '风险确认已取消',
+    summary: approved ? '用户确认执行中高风险任务。' : '用户取消执行中高风险任务。',
+    payload: {
+      session_approval: nextApproval,
+      gate_message_id: gateMessage.id,
+      source_message_id: input.pendingApproval.message.id,
+      decision_message_id: input.decisionMessage.id,
+    },
+  });
+  wsHub.broadcastSession(input.session.id, {
+    type: 'session_message:new',
+    sessionId: input.session.id,
+    message: gateMessage,
+  });
+  wsHub.broadcastSession(input.session.id, {
+    type: 'session_evidence:new',
+    sessionId: input.session.id,
+    event,
+  });
+  broadcastActiveSessionUpsert(input.session.id);
+
+  if (!approved) return;
+  await startSessionPlannerRun({
+    project: input.project,
+    session: input.session,
+    content: nextApproval.originalContent,
+    workspacePath: input.workspacePath,
+    workspaceFileRefs: nextApproval.workspaceFileRefs ?? input.workspaceFileRefs,
+    libraryFileRefs: nextApproval.libraryFileRefs ?? input.libraryFileRefs,
+    platformSkillRefs: nextApproval.platformSkillRefs ?? input.platformSkillRefs,
+    plannerRuntime: input.plannerRuntime,
+  });
+}
+
+function findLatestPendingSessionApproval(sessionId: string): PendingSessionApproval | null {
+  const messages = sessionMessageRepo.listBySession(sessionId, { limit: 100 });
+  for (const message of [...messages].reverse()) {
+    const metadata = parseSessionApprovalMetadata(message);
+    if (metadata?.status === 'pending' && metadata.sourceMessageId === message.id) return { message, metadata };
+  }
+  return null;
+}
+
+function parseSessionApprovalMetadata(message: SessionMessage): SessionApprovalMetadata | null {
+  const metadata = parseSessionMessageMetadata(message.metadata);
+  const approval = metadata.session_approval;
+  if (!isRecord(approval)) return null;
+  if (approval.status !== 'pending' && approval.status !== 'approved' && approval.status !== 'rejected') return null;
+  if (typeof approval.originalContent !== 'string') return null;
+  if (!isRecord(approval.riskAssessment) || !isRecord(approval.approvalCard)) return null;
+  return {
+    status: approval.status,
+    sourceMessageId: typeof approval.sourceMessageId === 'string' ? approval.sourceMessageId : message.id,
+    originalContent: approval.originalContent,
+    riskAssessment: approval.riskAssessment as unknown as TaskRiskAssessment,
+    approvalCard: approval.approvalCard as unknown as ApprovalCard,
+    workspaceFileRefs: Array.isArray(approval.workspaceFileRefs) ? approval.workspaceFileRefs.filter(isString) : [],
+    libraryFileRefs: Array.isArray(approval.libraryFileRefs) ? approval.libraryFileRefs.filter(isString) : [],
+    platformSkillRefs: Array.isArray(approval.platformSkillRefs)
+      ? approval.platformSkillRefs.filter(isResolvedPlatformSkillRef)
+      : [],
+    createdAt: typeof approval.createdAt === 'number' ? approval.createdAt : message.created_at,
+    decidedAt: typeof approval.decidedAt === 'number' ? approval.decidedAt : undefined,
+    decidedByMessageId: typeof approval.decidedByMessageId === 'string' ? approval.decidedByMessageId : undefined,
+  };
+}
+
+function getSessionApprovalDecision(content: string): 'approved' | 'rejected' | null {
+  const normalized = normalizeSessionApprovalDecisionText(content);
+  if (!normalized) return null;
+  if (/^(确认|同意|批准|继续|可以|执行|yes|y|approve|approved|ok|okay)$/i.test(normalized)) {
+    return 'approved';
+  }
+  if (/^(取消|拒绝|不要执行|停止|终止|否|不|no|n|reject|rejected|cancel|cancelled)$/i.test(normalized)) {
+    return 'rejected';
+  }
+  return null;
+}
+
+function normalizeSessionApprovalDecisionText(content: string): string {
+  return content
+    .trim()
+    .toLowerCase()
+    .replace(/^[`"'“”‘’\s]+|[`"'“”‘’。，、；;：:！？!,?\s]+$/g, '');
+}
+
+function buildSessionApprovalRequestContent(approvalCard: ApprovalCard): string {
+  const scope = [
+    ...approvalCard.scopeRead.map((item) => `读：${item}`),
+    ...approvalCard.scopeWrite.map((item) => `写：${item}`),
+  ];
+  return [
+    `风险确认：该任务被判定为 ${approvalCard.riskLevel} 风险，需要确认后再启动 planner。`,
+    `任务类型：${approvalCard.taskKind}`,
+    `原因：${approvalCard.approvalReason}`,
+    `执行方式：${approvalCard.executionMode}`,
+    scope.length > 0 ? `范围：${scope.join('；')}` : null,
+    '请回复“确认”继续执行，或回复“取消”放弃本次执行。',
+  ].filter(Boolean).join('\n');
+}
+
+function shouldApplySessionRiskGate(content: string, platformSkillRefs: ResolvedPlatformSkillRef[]): boolean {
+  if (platformSkillRefs.length > 0) return true;
+  const normalized = content.toLowerCase();
+  return SESSION_DEVELOPMENT_SIGNALS.some((signal) => normalized.includes(signal.toLowerCase()));
+}
+
+function extractPathLikeScopes(content: string): string[] {
+  const scopes: string[] = [];
+  const seen = new Set<string>();
+  for (const rawToken of content.split(/\s+/)) {
+    const token = rawToken
+      .trim()
+      .replace(/^[`"'([{（【]+|[`"')\]}。，、；;：:！？!,?]+$/g, '');
+    if (!isPathLikeScope(token) || seen.has(token)) continue;
+    scopes.push(token);
+    seen.add(token);
+  }
+  return scopes;
+}
+
+function parseSessionMessageMetadata(metadata: string | null): Record<string, unknown> {
+  if (!metadata) return {};
+  try {
+    const parsed = JSON.parse(metadata) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function dedupeStringList(values: string[]): string[] {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (!value || seen.has(value)) continue;
+    result.push(value);
+    seen.add(value);
+  }
+  return result;
+}
+
+function approvalAgentsForAssessment(assessment: TaskRiskAssessment): string[] {
+  switch (assessment.taskKind) {
+    case 'fullstack_change':
+      return ['planner', 'frontend-executor', 'backend-executor', 'test-runner'];
+    case 'frontend_change':
+      return ['planner', 'frontend-executor', 'test-runner'];
+    case 'backend_change':
+    case 'bug_fix':
+      return ['planner', 'backend-executor', 'test-runner'];
+    default:
+      return ['planner', 'test-runner'];
+  }
+}
+
+function approvalExecutionModeForAssessment(assessment: TaskRiskAssessment): 'serial' | 'parallel' | 'hybrid' {
+  return assessment.taskKind === 'fullstack_change' ? 'hybrid' : 'serial';
+}
+
+function isPathLikeScope(value: string): boolean {
+  if (!value || value.length > 180) return false;
+  if (/^https?:\/\//i.test(value)) return false;
+  return value.includes('/') ||
+    /\.(?:[cm]?[jt]sx?|json|mdx?|css|scss|html|vue|sql|ya?ml|sh|env|lock|txt)$/i.test(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+function isResolvedPlatformSkillRef(value: unknown): value is ResolvedPlatformSkillRef {
+  return isRecord(value) &&
+    (value.provider === 'codex' || value.provider === 'claudecode' || value.provider === 'opencode') &&
+    typeof value.name === 'string' &&
+    (typeof value.description === 'string' || value.description === null);
 }
 
 function buildUserMessageMetadata(input: {
@@ -452,3 +874,47 @@ function buildPlatformSkillsPrompt(skills: ResolvedPlatformSkillRef[]): string {
     ].filter(Boolean).join('\n')),
   ].join('\n');
 }
+
+const SESSION_DEVELOPMENT_SIGNALS = [
+  'implement',
+  'develop',
+  'modify',
+  'change',
+  'edit',
+  'editing',
+  'edited',
+  'fix',
+  'add',
+  'update',
+  'refactor',
+  'migration',
+  'database',
+  'frontend',
+  'backend',
+  'api',
+  'route',
+  'component',
+  '实现',
+  '开发',
+  '修改',
+  '编辑',
+  '修复',
+  '新增',
+  '添加',
+  '调整',
+  '接入',
+  '重构',
+  '迁移',
+  '升级',
+  '删除',
+  '前端',
+  '后端',
+  '接口',
+  '数据库',
+  '路由',
+  '组件',
+  '页面',
+  '状态栏',
+  '代码',
+  'git',
+];

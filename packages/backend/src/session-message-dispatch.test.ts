@@ -82,13 +82,237 @@ test('dispatchSessionUserMessage injects explicit planner platform skill refs in
   });
   await new Promise((resolve) => setTimeout(resolve, 30));
 
-  const metadata = JSON.parse(message.metadata ?? '{}') as {
+  const updatedMessage = sessionMessageRepo.get(message.id);
+  const metadata = JSON.parse(updatedMessage?.metadata ?? '{}') as {
     platform_skill_refs?: Array<{ provider: string; name: string }>;
   };
   assert.deepEqual(metadata.platform_skill_refs, [{ provider: 'codex', name: 'frontend-design' }]);
   assert.match(prompts[0] ?? '', /## Explicit Platform Skills/);
   assert.match(prompts[0] ?? '', /\$frontend-design/);
   assert.match(prompts[0] ?? '', /Frontend design workflow\./);
+});
+
+test('dispatchSessionUserMessage gates medium-risk development tasks before starting planner', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Risk Gate',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-risk-gate-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Risk Gate',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const prompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-risk-gate', stderr: '' };
+    },
+  });
+
+  const message = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: GIT_STATUS_BAR_TASK,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.equal(prompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+
+  const messages = sessionMessageRepo.listBySession(session.id);
+  const gateMessage = messages.find((item) => item.sender_id === 'risk-gate');
+  assert.equal(message.content, GIT_STATUS_BAR_TASK);
+  assert.ok(gateMessage);
+  assert.match(gateMessage.content, /风险确认/);
+  assert.match(gateMessage.content, /回复“确认”/);
+
+  const updatedMessage = sessionMessageRepo.get(message.id);
+  const metadata = JSON.parse(updatedMessage?.metadata ?? '{}') as {
+    risk_assessment?: { riskLevel?: string; requiresApproval?: boolean };
+    approval_card?: { riskLevel?: string; taskKind?: string };
+    session_approval?: { status?: string; originalContent?: string };
+  };
+  assert.equal(metadata.risk_assessment?.riskLevel, 'medium');
+  assert.equal(metadata.risk_assessment?.requiresApproval, true);
+  assert.equal(metadata.approval_card?.riskLevel, 'medium');
+  assert.equal(metadata.session_approval?.status, 'pending');
+  assert.equal(metadata.session_approval?.originalContent, GIT_STATUS_BAR_TASK);
+});
+
+test('dispatchSessionUserMessage resumes approved session task with original content', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Risk Approval',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-risk-approval-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Risk Approval',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const prompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-risk-approved', stderr: '' };
+    },
+  });
+
+  const taskMessage = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: GIT_STATUS_BAR_TASK,
+  });
+  await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '确认',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const runs = sessionRunRepo.listBySession(session.id);
+  assert.equal(runs.length, 1);
+  assert.match(prompts[0] ?? '', new RegExp(escapeRegExp(GIT_STATUS_BAR_TASK)));
+  assert.doesNotMatch(prompts[0] ?? '', /## User Request\n\n确认$/);
+
+  const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
+  const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
+    session_approval?: { status?: string; decidedByMessageId?: string };
+  };
+  assert.equal(metadata.session_approval?.status, 'approved');
+
+  const messages = sessionMessageRepo.listBySession(session.id);
+  assert.ok(messages.some((item) => item.sender_id === 'risk-gate' && /已确认/.test(item.content)));
+});
+
+test('dispatchSessionUserMessage gates high-risk referenced files for edit requests', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Referenced Risk',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-referenced-risk-')),
+  });
+  writeFileSync(join(project.path, 'package.json'), '{"name":"risk-test"}\n');
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Referenced Risk',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const prompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-referenced-risk', stderr: '' };
+    },
+  });
+
+  const message = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '修改这个文件',
+    workspaceFileRefs: ['package.json'],
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.equal(prompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+
+  const updatedMessage = sessionMessageRepo.get(message.id);
+  const metadata = JSON.parse(updatedMessage?.metadata ?? '{}') as {
+    risk_assessment?: { riskLevel?: string; approvalReason?: string; scopeWrite?: string[] };
+    approval_card?: { riskLevel?: string; scopeWrite?: string[] };
+  };
+  assert.equal(metadata.risk_assessment?.riskLevel, 'high');
+  assert.equal(metadata.risk_assessment?.approvalReason, 'dependency/root config changes require approval');
+  assert.deepEqual(metadata.risk_assessment?.scopeWrite, ['package.json']);
+  assert.deepEqual(metadata.approval_card?.scopeWrite, ['package.json']);
+});
+
+test('dispatchSessionUserMessage treats edit wording as referenced file write intent', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Edit Wording Risk',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-edit-wording-risk-')),
+  });
+  writeFileSync(join(project.path, 'package.json'), '{"name":"edit-risk-test"}\n');
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Edit Wording Risk',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const prompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-edit-wording-risk', stderr: '' };
+    },
+  });
+
+  const message = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: 'edit this file',
+    workspaceFileRefs: ['package.json'],
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.equal(prompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+
+  const updatedMessage = sessionMessageRepo.get(message.id);
+  const metadata = JSON.parse(updatedMessage?.metadata ?? '{}') as {
+    risk_assessment?: { riskLevel?: string; scopeWrite?: string[] };
+  };
+  assert.equal(metadata.risk_assessment?.riskLevel, 'high');
+  assert.deepEqual(metadata.risk_assessment?.scopeWrite, ['package.json']);
+});
+
+test('dispatchSessionUserMessage cancels pending session approval without starting planner', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Risk Cancel',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-risk-cancel-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Risk Cancel',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const prompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-risk-cancelled', stderr: '' };
+    },
+  });
+
+  const taskMessage = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: GIT_STATUS_BAR_TASK,
+  });
+  await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '取消。',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.equal(prompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+
+  const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
+  const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
+    session_approval?: { status?: string };
+  };
+  assert.equal(metadata.session_approval?.status, 'rejected');
+
+  const messages = sessionMessageRepo.listBySession(session.id);
+  assert.ok(messages.some((item) => item.sender_id === 'risk-gate' && /已取消/.test(item.content)));
 });
 
 test('dispatchSessionUserMessage prepends global session prompt before context and user request', async () => {
@@ -132,7 +356,8 @@ test('dispatchSessionUserMessage prepends global session prompt before context a
       prompt.indexOf('当前目标：完成会话提示词验收'),
   );
   assert.ok(prompt.indexOf('当前目标：完成会话提示词验收') < prompt.indexOf('## User Request'));
-  assert.ok(prompt.endsWith('## User Request\n\n分析当前状态'));
+  assert.ok(prompt.includes('## User Request\n\n分析当前状态'));
+  assert.ok(prompt.indexOf('## User Request\n\n分析当前状态') < prompt.indexOf('<opendeepsea-session-tools>'));
 });
 
 test('dispatchSessionUserMessage injects knowledge tool prompt into runtime prompt', async () => {
@@ -673,4 +898,10 @@ function createPlatformSkill(provider: 'codex' | 'claudecode' | 'opencode', name
     `Use ${name}.`,
     '',
   ].join('\n'));
+}
+
+const GIT_STATUS_BAR_TASK = '请实现一个开发任务：在会话页面底部状态栏显示当前项目的 Git 分支、未提交改动数量和最后一次提交摘要。后端需要提供读取 Git 状态的接口，前端需要展示并在状态变化后刷新。';
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
