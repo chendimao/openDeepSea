@@ -1299,17 +1299,6 @@ function TranscriptCanvas({
   return (
     <section className="deepsea-transcript" aria-label="Active Session">
       <div className="deepsea-transcript__scroll" data-transcript-scroll="true" ref={transcriptRef}>
-        <div className="deepsea-transcript__heading">
-          <h2>
-            <MessageSquare aria-hidden="true" />
-            3. 对话记录 <span>(Transcript)</span>
-          </h2>
-          <button type="button">
-            全部展开
-            <ChevronDown aria-hidden="true" />
-          </button>
-        </div>
-
         {timeline.length === 0 ? (
           <div className="deepsea-empty deepsea-empty--center">发送第一条消息开始当前会话。</div>
         ) : timeline.map((item) => {
