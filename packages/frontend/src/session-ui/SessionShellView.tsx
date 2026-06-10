@@ -50,11 +50,18 @@ import type {
   SessionToolRow,
   SessionWorkspacePayload,
   StatusSnapshot,
+  WorkspaceFilePreview,
 } from '../lib/types';
 import { api } from '../lib/api';
 import { parseMessageMetadata } from '../lib/messageMetadata';
 import { isPinnedItem, layerIds, reorderWithinLayer, sortPinnedItems } from '../lib/sortableItems';
-import { MessageContent, isVisualCompanionOfferContent } from '../components/MessageContent';
+import {
+  MarkdownPreview,
+  MessageContent,
+  isVisualCompanionOfferContent,
+  type WorkspaceFileOpenHandler,
+} from '../components/MessageContent';
+import { Dialog, DialogContent } from '../components/ui/Dialog';
 import { ImageJobStatusCard } from '../image-generation/ImageJobStatusCard';
 import {
   MarkdownDisplaySwitch,
@@ -1226,6 +1233,8 @@ function TranscriptCanvas({
   const [displayModes, setDisplayModes] = useState<Record<string, SessionMessageDisplayMode>>({});
   const [copiedActionKey, setCopiedActionKey] = useState<string | null>(null);
   const [acceptedVisualCompanionOfferKeys, setAcceptedVisualCompanionOfferKeys] = useState<Set<string>>(() => new Set());
+  const [workspacePreviewPath, setWorkspacePreviewPath] = useState<string | null>(null);
+  const openWorkspaceFilePreview: WorkspaceFileOpenHandler = (path) => setWorkspacePreviewPath(path);
   const displayModeFor = (key: string): SessionMessageDisplayMode => displayModes[key] ?? 'preview';
   const setDisplayModeFor = (key: string, mode: SessionMessageDisplayMode) => {
     setDisplayModes((current) => ({ ...current, [key]: mode }));
@@ -1319,6 +1328,7 @@ function TranscriptCanvas({
                 onCopyText={(content, key) => void copyTranscriptText(content, key)}
                 visualCompanionAccepted={acceptedVisualCompanionOfferKeys.has(`message:${item.message.id}`)}
                 onAcceptVisualCompanion={() => acceptVisualCompanionOffer(`message:${item.message.id}`)}
+                onOpenWorkspaceFile={openWorkspaceFilePreview}
               />
             );
           }
@@ -1417,6 +1427,7 @@ function TranscriptCanvas({
                       events={runAgentEvents}
                       fallbackText={output}
                       streaming={isRunLive(item.run.status)}
+                      onOpenWorkspaceFile={openWorkspaceFilePreview}
                     />
                   )}
                 </div>
@@ -1434,6 +1445,13 @@ function TranscriptCanvas({
           onSendMessage={onSendMessage}
         />
       </div>
+      <WorkspaceDocumentPreviewDialog
+        projectId={projectId}
+        path={workspacePreviewPath}
+        onOpenChange={(open) => {
+          if (!open) setWorkspacePreviewPath(null);
+        }}
+      />
     </section>
   );
 }
@@ -1515,6 +1533,7 @@ function TranscriptMessage({
   onCopyText,
   visualCompanionAccepted,
   onAcceptVisualCompanion,
+  onOpenWorkspaceFile,
 }: {
   projectId: string;
   message: SessionMessage;
@@ -1526,6 +1545,7 @@ function TranscriptMessage({
   onCopyText: (content: string, key: string) => void;
   visualCompanionAccepted: boolean;
   onAcceptVisualCompanion: () => void;
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler;
 }): JSX.Element {
   const metadata = parseMessageMetadata(message.metadata);
   const imageJobId = metadata.image_generation_job_id;
@@ -1551,6 +1571,7 @@ function TranscriptMessage({
         attachments={metadata.attachments}
         displayMode={displayMode}
         onDisplayModeChange={onDisplayModeChange}
+        onOpenWorkspaceFile={onOpenWorkspaceFile}
         actions={(
           <>
             <button
@@ -1636,10 +1657,12 @@ function SessionRunTimeline({
   events,
   fallbackText,
   streaming,
+  onOpenWorkspaceFile,
 }: {
   events: SessionAgentEvent[];
   fallbackText: string;
   streaming: boolean;
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler;
 }): JSX.Element {
   const items = buildSessionRunTranscriptItems(events, fallbackText);
   const lastTextItemId = [...items].reverse().find((item) => item.type === 'text')?.id ?? null;
@@ -1653,6 +1676,7 @@ function SessionRunTimeline({
             mode="preview"
             streaming={streaming && item.id === lastTextItemId}
             suppressTraceEvents
+            onOpenWorkspaceFile={onOpenWorkspaceFile}
             inlineSuffix={item.events.length > 0 ? (
               <button
                 type="button"
@@ -1678,6 +1702,78 @@ function SessionRunTimeline({
       ) : null}
     </div>
   );
+}
+
+function WorkspaceDocumentPreviewDialog({
+  projectId,
+  path,
+  onOpenChange,
+}: {
+  projectId: string;
+  path: string | null;
+  onOpenChange: (open: boolean) => void;
+}): JSX.Element {
+  const {
+    data,
+    error,
+    isError,
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: ['workspace-message-file-preview', projectId, path],
+    queryFn: () => api.getWorkspaceFilePreview(projectId, path!),
+    enabled: Boolean(path),
+    retry: false,
+  });
+
+  return (
+    <Dialog open={Boolean(path)} onOpenChange={onOpenChange}>
+      <DialogContent className="deepsea-workspace-doc-preview" title={path ?? '文件预览'}>
+        {!path ? null : isLoading ? (
+          <WorkspaceDocumentPreviewState>正在加载文档...</WorkspaceDocumentPreviewState>
+        ) : isError ? (
+          <WorkspaceDocumentPreviewState>
+            <strong>文档无法预览</strong>
+            <span>{error instanceof Error ? error.message : '读取文件失败'}</span>
+            <button type="button" onClick={() => void refetch()}>
+              <RefreshCcw aria-hidden="true" />
+              重试
+            </button>
+          </WorkspaceDocumentPreviewState>
+        ) : data ? (
+          <WorkspaceDocumentPreviewContent preview={data} />
+        ) : (
+          <WorkspaceDocumentPreviewState>没有文件内容。</WorkspaceDocumentPreviewState>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WorkspaceDocumentPreviewContent({ preview }: { preview: WorkspaceFilePreview }): JSX.Element {
+  return (
+    <div className="deepsea-workspace-doc-preview__body">
+      <div className="deepsea-workspace-doc-preview__meta">
+        <span>{preview.path}</span>
+        {preview.truncated ? <strong>已截断</strong> : null}
+      </div>
+      {isMarkdownWorkspacePreview(preview) ? (
+        <div className="deepsea-workspace-doc-preview__markdown">
+          <MarkdownPreview content={preview.content} />
+        </div>
+      ) : (
+        <pre className="deepsea-workspace-doc-preview__code"><code>{preview.content}</code></pre>
+      )}
+    </div>
+  );
+}
+
+function WorkspaceDocumentPreviewState({ children }: { children: React.ReactNode }): JSX.Element {
+  return <div className="deepsea-file-viewer-state">{children}</div>;
+}
+
+function isMarkdownWorkspacePreview(preview: WorkspaceFilePreview): boolean {
+  return preview.path.endsWith('.md') || preview.path.endsWith('.mdx') || preview.language === 'markdown';
 }
 
 export function buildSessionRunTranscriptItems(

@@ -55,6 +55,38 @@ test('keeps inline suffix inside the final markdown paragraph', () => {
   assert.match(html, /<p>设计已确认，继续使用 <code>brainstorming<\/code>。\u2060<button[^>]+aria-label="查看本段调用详情"[^>]*>i<\/button><\/p>/);
 });
 
+test('renders workspace document paths as preview buttons when a handler is provided', () => {
+  const path = 'docs/superpowers/specs/2026-06-09-会话底部状态栏Git信息设计.md';
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent
+        content={`Spec 路径：\`${path}\``}
+        onOpenWorkspaceFile={() => undefined}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /message-workspace-file-ref/);
+  assert.match(html, new RegExp(`data-workspace-file-path="${escapeHtmlAttributeForRegExp(path)}"`));
+  assert.match(html, />docs\/superpowers\/specs\/2026-06-09-会话底部状态栏Git信息设计\.md<\/button>/);
+  assert.doesNotMatch(html, new RegExp(`<code>${escapeHtmlAttributeForRegExp(path)}<\\/code>`));
+});
+
+test('keeps explicit markdown links as links when link text looks like a workspace path', () => {
+  const path = 'docs/superpowers/specs/git.md';
+  const html = renderToStaticMarkup(
+    <I18nProvider>
+      <MessageContent
+        content={`[${path}](https://example.com/spec)`}
+        onOpenWorkspaceFile={() => undefined}
+      />
+    </I18nProvider>,
+  );
+
+  assert.match(html, /<a href="https:\/\/example\.com\/spec" target="_blank" rel="noreferrer noopener">docs\/superpowers\/specs\/git\.md<\/a>/);
+  assert.doesNotMatch(html, /message-workspace-file-ref/);
+});
+
 test('keeps generic json string values faithful while translating semantic summary fields', () => {
   const content = [
     '```json',
@@ -730,6 +762,13 @@ function renderMessage(content: string): string {
       <MessageContent content={content} />
     </I18nProvider>,
   );
+}
+
+function escapeHtmlAttributeForRegExp(value: string): string {
+  return value
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;');
 }
 
 function roomAgent(input: Pick<RoomAgent, 'agent_id' | 'agent_name'>): RoomAgent {

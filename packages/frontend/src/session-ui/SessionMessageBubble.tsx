@@ -1,6 +1,11 @@
 import { Eye, FileText, Image as ImageIcon, Paperclip } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { MarkdownPreview, MessageContent, isMarkdownMessageContent } from '../components/MessageContent';
+import {
+  MarkdownPreview,
+  MessageContent,
+  isMarkdownMessageContent,
+  type WorkspaceFileOpenHandler,
+} from '../components/MessageContent';
 import { Dialog, DialogContent } from '../components/ui/Dialog';
 import { formatFileSize } from '../lib/composerModel';
 import type { MessageAttachmentMetadata } from '../lib/types';
@@ -19,6 +24,7 @@ export function SessionMessageBubble({
   attachments = [],
   displayMode,
   onDisplayModeChange,
+  onOpenWorkspaceFile,
 }: {
   role: SessionMessageBubbleRole;
   content: string;
@@ -30,6 +36,7 @@ export function SessionMessageBubble({
   attachments?: MessageAttachmentMetadata[];
   displayMode?: SessionMessageDisplayMode;
   onDisplayModeChange?: (mode: SessionMessageDisplayMode) => void;
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler;
 }): JSX.Element {
   const [localDisplayMode, setLocalDisplayMode] = useState<SessionMessageDisplayMode>('preview');
   const activeDisplayMode = displayMode ?? localDisplayMode;
@@ -50,9 +57,14 @@ export function SessionMessageBubble({
       </header>
       <div className="deepsea-message-body">
         {previewContent && activeDisplayMode === 'preview' ? (
-          <MarkdownPreview content={displayContent} />
+          <MarkdownPreview content={displayContent} onOpenWorkspaceFile={onOpenWorkspaceFile} />
         ) : (
-          <MessageContent content={displayContent} mode={activeDisplayMode} suppressTraceEvents />
+          <MessageContent
+            content={displayContent}
+            mode={activeDisplayMode}
+            suppressTraceEvents
+            onOpenWorkspaceFile={activeDisplayMode === 'preview' ? onOpenWorkspaceFile : undefined}
+          />
         )}
         <SessionMessageAttachments attachments={attachments} />
       </div>

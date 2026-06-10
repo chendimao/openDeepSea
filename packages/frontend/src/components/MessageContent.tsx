@@ -18,11 +18,14 @@ type MessagePart =
   | { type: 'text'; value: string }
   | { type: 'code'; value: string; language: string };
 
+export type WorkspaceFileOpenHandler = (path: string) => void;
+
 type JsonValue = StructuredJsonValue;
 type JsonObject = StructuredJsonObject;
 
 const fencePattern = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
 const streamingCursorToken = '\uE000';
+const workspaceDocumentPathPattern = /(^|[^\p{L}\p{N}_./-])((?:docs|\.codex|\.agents)\/[^\s`"'<>]+?\.(?:md|mdx|txt))(?![\p{L}\p{N}_./-])/gu;
 const visualCompanionOfferEnglish =
   "Some of what we're working on might be easier to explain if I can show it to you in a web browser. I can put together mockups, diagrams, comparisons, and other visuals as we go. This feature is still new and can be token-intensive. Want to try it? (Requires opening a local URL)";
 const visualCompanionOfferChinese =
@@ -108,6 +111,7 @@ export function MessageContent({
   suppressWorkflowJsonBlocks = false,
   suppressTraceEvents = false,
   inlineSuffix,
+  onOpenWorkspaceFile,
 }: {
   content: string;
   streaming?: boolean;
@@ -120,6 +124,7 @@ export function MessageContent({
   suppressWorkflowJsonBlocks?: boolean;
   suppressTraceEvents?: boolean;
   inlineSuffix?: ReactNode;
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler;
 }): JSX.Element {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const { locale, t } = useI18n();
@@ -154,6 +159,7 @@ export function MessageContent({
           suppressWorkflowJsonBlocks={suppressWorkflowJsonBlocks}
           suppressTraceEvents={suppressTraceEvents}
           locale={locale}
+          onOpenWorkspaceFile={onOpenWorkspaceFile}
         />
       ) : activeMode === 'source' ? (
         <CodeBlock
@@ -176,6 +182,7 @@ export function MessageContent({
                 suppressTaskExecutionSummary={suppressTaskExecutionSummary}
                 suppressWorkflowJsonBlocks={suppressWorkflowJsonBlocks}
                 inlineSuffix={inlineSuffix}
+                onOpenWorkspaceFile={onOpenWorkspaceFile}
               />
             ) : (
               <>
@@ -184,7 +191,7 @@ export function MessageContent({
                     if (!part.value) return null;
                     return (
                       <span key={`text-${index}`} className="whitespace-pre-wrap break-words">
-                        {renderInlineTextReferences(part.value, agentNameById, taskTitleById)}
+                        {renderInlineTextReferences(part.value, agentNameById, taskTitleById, 'inline', onOpenWorkspaceFile)}
                         {streaming && index === lastTextPartIndex && <StreamingCursor />}
                         {index === lastTextPartIndex ? renderInlineSuffix(inlineSuffix) : null}
                       </span>
@@ -225,6 +232,7 @@ function AgentTranscriptView({
   suppressWorkflowJsonBlocks = false,
   suppressTraceEvents = false,
   locale,
+  onOpenWorkspaceFile,
 }: {
   transcript: AgentTranscriptModel;
   streaming: boolean;
@@ -234,6 +242,7 @@ function AgentTranscriptView({
   suppressWorkflowJsonBlocks?: boolean;
   suppressTraceEvents?: boolean;
   locale: 'zh' | 'en';
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler;
 }): JSX.Element {
   return (
     <div className="agent-transcript">
@@ -249,6 +258,7 @@ function AgentTranscriptView({
               taskTitleById={taskTitleById}
               suppressTaskExecutionSummary={suppressTaskExecutionSummary}
               suppressWorkflowJsonBlocks={suppressWorkflowJsonBlocks}
+              onOpenWorkspaceFile={onOpenWorkspaceFile}
             />
           </div>
         ) : (
@@ -314,6 +324,7 @@ export function MarkdownPreview({
   suppressTaskExecutionSummary = false,
   suppressWorkflowJsonBlocks = false,
   inlineSuffix,
+  onOpenWorkspaceFile,
 }: {
   content: string;
   streaming?: boolean;
@@ -322,6 +333,7 @@ export function MarkdownPreview({
   suppressTaskExecutionSummary?: boolean;
   suppressWorkflowJsonBlocks?: boolean;
   inlineSuffix?: ReactNode;
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler;
 }): JSX.Element {
   const { locale, t } = useI18n();
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -382,6 +394,7 @@ export function MarkdownPreview({
             agentNameById={agentNameById}
             taskTitleById={taskTitleById}
             inlineSuffix={index === lastTextPartIndex ? inlineSuffix : undefined}
+            onOpenWorkspaceFile={onOpenWorkspaceFile}
           />
         );
       })}
@@ -559,6 +572,26 @@ function MarkdownInlineCode({ children }: { children?: ReactNode }): JSX.Element
   return <code>{children}</code>;
 }
 
+function WorkspaceFileReference({
+  path,
+  onOpen,
+}: {
+  path: string;
+  onOpen: WorkspaceFileOpenHandler;
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      className="message-workspace-file-ref"
+      data-workspace-file-path={path}
+      title={`预览 ${path}`}
+      onClick={() => onOpen(path)}
+    >
+      {path}
+    </button>
+  );
+}
+
 function renderInlineSuffix(suffix: ReactNode): ReactNode {
   if (!suffix) return null;
   return <>{'\u2060'}{suffix}</>;
@@ -617,12 +650,14 @@ function MarkdownText({
   agentNameById,
   taskTitleById,
   inlineSuffix,
+  onOpenWorkspaceFile,
 }: {
   text: string;
   streaming?: boolean;
   agentNameById?: Map<string, string>;
   taskTitleById?: Map<string, string>;
   inlineSuffix?: ReactNode;
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler;
 }): JSX.Element {
   const source = streaming ? `${text}${streamingCursorToken}` : text;
   const hasSuffixTarget = inlineSuffix ? countMarkdownInlineSuffixTargets(source) > 0 : false;
@@ -630,6 +665,7 @@ function MarkdownText({
   const components = createMarkdownComponents(agentNameById, taskTitleById, {
     inlineSuffix,
     suffixTargetEndOffset,
+    onOpenWorkspaceFile,
   });
 
   return (
@@ -649,9 +685,14 @@ function MarkdownText({
 function createMarkdownComponents(
   agentNameById?: Map<string, string>,
   taskTitleById?: Map<string, string>,
-  suffixOptions: { inlineSuffix?: ReactNode; suffixTargetEndOffset: number | null } = { suffixTargetEndOffset: null },
+  suffixOptions: {
+    inlineSuffix?: ReactNode;
+    suffixTargetEndOffset: number | null;
+    onOpenWorkspaceFile?: WorkspaceFileOpenHandler;
+  } = { suffixTargetEndOffset: null },
 ): Components {
-  const renderChildren = (children: ReactNode) => renderMarkdownReferenceChildren(children, agentNameById, taskTitleById);
+  const renderChildren = (children: ReactNode) =>
+    renderMarkdownReferenceChildren(children, agentNameById, taskTitleById, 'markdown', suffixOptions.onOpenWorkspaceFile);
 
   const renderWithOptionalSuffix = (children: ReactNode, node: unknown) => {
     const content = renderChildren(children);
@@ -664,10 +705,11 @@ function createMarkdownComponents(
   return {
     a: ({ href, children }) => {
       const safeHref = href ? sanitizeMarkdownHref(href) : null;
-      if (!safeHref) return <>{renderChildren(children)}</>;
+      const content = renderMarkdownReferenceChildren(children, agentNameById, taskTitleById);
+      if (!safeHref) return <>{content}</>;
       return (
         <a href={safeHref} target="_blank" rel="noreferrer noopener">
-          {renderChildren(children)}
+          {content}
         </a>
       );
     },
@@ -687,7 +729,13 @@ function createMarkdownComponents(
       if (!safeSrc) return null;
       return <img src={safeSrc} alt={alt ?? ''} loading="lazy" decoding="async" referrerPolicy="no-referrer" />;
     },
-    code: MarkdownInlineCode,
+    code: ({ children }) => {
+      const workspacePath = suffixOptions.onOpenWorkspaceFile ? getSingleWorkspaceDocumentPath(children) : null;
+      if (workspacePath && suffixOptions.onOpenWorkspaceFile) {
+        return <WorkspaceFileReference path={workspacePath} onOpen={suffixOptions.onOpenWorkspaceFile} />;
+      }
+      return <MarkdownInlineCode>{children}</MarkdownInlineCode>;
+    },
   };
 }
 
@@ -711,6 +759,7 @@ function renderInlineTextReferences(
   agentNameById?: Map<string, string>,
   taskTitleById?: Map<string, string>,
   keyPrefix = 'inline',
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler,
 ): string | Array<string | JSX.Element> {
   if (!text) return text;
   const pattern = /(^|[^\p{L}\p{N}_-])#task:([\p{L}\p{N}_-]+)/gu;
@@ -723,7 +772,7 @@ function renderInlineTextReferences(
     const taskId = match[2];
     const refStart = match.index + prefix.length;
     if (match.index > lastIndex) {
-      pushMaybeAgentNames(parts, text.slice(lastIndex, match.index), `${keyPrefix}-agent-${lastIndex}`, agentNameById);
+      pushMaybeAgentNames(parts, text.slice(lastIndex, match.index), `${keyPrefix}-agent-${lastIndex}`, agentNameById, onOpenWorkspaceFile);
     }
     if (prefix) parts.push(prefix);
     parts.push(
@@ -736,9 +785,13 @@ function renderInlineTextReferences(
     lastIndex = refStart + `#task:${taskId}`.length;
   }
 
-  if (lastIndex === 0) return renderAgentNamesInText(text, agentNameById, keyPrefix);
+  if (lastIndex === 0) {
+    return renderWorkspaceFileReferences(text, keyPrefix, onOpenWorkspaceFile, (remainingText, nestedKeyPrefix) =>
+      renderAgentNamesInText(remainingText, agentNameById, nestedKeyPrefix)
+    );
+  }
   if (lastIndex < text.length) {
-    pushMaybeAgentNames(parts, text.slice(lastIndex), `${keyPrefix}-agent-${lastIndex}`, agentNameById);
+    pushMaybeAgentNames(parts, text.slice(lastIndex), `${keyPrefix}-agent-${lastIndex}`, agentNameById, onOpenWorkspaceFile);
   }
   return parts;
 }
@@ -748,20 +801,34 @@ function renderMarkdownReferenceChildren(
   agentNameById?: Map<string, string>,
   taskTitleById?: Map<string, string>,
   keyPrefix = 'markdown',
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler,
 ): ReactNode {
   return Children.map(children, (child, index) => {
     const childKey = `${keyPrefix}-${index}`;
     if (typeof child === 'string') {
-      return renderMarkdownTextNode(child, agentNameById, taskTitleById, childKey);
+      return renderMarkdownTextNode(child, agentNameById, taskTitleById, childKey, onOpenWorkspaceFile);
     }
     if (!isValidElement(child)) return child;
-    if (child.type === 'code' || child.type === 'pre' || child.type === MarkdownInlineCode) return child;
+    if (isMarkdownLinkElement(child)) return child;
+    if (isMarkdownCodeElement(child)) return child;
     const props = child.props as { children?: ReactNode };
     if (!('children' in props)) return child;
     return cloneElement(child as ReactElement<{ children?: ReactNode }>, {
-      children: renderMarkdownReferenceChildren(props.children, agentNameById, taskTitleById, childKey),
+      children: renderMarkdownReferenceChildren(props.children, agentNameById, taskTitleById, childKey, onOpenWorkspaceFile),
     });
   });
+}
+
+function isMarkdownLinkElement(child: ReactElement): boolean {
+  if (child.type === 'a') return true;
+  const props = child.props as { node?: { tagName?: unknown } };
+  return props.node?.tagName === 'a';
+}
+
+function isMarkdownCodeElement(child: ReactElement): boolean {
+  if (child.type === 'code' || child.type === 'pre' || child.type === MarkdownInlineCode) return true;
+  const props = child.props as { node?: { tagName?: unknown } };
+  return props.node?.tagName === 'code' || props.node?.tagName === 'pre';
 }
 
 function renderMarkdownTextNode(
@@ -769,6 +836,7 @@ function renderMarkdownTextNode(
   agentNameById?: Map<string, string>,
   taskTitleById?: Map<string, string>,
   keyPrefix = 'markdown-text',
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler,
 ): string | Array<string | JSX.Element> {
   const tokens: Array<string | JSX.Element> = [];
   let lastIndex = 0;
@@ -776,15 +844,15 @@ function renderMarkdownTextNode(
 
   for (let index = text.indexOf(streamingCursorToken); index !== -1; index = text.indexOf(streamingCursorToken, lastIndex)) {
     if (index > lastIndex) {
-      pushMarkdownReferenceText(tokens, text.slice(lastIndex, index), `${keyPrefix}-${tokenIndex++}`, agentNameById, taskTitleById);
+      pushMarkdownReferenceText(tokens, text.slice(lastIndex, index), `${keyPrefix}-${tokenIndex++}`, agentNameById, taskTitleById, onOpenWorkspaceFile);
     }
     tokens.push(<StreamingCursor key={`${keyPrefix}-cursor-${tokenIndex++}`} />);
     lastIndex = index + streamingCursorToken.length;
   }
 
-  if (lastIndex === 0) return renderInlineTextReferences(text, agentNameById, taskTitleById, keyPrefix);
+  if (lastIndex === 0) return renderInlineTextReferences(text, agentNameById, taskTitleById, keyPrefix, onOpenWorkspaceFile);
   if (lastIndex < text.length) {
-    pushMarkdownReferenceText(tokens, text.slice(lastIndex), `${keyPrefix}-${tokenIndex++}`, agentNameById, taskTitleById);
+    pushMarkdownReferenceText(tokens, text.slice(lastIndex), `${keyPrefix}-${tokenIndex++}`, agentNameById, taskTitleById, onOpenWorkspaceFile);
   }
   return tokens;
 }
@@ -795,8 +863,9 @@ function pushMarkdownReferenceText(
   keyPrefix: string,
   agentNameById?: Map<string, string>,
   taskTitleById?: Map<string, string>,
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler,
 ): void {
-  const rendered = renderInlineTextReferences(text, agentNameById, taskTitleById, keyPrefix);
+  const rendered = renderInlineTextReferences(text, agentNameById, taskTitleById, keyPrefix, onOpenWorkspaceFile);
   if (Array.isArray(rendered)) {
     tokens.push(...rendered);
   } else if (rendered) {
@@ -809,13 +878,76 @@ function pushMaybeAgentNames(
   text: string,
   keyPrefix: string,
   agentNameById?: Map<string, string>,
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler,
 ): void {
-  const rendered = renderAgentNamesInText(text, agentNameById, keyPrefix);
+  const rendered = renderWorkspaceFileReferences(text, keyPrefix, onOpenWorkspaceFile, (remainingText, nestedKeyPrefix) =>
+    renderAgentNamesInText(remainingText, agentNameById, nestedKeyPrefix)
+  );
   if (Array.isArray(rendered)) {
     tokens.push(...rendered);
   } else if (rendered) {
     tokens.push(rendered);
   }
+}
+
+function renderWorkspaceFileReferences(
+  text: string,
+  keyPrefix: string,
+  onOpenWorkspaceFile: WorkspaceFileOpenHandler | undefined,
+  renderRemainingText: (text: string, keyPrefix: string) => string | Array<string | JSX.Element>,
+): string | Array<string | JSX.Element> {
+  if (!onOpenWorkspaceFile || !text) return renderRemainingText(text, keyPrefix);
+  workspaceDocumentPathPattern.lastIndex = 0;
+  const parts: Array<string | JSX.Element> = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = workspaceDocumentPathPattern.exec(text)) !== null) {
+    const prefix = match[1] ?? '';
+    const path = match[2];
+    const pathStart = match.index + prefix.length;
+    if (match.index > lastIndex) {
+      pushRenderedText(parts, renderRemainingText(text.slice(lastIndex, match.index), `${keyPrefix}-text-${lastIndex}`));
+    }
+    if (prefix) parts.push(prefix);
+    parts.push(
+      <WorkspaceFileReference
+        key={`${keyPrefix}-workspace-file-${pathStart}`}
+        path={path}
+        onOpen={onOpenWorkspaceFile}
+      />,
+    );
+    lastIndex = pathStart + path.length;
+  }
+
+  if (lastIndex === 0) return renderRemainingText(text, keyPrefix);
+  if (lastIndex < text.length) {
+    pushRenderedText(parts, renderRemainingText(text.slice(lastIndex), `${keyPrefix}-text-${lastIndex}`));
+  }
+  return parts;
+}
+
+function pushRenderedText(parts: Array<string | JSX.Element>, rendered: string | Array<string | JSX.Element>): void {
+  if (Array.isArray(rendered)) {
+    parts.push(...rendered);
+  } else if (rendered) {
+    parts.push(rendered);
+  }
+}
+
+function getSingleWorkspaceDocumentPath(children: ReactNode): string | null {
+  const text = reactNodeToText(children).trim();
+  if (!text) return null;
+  workspaceDocumentPathPattern.lastIndex = 0;
+  const match = workspaceDocumentPathPattern.exec(text);
+  if (!match || match[1]) return null;
+  return match[2] === text ? text : null;
+}
+
+function reactNodeToText(node: ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(reactNodeToText).join('');
+  return '';
 }
 
 function TaskReferenceChip({ taskId, title }: { taskId: string; title?: string }): JSX.Element {
