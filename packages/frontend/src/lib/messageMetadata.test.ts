@@ -383,6 +383,68 @@ test('parseMessageMetadata accepts workflow recovery decision task event', () =>
   assert.equal(parsed.event_type, 'workflow_recovery_decided');
 });
 
+test('parseMessageMetadata preserves workflow risk approval metadata', () => {
+  const metadata = parseMessageMetadata(JSON.stringify({
+    event_type: 'workflow_stage_changed',
+    risk_assessment: {
+      taskKind: 'fullstack_change',
+      riskLevel: 'medium',
+      requiresApproval: true,
+      approvalReason: '涉及前后端联动。',
+      confidence: 0.8,
+      reasons: ['frontend and backend coordination'],
+      scopeRead: ['packages/backend'],
+      scopeWrite: ['packages/backend/src/workflows'],
+      verificationCommands: [],
+    },
+    approval_card: {
+      riskLevel: 'medium',
+      taskKind: 'fullstack_change',
+      summary: '涉及前后端联动。',
+      approvalReason: '涉及前后端联动。',
+      agents: ['planner', 'backend-executor'],
+      executionMode: 'serial',
+      scopeRead: ['packages/backend'],
+      scopeWrite: ['packages/backend/src/workflows'],
+      verification: [],
+      risks: [],
+      assumptions: [],
+    },
+  }));
+
+  assert.equal(metadata.risk_assessment?.riskLevel, 'medium');
+  assert.equal(metadata.approval_card?.taskKind, 'fullstack_change');
+});
+
+test('parseMessageMetadata preserves structured agent event metadata', () => {
+  const metadata = parseMessageMetadata(JSON.stringify({
+    event_type: 'runtime_event',
+    timeline_type: 'agent_decision_request',
+    timeline_status: 'running',
+    agent_run_id: 'agent-run',
+    agent_event: {
+      workflowRunId: 'run',
+      stepId: 'step',
+      agentRunId: 'agent-run',
+      type: 'decision_request',
+      summary: '需要确认写入范围。',
+      requestedDecision: {
+        question: '是否允许修改 shared types?',
+        options: ['允许', '拒绝'],
+        recommendation: '允许',
+        impact: '会影响 API contract。',
+      },
+      createdAt: 1,
+    },
+  }));
+
+  assert.equal(metadata.event_type, 'runtime_event');
+  assert.equal(metadata.timeline_type, 'agent_decision_request');
+  assert.equal(metadata.timeline_status, 'running');
+  assert.equal(metadata.agent_run_id, 'agent-run');
+  assert.equal(metadata.agent_event?.type, 'decision_request');
+});
+
 test('parseMessageMetadata accepts task execution and structured trace metadata', () => {
   const metadata = JSON.stringify({
     source_message_id: 'user-message-1',

@@ -235,6 +235,66 @@ export type TaskEventType =
   | 'workflow_cancelled'
   | 'workflow_failed'
   | 'workflow_memory_written';
+export type TaskKind =
+  | 'chat_answer'
+  | 'brainstorming'
+  | 'code_review'
+  | 'bug_fix'
+  | 'frontend_change'
+  | 'backend_change'
+  | 'fullstack_change'
+  | 'test_only'
+  | 'docs_only'
+  | 'ops_or_config'
+  | 'unknown';
+export type TaskRiskLevel = 'low' | 'medium' | 'high';
+export type WorkflowExecutionMode = 'serial' | 'parallel' | 'hybrid';
+export interface VerificationCommandMetadata {
+  command: string;
+  reason: string;
+  required: boolean;
+}
+export interface TaskRiskAssessment {
+  taskKind: TaskKind;
+  riskLevel: TaskRiskLevel;
+  requiresApproval: boolean;
+  approvalReason: string;
+  confidence: number;
+  reasons: string[];
+  scopeRead: string[];
+  scopeWrite: string[];
+  verificationCommands: VerificationCommandMetadata[];
+}
+export interface ApprovalCardMetadata {
+  riskLevel: Exclude<TaskRiskLevel, 'low'>;
+  taskKind: TaskKind;
+  summary: string;
+  approvalReason: string;
+  agents: string[];
+  executionMode: WorkflowExecutionMode;
+  scopeRead: string[];
+  scopeWrite: string[];
+  verification: VerificationCommandMetadata[];
+  risks: string[];
+  assumptions: string[];
+}
+export interface StructuredAgentEventMetadata {
+  workflowRunId: string;
+  stepId: string;
+  agentRunId: string;
+  type: 'started' | 'progress' | 'artifact' | 'decision_request' | 'scope_change_request' | 'blocked' | 'completed' | 'failed';
+  summary: string;
+  detail?: string;
+  progress?: number;
+  artifacts?: string[];
+  requestedDecision?: {
+    question: string;
+    options?: string[];
+    recommendation?: string;
+    impact: string;
+  };
+  createdAt: number;
+}
 export type SettingsScope = 'system' | 'project' | 'room';
 export type PlatformSkillProvider = 'codex' | 'claudecode' | 'opencode';
 export type PlatformSkillInstallMode = 'copy' | 'symlink' | 'unknown';
@@ -1531,8 +1591,14 @@ export interface MessageMetadata {
   message_id?: string;
   workflow_run_id?: string;
   workflow_step_id?: string;
+  agent_run_id?: string;
   event_type?: TaskEventType;
   origin?: TaskCreatedFrom;
+  timeline_type?: string;
+  timeline_status?: 'running' | 'completed' | 'failed';
+  risk_assessment?: TaskRiskAssessment;
+  approval_card?: ApprovalCardMetadata;
+  agent_event?: StructuredAgentEventMetadata;
   source_message_id?: string;
   fallback_agent_id?: string;
   collaboration_decision?: CollaborationDecision;

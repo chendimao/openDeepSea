@@ -42,6 +42,8 @@ const taskEventTypes = new Set<TaskEventType>([
   'message_route_uncertain',
   'message_intent_uncertain',
   'plan_proposed',
+  'runtime_event',
+  'diff_detected',
   'task_created',
   'task_updated',
   'task_status_changed',
@@ -330,16 +332,30 @@ function sanitizeTaskEventMetadata(value: Record<string, unknown>) {
   const origin = typeof value.origin === 'string' && isTaskOrigin(value.origin)
     ? value.origin
     : undefined;
-
-  return {
+  const metadata: Partial<MessageMetadata> = {
     task_id: typeof value.task_id === 'string' ? value.task_id : undefined,
     task_title: typeof value.task_title === 'string' ? value.task_title : undefined,
     message_id: typeof value.message_id === 'string' ? value.message_id : undefined,
     workflow_run_id: typeof value.workflow_run_id === 'string' ? value.workflow_run_id : undefined,
     workflow_step_id: typeof value.workflow_step_id === 'string' ? value.workflow_step_id : undefined,
+    agent_run_id: typeof value.agent_run_id === 'string' ? value.agent_run_id : undefined,
     event_type: eventType,
     origin,
+    timeline_type: typeof value.timeline_type === 'string' ? value.timeline_type : undefined,
+    timeline_status: isTimelineStatus(value.timeline_status) ? value.timeline_status : undefined,
   };
+
+  if (isRecord(value.risk_assessment)) {
+    metadata.risk_assessment = value.risk_assessment as unknown as MessageMetadata['risk_assessment'];
+  }
+  if (isRecord(value.approval_card)) {
+    metadata.approval_card = value.approval_card as unknown as MessageMetadata['approval_card'];
+  }
+  if (isRecord(value.agent_event)) {
+    metadata.agent_event = value.agent_event as unknown as MessageMetadata['agent_event'];
+  }
+
+  return metadata;
 }
 
 function sanitizeCollaborationDecisionMetadata(value: Record<string, unknown>) {
@@ -788,6 +804,10 @@ function isMessageIntentSuggestedAction(value: unknown): value is MessageIntentS
 
 function isTaskEventType(value: string): value is TaskEventType {
   return taskEventTypes.has(value as TaskEventType);
+}
+
+function isTimelineStatus(value: unknown): value is NonNullable<MessageMetadata['timeline_status']> {
+  return value === 'running' || value === 'completed' || value === 'failed';
 }
 
 function isSenderType(value: unknown): value is MessageReplyMetadata['sender_type'] {
