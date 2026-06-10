@@ -749,6 +749,192 @@ test('direct graph start records workflow_started event', async () => {
   assertWorkflowEvent(readWorkflowEvents(room.id, run.id), 'workflow_started', task.id);
 });
 
+test('graph runtime completes low risk auto workflow and pauses medium risk workflow', async () => {
+  process.env.LANGGRAPH_WORKFLOW_ENABLED = '1';
+  const lowProjectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-risk-low-'));
+  projectPathsToCleanup.push(lowProjectPath);
+  mkdirSync(lowProjectPath, { recursive: true });
+  const lowProject = projectRepo.create({ name: 'Risk Low', path: lowProjectPath });
+  const lowRoom = roomRepo.create({ project_id: lowProject.id, name: 'Risk Low Room' });
+  addAcpWorkflowAgent(lowRoom.id, 'executor');
+  addAcpWorkflowAgent(lowRoom.id, 'reviewer');
+  addAcpWorkflowAgent(lowRoom.id, 'acceptor');
+  const lowTask = taskRepo.create({
+    room_id: lowRoom.id,
+    project_id: lowProject.id,
+    title: '调整后端路由状态码',
+    description: '轻量后端局部改动。',
+  });
+  const lowAgentCalls: AgentCall[] = [];
+
+  const lowRun = await startGraphWorkflow(lowTask.id, {
+    planner: async () => ({
+      goal: '调整后端路由状态码',
+      summary: '轻量后端局部改动。',
+      assumptions: [],
+      tasks: [{
+        title: '调整后端路由状态码',
+        description: '修正单个后端路由的响应状态码。',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['状态码符合预期'],
+        scopeRead: ['packages/backend/src/routes.ts'],
+        scopeWrite: ['packages/backend/src/routes.ts'],
+        dependsOn: [],
+      }],
+      reviewFocus: ['确认轻量任务自动执行'],
+      verification: [verificationCommand],
+      verificationCommands: [{ command: verificationCommand, reason: 'Graph E2E smoke check', required: true }],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => {
+      if (!input.workflowStage) throw new Error('workflowStage is required for graph E2E fake agent');
+      if (!input.workflowStepId) throw new Error('workflowStepId is required for graph E2E fake agent');
+      if (!input.taskId) throw new Error('taskId is required for graph E2E fake agent');
+      lowAgentCalls.push({
+        stage: input.workflowStage,
+        role: input.agent.workflow_role,
+        agentId: input.agent.id,
+        workflowStepId: input.workflowStepId,
+        taskId: input.taskId,
+      });
+      const output = outputForAgentInput(input);
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      return {
+        run: { ...agentRun, stdout: output },
+        message: fakeMessage(input, output),
+        status: 'completed',
+      };
+    },
+  });
+  const lowState = parseGraphState(lowRun.graph_state);
+
+  assert.equal(
+    lowRun.status,
+    'completed',
+    lowRun.error ?? (lowState ? JSON.stringify({
+      status: lowState.status,
+      currentNode: lowState.currentNode,
+      tddEvidence: lowState.tddEvidence,
+      verificationEvidence: lowState.verificationEvidence,
+    }) : 'missing graph state'),
+  );
+  assert.equal(lowState?.riskAssessment?.riskLevel, 'low');
+  assert.equal(lowState?.riskAssessment?.requiresApproval, false);
+  assert.equal(lowState?.approval, 'not_required');
+  assert.equal(lowState?.approvalCard, null);
+  assert.equal(lowAgentCalls.some((call) => call.stage === 'implementation'), true);
+
+  const mediumProjectPath = mkdtempSync(join(tmpdir(), 'openclaw-room-risk-medium-'));
+  projectPathsToCleanup.push(mediumProjectPath);
+  mkdirSync(mediumProjectPath, { recursive: true });
+  const mediumProject = projectRepo.create({ name: 'Risk Medium', path: mediumProjectPath });
+  const mediumRoom = roomRepo.create({ project_id: mediumProject.id, name: 'Risk Medium Room' });
+  addAcpWorkflowAgent(mediumRoom.id, 'executor');
+  addAcpWorkflowAgent(mediumRoom.id, 'reviewer');
+  addAcpWorkflowAgent(mediumRoom.id, 'acceptor');
+  const mediumTask = taskRepo.create({
+    room_id: mediumRoom.id,
+    project_id: mediumProject.id,
+    title: '实现前后端 workflow 改动',
+    description: '改后端 workflow 和前端展示。',
+  });
+  const mediumAgentCalls: AgentCall[] = [];
+
+  const mediumRun = await startGraphWorkflow(mediumTask.id, {
+    planner: async () => ({
+      goal: '实现前后端 workflow 改动',
+      summary: '改后端 workflow 和前端展示。',
+      assumptions: [],
+      tasks: [{
+        title: '实现前后端 workflow 改动',
+        description: '改后端 workflow 和前端展示。',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['确认卡片展示'],
+        scopeRead: ['packages/backend', 'packages/frontend'],
+        scopeWrite: [
+          'packages/backend/src/workflows/graph/nodes.ts',
+          'packages/frontend/src/components/AgentTimeline.tsx',
+        ],
+        dependsOn: [],
+      }],
+      reviewFocus: ['确认中风险任务等待批准'],
+      verification: ['npm run build'],
+      verificationCommands: [{ command: 'npm run build', reason: '构建验证', required: true }],
+      risks: ['前后端联动'],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => {
+      if (!input.workflowStage) throw new Error('workflowStage is required for graph E2E fake agent');
+      if (!input.workflowStepId) throw new Error('workflowStepId is required for graph E2E fake agent');
+      if (!input.taskId) throw new Error('taskId is required for graph E2E fake agent');
+      mediumAgentCalls.push({
+        stage: input.workflowStage,
+        role: input.agent.workflow_role,
+        agentId: input.agent.id,
+        workflowStepId: input.workflowStepId,
+        taskId: input.taskId,
+      });
+      const output = outputForAgentInput(input);
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      return {
+        run: { ...agentRun, stdout: output },
+        message: fakeMessage(input, output),
+        status: 'completed',
+      };
+    },
+  });
+  const mediumState = parseGraphState(mediumRun.graph_state);
+  const mediumEvents = readWorkflowEvents(mediumRoom.id, mediumRun.id);
+
+  assert.equal(mediumRun.status, 'awaiting_approval');
+  assert.equal(mediumState?.riskAssessment?.riskLevel, 'medium');
+  assert.equal(mediumState?.riskAssessment?.requiresApproval, true);
+  assert.equal(mediumState?.approval, 'pending');
+  assert.equal(mediumState?.approvalCard?.riskLevel, 'medium');
+  assert.equal(
+    mediumAgentCalls.some((call) =>
+      call.stage === 'implementation' || call.stage === 'code_review' || call.stage === 'acceptance'
+    ),
+    false,
+  );
+  assertWorkflowEvent(mediumEvents, 'workflow_plan_ready', mediumTask.id);
+  const hasPendingMediumApprovalEvent = mediumEvents.some((event) => {
+    const approvalCard = event.approval_card as { riskLevel?: string } | undefined;
+    return event.event_type === 'workflow_stage_changed' &&
+      event.approval_status === 'pending' &&
+      approvalCard?.riskLevel === 'medium';
+  });
+  assert.equal(
+    hasPendingMediumApprovalEvent,
+    true,
+  );
+});
+
 function readWorkflowEvents(roomId: string, workflowRunId: string): MessageMetadata[] {
   return messageRepo.listByRoom(roomId, 200)
     .map((message) => parseJsonMetadata(message.metadata))
