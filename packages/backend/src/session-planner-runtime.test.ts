@@ -43,6 +43,8 @@ test('resolveSessionPlannerRuntime gives the session planner workspace write per
 
   assert.equal(runtime.permissionMode, 'workspace-write');
   assert.ok(runtime.workspacePolicy.write.includes('.'));
+  assert.ok(runtime.toolPolicy.allowed.includes('commit'));
+  assert.equal(runtime.memoryScope, 'agent');
 });
 
 test('resolveSessionPlannerRuntime prefers project backend override', () => {
@@ -73,8 +75,10 @@ test('resolveSessionPlannerRuntime builds a stable runtime snapshot', () => {
   assert.equal(snapshot.agent_global_id, runtime.agent.id);
   assert.equal(snapshot.backend, 'claudecode');
   assert.equal(snapshot.backend_source, 'project');
+  assert.equal(snapshot.permission_mode, runtime.permissionMode);
   assert.deepEqual(snapshot.tool_policy, runtime.toolPolicy);
   assert.deepEqual(snapshot.workspace_policy, runtime.workspacePolicy);
+  assert.equal(snapshot.memory_scope, runtime.memoryScope);
 });
 
 test('resolveSessionPlannerRuntime throws when project is missing', () => {
