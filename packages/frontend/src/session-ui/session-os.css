@@ -26,6 +26,92 @@
   --deepsea-sans: Inter, "SF Pro Text", "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 
+[data-theme="apple-dark"] .deepsea-shell,
+[data-theme="apple-dark"] .session-shell--empty {
+  background:
+    radial-gradient(circle at 18% 8%, rgba(10, 132, 255, 0.18) 0 11%, rgba(10, 132, 255, 0) 32%),
+    radial-gradient(circle at 86% 10%, rgba(100, 210, 255, 0.11) 0 12%, rgba(100, 210, 255, 0) 36%),
+    radial-gradient(circle at 54% 96%, rgba(30, 41, 59, 0.34) 0 18%, rgba(30, 41, 59, 0) 45%),
+    linear-gradient(135deg, #101827 0%, #090d16 48%, var(--deepsea-background) 100%);
+}
+
+[data-theme="apple-dark"] .deepsea-topbar {
+  border-color: var(--deepsea-border);
+  background: color-mix(in srgb, var(--deepsea-surface-strong) 84%, transparent);
+  box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+[data-theme="apple-dark"] .deepsea-shell-nav a.is-active {
+  border-color: color-mix(in srgb, var(--deepsea-primary-bright) 34%, var(--deepsea-border));
+  background: color-mix(in srgb, var(--deepsea-primary) 18%, var(--deepsea-surface));
+  color: #d9efff;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+}
+
+[data-theme="apple-dark"] .deepsea-shell-nav a:hover,
+[data-theme="apple-dark"] .deepsea-icon-button:hover,
+[data-theme="apple-dark"] .deepsea-strip-settings:hover {
+  background: color-mix(in srgb, var(--deepsea-primary) 14%, var(--deepsea-surface));
+  color: #d9efff;
+}
+
+[data-theme="apple-dark"] .deepsea-command-group,
+[data-theme="apple-dark"] .deepsea-command-pill {
+  border-color: var(--deepsea-border);
+  background: color-mix(in srgb, var(--deepsea-surface) 72%, transparent);
+  color: var(--deepsea-muted);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="apple-dark"] .deepsea-command-pill:hover {
+  background: var(--deepsea-surface-strong);
+  color: #d9efff;
+}
+
+[data-theme="apple-dark"] .deepsea-command-pill[data-primary="true"] {
+  background: linear-gradient(180deg, var(--deepsea-primary-bright), var(--deepsea-primary));
+  color: #ffffff;
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--deepsea-primary) 32%, transparent);
+}
+
+[data-theme="apple-dark"] .deepsea-history,
+[data-theme="apple-dark"] .deepsea-inspector,
+[data-theme="apple-dark"] .deepsea-composer,
+[data-theme="apple-dark"] .deepsea-bottom-status,
+[data-theme="apple-dark"] .deepsea-glass-card,
+[data-theme="apple-dark"] .session-workflow-surface {
+  border-color: var(--deepsea-border);
+  background: var(--deepsea-surface-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 18px 44px rgba(0, 0, 0, 0.24);
+}
+
+[data-theme="apple-dark"] .deepsea-history__header,
+[data-theme="apple-dark"] .deepsea-transcript__heading,
+[data-theme="apple-dark"] .deepsea-inspector__header,
+[data-theme="apple-dark"] .deepsea-card__header {
+  border-color: var(--deepsea-border);
+  background: color-mix(in srgb, var(--deepsea-surface-strong) 58%, transparent);
+}
+
+[data-theme="apple-dark"] .deepsea-search,
+[data-theme="apple-dark"] .deepsea-message[data-role="assistant"],
+[data-theme="apple-dark"] .deepsea-agent-thought,
+[data-theme="apple-dark"] .deepsea-composer__field,
+[data-theme="apple-dark"] .deepsea-tool-row {
+  border-color: color-mix(in srgb, var(--deepsea-border) 82%, transparent);
+  background: color-mix(in srgb, var(--deepsea-surface) 64%, transparent);
+}
+
+[data-theme="apple-dark"] .deepsea-message[data-role="user"] {
+  background: color-mix(in srgb, var(--deepsea-primary) 16%, var(--deepsea-surface));
+}
+
+[data-theme="apple-dark"] .deepsea-agent-thought__header,
+[data-theme="apple-dark"] .deepsea-composer__toolbar {
+  border-color: var(--deepsea-border);
+  background: color-mix(in srgb, var(--deepsea-surface) 46%, transparent);
+}
+
 [data-theme="minimal-light"] .deepsea-shell,
 [data-theme="minimal-light"] .session-shell--empty {
   background:
@@ -3054,6 +3140,18 @@ button.deepsea-message-attachment {
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
+.deepsea-message-body .message-workspace-file-ref,
+.deepsea-run-log-body .message-workspace-file-ref {
+  border-color: color-mix(in srgb, var(--deepsea-primary) 30%, var(--deepsea-border-subtle));
+  background: color-mix(in srgb, var(--deepsea-primary) 12%, var(--deepsea-surface));
+  color: color-mix(in srgb, var(--deepsea-primary) 74%, var(--deepsea-text));
+  font-family: var(--deepsea-mono);
+}
+.deepsea-message-body .message-workspace-file-ref:hover,
+.deepsea-run-log-body .message-workspace-file-ref:hover {
+  background: color-mix(in srgb, var(--deepsea-primary) 18%, var(--deepsea-surface));
+  color: var(--deepsea-primary);
+}
 .deepsea-message-body .markdown-preview table,
 .deepsea-run-log-body .markdown-preview table {
   display: block;
@@ -3126,6 +3224,72 @@ button.deepsea-message-attachment {
 }
 .deepsea-run-timeline__text .markdown-preview > p:last-child {
   display: inline;
+}
+.deepsea-workspace-doc-preview {
+  width: min(92vw, 980px);
+  max-height: min(86vh, 820px);
+  overflow: hidden;
+  padding: 0;
+}
+.deepsea-workspace-doc-preview > [data-radix-dialog-title],
+.deepsea-workspace-doc-preview > h2 {
+  margin: 0;
+  border-bottom: 1px solid var(--deepsea-border-subtle);
+  padding: 14px 44px 12px 16px;
+  font-family: var(--deepsea-font, ui-sans-serif, system-ui, sans-serif);
+  font-size: 14px;
+  line-height: 1.35;
+  word-break: break-all;
+}
+.deepsea-workspace-doc-preview__body {
+  display: flex;
+  min-height: 320px;
+  max-height: calc(min(86vh, 820px) - 52px);
+  flex-direction: column;
+  overflow: hidden;
+}
+.deepsea-workspace-doc-preview__meta {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--deepsea-border-subtle);
+  padding: 8px 16px;
+  color: var(--deepsea-muted);
+  font-family: var(--deepsea-mono);
+  font-size: 11px;
+}
+.deepsea-workspace-doc-preview__meta span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deepsea-workspace-doc-preview__meta strong {
+  color: #a45b00;
+  font-family: var(--deepsea-font, ui-sans-serif, system-ui, sans-serif);
+  font-size: 11px;
+}
+.deepsea-workspace-doc-preview__markdown,
+.deepsea-workspace-doc-preview__code {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+.deepsea-workspace-doc-preview__markdown {
+  padding: 18px 20px 24px;
+}
+.deepsea-workspace-doc-preview__code {
+  margin: 0;
+  background: color-mix(in srgb, var(--deepsea-surface) 88%, #fff);
+  padding: 16px;
+  color: var(--deepsea-text);
+  font-family: var(--deepsea-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .deepsea-run-timeline__details-button {
   display: inline-flex;
@@ -4189,6 +4353,99 @@ button.deepsea-message-attachment {
   gap: 8px;
   min-height: 38px;
   padding: 0 10px;
+}
+
+[data-theme="apple-dark"] .deepsea-center-workspace .flexlayout__tab_button--selected,
+[data-theme="apple-dark"] .deepsea-file-tabs .flexlayout__tab_button--selected {
+  border-bottom-color: var(--deepsea-primary-bright);
+  background: color-mix(in srgb, var(--deepsea-surface-strong) 72%, transparent);
+  color: var(--deepsea-text);
+}
+
+[data-theme="apple-dark"] .deepsea-file-browser {
+  color: var(--deepsea-text);
+  background:
+    radial-gradient(circle at 0% 0%, #172033 0%, #0f172a 52%, #090d16 100%);
+}
+
+[data-theme="apple-dark"] .deepsea-file-browser__tree,
+[data-theme="apple-dark"] .deepsea-monaco-viewer,
+[data-theme="apple-dark"] .deepsea-file-editor-toolbar {
+  border-color: var(--deepsea-border);
+  background: color-mix(in srgb, var(--deepsea-surface) 72%, transparent);
+}
+
+[data-theme="apple-dark"] .deepsea-monaco-viewer .monaco-editor,
+[data-theme="apple-dark"] .deepsea-monaco-viewer .monaco-editor-background,
+[data-theme="apple-dark"] .deepsea-monaco-viewer .monaco-editor .margin,
+[data-theme="apple-dark"] .deepsea-code-fallback {
+  background-color: #0b1220;
+  color: #e5e7eb;
+}
+
+[data-theme="apple-dark"] .deepsea-monaco-viewer .monaco-editor .find-widget {
+  border-color: var(--deepsea-border);
+  background: color-mix(in srgb, var(--deepsea-surface-strong) 92%, transparent);
+  color: var(--deepsea-muted);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.34);
+}
+
+[data-theme="apple-dark"] .deepsea-monaco-viewer .monaco-editor .find-widget .monaco-inputbox {
+  background: color-mix(in srgb, var(--deepsea-background) 72%, transparent);
+  color: var(--deepsea-text);
+}
+
+[data-theme="apple-dark"] .deepsea-monaco-viewer .monaco-editor .find-widget .monaco-inputbox input {
+  color: var(--deepsea-text);
+}
+
+[data-theme="apple-dark"] .deepsea-monaco-viewer .monaco-editor .find-widget .matchesCount,
+[data-theme="apple-dark"] .deepsea-monaco-viewer .monaco-editor .find-widget .button,
+[data-theme="apple-dark"] .deepsea-monaco-viewer .monaco-editor .find-widget .monaco-custom-toggle {
+  color: var(--deepsea-muted);
+}
+
+[data-theme="apple-dark"] .deepsea-monaco-viewer .monaco-editor .find-widget .button:hover,
+[data-theme="apple-dark"] .deepsea-monaco-viewer .monaco-editor .find-widget .button:focus,
+[data-theme="apple-dark"] .deepsea-monaco-viewer .monaco-editor .find-widget .monaco-custom-toggle:hover,
+[data-theme="apple-dark"] .deepsea-monaco-viewer .monaco-editor .find-widget .monaco-custom-toggle:focus {
+  background: color-mix(in srgb, var(--deepsea-primary) 16%, transparent);
+  color: #d9efff;
+}
+
+[data-theme="apple-dark"] .deepsea-code-fallback__gutter {
+  border-right-color: var(--deepsea-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--deepsea-faint);
+}
+
+[data-theme="apple-dark"] .deepsea-code-token-key,
+[data-theme="apple-dark"] .deepsea-code-token-number {
+  color: #93c5fd;
+}
+
+[data-theme="apple-dark"] .deepsea-code-token-string {
+  color: #34d399;
+}
+
+[data-theme="apple-dark"] .deepsea-code-token-punctuation {
+  color: #94a3b8;
+}
+
+[data-theme="apple-dark"] .deepsea-workspace-context-menu {
+  border-color: var(--deepsea-border);
+  background: color-mix(in srgb, var(--deepsea-surface-strong) 96%, transparent);
+  color: var(--deepsea-text);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.34);
+}
+
+[data-theme="apple-dark"] .deepsea-workspace-context-menu button:hover,
+[data-theme="apple-dark"] .deepsea-workspace-context-menu button:focus-visible {
+  background: color-mix(in srgb, var(--deepsea-primary) 16%, transparent);
+}
+
+[data-theme="apple-dark"] .deepsea-workspace-context-menu button[data-danger="true"] {
+  color: var(--deepsea-danger);
 }
 .deepsea-run-table strong {
   border-radius: 4px;

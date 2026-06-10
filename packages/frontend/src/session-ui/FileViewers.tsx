@@ -60,6 +60,7 @@ function MonacoTextViewer({
   onDraftChange?: (path: string, savedContent: string, draftContent: string, mtimeMs: number | null) => void;
   onSave?: (path: string, options?: { force?: boolean }) => Promise<boolean>;
 }): JSX.Element {
+  const editorTheme = useDeepseaEditorTheme();
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['workspace-file-preview', projectId, tab.path],
     queryFn: () => api.getWorkspaceFilePreview(projectId, tab.path),
@@ -104,9 +105,9 @@ function MonacoTextViewer({
           path={tab.path}
           language={languageForMonaco(data, tab)}
           value={dirtyState?.draftContent ?? data.content}
-          theme="deepsea-command-light"
+          theme={editorTheme}
           loading={<CodePreviewFallback content={data.content} />}
-          beforeMount={defineDeepseaCommandLightTheme}
+          beforeMount={defineDeepseaCommandThemes}
           onChange={(value) => {
             if (data.truncated) return;
             onDraftChange?.(tab.path, data.content, value ?? '', data.mtimeMs);
@@ -139,7 +140,30 @@ function MonacoTextViewer({
   );
 }
 
-function defineDeepseaCommandLightTheme(monaco: Monaco): void {
+function useDeepseaEditorTheme(): 'deepsea-command-light' | 'deepsea-command-dark' {
+  const [theme, setTheme] = useState<'deepsea-command-light' | 'deepsea-command-dark'>(() => {
+    if (typeof document === 'undefined') return 'deepsea-command-light';
+    return document.documentElement.dataset.theme?.endsWith('-dark')
+      ? 'deepsea-command-dark'
+      : 'deepsea-command-light';
+  });
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const root = document.documentElement;
+    const updateTheme = () => {
+      setTheme(root.dataset.theme?.endsWith('-dark') ? 'deepsea-command-dark' : 'deepsea-command-light');
+    };
+    updateTheme();
+    const observer = new MutationObserver(updateTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+
+  return theme;
+}
+
+function defineDeepseaCommandThemes(monaco: Monaco): void {
   monaco.editor.defineTheme('deepsea-command-light', {
     base: 'vs',
     inherit: true,
@@ -164,6 +188,32 @@ function defineDeepseaCommandLightTheme(monaco: Monaco): void {
       'editor.inactiveSelectionBackground': '#dbe1ff66',
       'editorCursor.foreground': '#004ac6',
       'editorWhitespace.foreground': '#c3c6d6',
+    },
+  });
+  monaco.editor.defineTheme('deepsea-command-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '94A3B8', fontStyle: 'italic' },
+      { token: 'keyword', foreground: '64D2FF', fontStyle: 'bold' },
+      { token: 'number', foreground: '93C5FD' },
+      { token: 'string', foreground: '34D399' },
+      { token: 'type', foreground: 'F59E0B' },
+      { token: 'delimiter', foreground: '94A3B8' },
+      { token: 'operator', foreground: '94A3B8' },
+    ],
+    colors: {
+      'editor.background': '#0b1220',
+      'editor.foreground': '#e5e7eb',
+      'editorGutter.background': '#0b1220',
+      'editorLineNumber.foreground': '#64748b',
+      'editorLineNumber.activeForeground': '#cbd5e1',
+      'editor.lineHighlightBackground': '#111927',
+      'editor.lineHighlightBorder': '#1f2937',
+      'editor.selectionBackground': '#2563eb66',
+      'editor.inactiveSelectionBackground': '#33415566',
+      'editorCursor.foreground': '#64d2ff',
+      'editorWhitespace.foreground': '#334155',
     },
   });
 }

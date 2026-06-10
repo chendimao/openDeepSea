@@ -5,8 +5,13 @@
 @layer base {
   :root {
     --color-bg: #F5F7FB;
+    --color-bg-soft: rgba(244, 248, 252, 0.72);
     --color-surface: rgba(255, 255, 255, 0.72);
     --color-surface-raised: rgba(255, 255, 255, 0.85);
+    --color-surface-muted: rgba(244, 248, 252, 0.86);
+    --color-surface-1: rgba(255, 255, 255, 0.72);
+    --color-surface-2: rgba(255, 255, 255, 0.85);
+    --color-panel: rgba(255, 255, 255, 0.86);
     --color-popover: #ffffff;
     --color-popover-raised: #f2f6fb;
     --color-popover-border: rgba(15, 23, 42, 0.10);
@@ -14,7 +19,11 @@
     --color-border-strong: rgba(37, 99, 235, 0.24);
     --color-fg: #162231;
     --color-fg-muted: #596879;
+    --color-fg-subtle: #8190a1;
     --color-muted: #8190a1;
+    --background: var(--color-bg);
+    --foreground: var(--color-fg);
+    --secondary: color-mix(in srgb, var(--color-primary) 13%, transparent);
 
     --color-primary: #2563EB;
     --color-primary-hover: #1D4ED8;
@@ -118,8 +127,13 @@
 
   [data-theme="apple-dark"] {
     --color-bg: #090d16;
+    --color-bg-soft: rgba(15, 23, 42, 0.62);
     --color-surface: rgba(17, 25, 39, 0.72);
     --color-surface-raised: rgba(29, 39, 57, 0.78);
+    --color-surface-muted: rgba(7, 11, 20, 0.72);
+    --color-surface-1: rgba(17, 25, 39, 0.72);
+    --color-surface-2: rgba(29, 39, 57, 0.78);
+    --color-panel: rgba(17, 25, 39, 0.88);
     --color-popover: #111927;
     --color-popover-raised: #1d2739;
     --color-popover-border: rgba(148, 163, 184, 0.22);
@@ -127,7 +141,11 @@
     --color-border-strong: rgba(148, 163, 184, 0.32);
     --color-fg: #E5E7EB;
     --color-fg-muted: #9CA3AF;
+    --color-fg-subtle: #6B7280;
     --color-muted: #6B7280;
+    --background: var(--color-bg);
+    --foreground: var(--color-fg);
+    --secondary: color-mix(in srgb, var(--color-primary) 16%, transparent);
 
     --color-primary: #0A84FF;
     --color-primary-hover: #409CFF;
@@ -226,13 +244,32 @@
     --room-primary-gradient: linear-gradient(135deg, #2563EB, #60A5FA);
     --room-primary-progress: linear-gradient(90deg, #2563EB, #60A5FA);
     --room-primary-shadow: 0 10px 24px rgba(37,99,235,0.28);
+    --deepsea-background: #090d16;
+    --deepsea-surface: #111927;
+    --deepsea-surface-soft: rgba(17, 25, 39, 0.72);
+    --deepsea-surface-strong: rgba(29, 39, 57, 0.84);
+    --deepsea-border: rgba(148, 163, 184, 0.18);
+    --deepsea-border-subtle: rgba(148, 163, 184, 0.14);
+    --deepsea-text: #E5E7EB;
+    --deepsea-muted: #9CA3AF;
+    --deepsea-faint: rgba(156, 163, 175, 0.62);
+    --deepsea-primary: #0A84FF;
+    --deepsea-primary-bright: #409CFF;
+    --deepsea-ok: #10B981;
+    --deepsea-warn: #F59E0B;
+    --deepsea-danger: #EF4444;
     color-scheme: dark;
   }
 
   [data-theme="minimal-light"] {
     --color-bg: #F7F4EC;
+    --color-bg-soft: #F0ECE2;
     --color-surface: #FFFCF5;
     --color-surface-raised: #F0ECE2;
+    --color-surface-muted: #F0ECE2;
+    --color-surface-1: #FFFCF5;
+    --color-surface-2: #F0ECE2;
+    --color-panel: #FFFCF5;
     --color-popover: #FFFCF5;
     --color-popover-raised: #F0ECE2;
     --color-popover-border: #D8D0BF;
@@ -240,7 +277,11 @@
     --color-border-strong: #BCA98C;
     --color-fg: #1F1D18;
     --color-fg-muted: #6D6558;
+    --color-fg-subtle: #8C8170;
     --color-muted: #8C8170;
+    --background: var(--color-bg);
+    --foreground: var(--color-fg);
+    --secondary: color-mix(in srgb, var(--color-primary) 12%, transparent);
 
     --color-primary: #B35C00;
     --color-primary-hover: #8F4700;
@@ -289,8 +330,13 @@
 
   [data-theme="minimal-dark"] {
     --color-bg: #17140F;
+    --color-bg-soft: #1B1812;
     --color-surface: #211D16;
     --color-surface-raised: #2A251C;
+    --color-surface-muted: #2A251C;
+    --color-surface-1: #211D16;
+    --color-surface-2: #2A251C;
+    --color-panel: #211D16;
     --color-popover: #211D16;
     --color-popover-raised: #2A251C;
     --color-popover-border: #3D3528;
@@ -298,7 +344,11 @@
     --color-border-strong: #5B4B37;
     --color-fg: #F1E9DA;
     --color-fg-muted: #C1B59F;
+    --color-fg-subtle: #8F8069;
     --color-muted: #8F8069;
+    --background: var(--color-bg);
+    --foreground: var(--color-fg);
+    --secondary: color-mix(in srgb, var(--color-primary) 16%, transparent);
 
     --color-primary: #E2A15B;
     --color-primary-hover: #F0B56F;
