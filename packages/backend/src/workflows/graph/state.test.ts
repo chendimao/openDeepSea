@@ -166,3 +166,85 @@ test('parseGraphState preserves Superpowers finish branch decision options', () 
     decidedAt: '2026-05-20T00:00:00.000Z',
   });
 });
+
+test('parseGraphState preserves risk assessment approval card and agent events', () => {
+  const verificationCommands = [{
+    command: 'npm run build -w @openclaw-room/backend',
+    reason: 'compile workflow state metadata',
+    required: true,
+  }];
+  const riskAssessment: NonNullable<AgentWorkflowState['riskAssessment']> = {
+    taskKind: 'backend_change',
+    riskLevel: 'medium',
+    requiresApproval: true,
+    approvalReason: 'workflow shared contract schema or types changes require approval',
+    confidence: 0.82,
+    reasons: ['workflow/shared contract schema or types changes require approval'],
+    scopeRead: ['packages/backend/src/workflows/graph/state.ts'],
+    scopeWrite: ['packages/backend/src/workflows/graph/state.ts'],
+    verificationCommands,
+  };
+  const approvalCard: NonNullable<AgentWorkflowState['approvalCard']> = {
+    riskLevel: 'medium',
+    taskKind: 'backend_change',
+    summary: 'Approval required for backend_change',
+    approvalReason: 'workflow shared contract schema or types changes require approval',
+    agents: ['backend-executor'],
+    executionMode: 'serial',
+    scopeRead: ['packages/backend/src/workflows/graph/state.ts'],
+    scopeWrite: ['packages/backend/src/workflows/graph/state.ts'],
+    verification: verificationCommands,
+    risks: ['state schema drift'],
+    assumptions: ['Task 4 will extract agent events later'],
+  };
+  const agentEvents: NonNullable<AgentWorkflowState['agentEvents']> = [{
+    id: 'event-1',
+    type: 'approval_requested',
+    message: 'Approval requested for medium-risk workflow state change',
+    createdAt: '2026-06-10T00:00:00.000Z',
+    payload: { riskLevel: 'medium' },
+  }];
+  const state = {
+    ...emptyAgentWorkflowState({
+      workflowRunId: 'run-risk-metadata',
+      projectId: 'project-risk-metadata',
+      roomId: 'room-risk-metadata',
+      taskId: 'task-risk-metadata',
+      userGoal: 'Risk metadata state',
+      projectPath: tempDir,
+    }),
+    riskAssessment,
+    approvalCard,
+    agentEvents,
+  };
+
+  const parsed = parseGraphState(serializeGraphState(state));
+  const parsedWithMetadata = parsed as typeof parsed & {
+    riskAssessment?: unknown;
+    approvalCard?: unknown;
+    agentEvents?: unknown;
+  };
+
+  assert.deepEqual(parsedWithMetadata.riskAssessment, riskAssessment);
+  assert.deepEqual(parsedWithMetadata.approvalCard, approvalCard);
+  assert.deepEqual(parsedWithMetadata.agentEvents, agentEvents);
+});
+
+test('emptyAgentWorkflowState defaults risk metadata fields', () => {
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'run-empty-risk-metadata',
+    projectId: 'project-empty-risk-metadata',
+    roomId: 'room-empty-risk-metadata',
+    taskId: 'task-empty-risk-metadata',
+    userGoal: 'Empty risk metadata state',
+    projectPath: tempDir,
+  }) as ReturnType<typeof emptyAgentWorkflowState> & {
+    riskAssessment?: unknown;
+    approvalCard?: unknown;
+    agentEvents?: unknown;
+  };
+
+  assert.equal(state.riskAssessment, null);
+  assert.equal(state.approvalCard, null);
+  assert.deepEqual(state.agentEvents, []);
+});

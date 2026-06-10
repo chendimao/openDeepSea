@@ -121,6 +121,44 @@ test('parsePlanArtifact parses modern LangChain planner shape', () => {
   assert.equal(plan.needsApproval, false);
 });
 
+test('parsePlanArtifact preserves optional modern risk metadata', () => {
+  const plan = parsePlanArtifact(`
+\`\`\`json
+{
+  "goal": "扩展计划风险元数据",
+  "summary": "保留 planner 输出的任务类型和风险判断",
+  "taskKind": "backend_change",
+  "riskLevel": "medium",
+  "approvalReason": "workflow shared contract schema changes require approval",
+  "assumptions": [],
+  "steps": [
+    {
+      "title": "扩展计划解析",
+      "intent": "解析并保留现代计划根级风险字段",
+      "assigneeRole": "executor",
+      "scopeRead": ["packages/backend/src/workflows/plan-parser.ts"],
+      "scopeWrite": ["packages/backend/src/workflows/plan-parser.ts"],
+      "acceptance": ["返回 plan 包含风险元数据"],
+      "dependsOn": []
+    }
+  ],
+  "risks": [],
+  "verification": [],
+  "needsApproval": true
+}
+\`\`\`
+`);
+  const planWithRisk = plan as typeof plan & {
+    taskKind?: unknown;
+    riskLevel?: unknown;
+    approvalReason?: unknown;
+  };
+
+  assert.equal(planWithRisk.taskKind, 'backend_change');
+  assert.equal(planWithRisk.riskLevel, 'medium');
+  assert.equal(planWithRisk.approvalReason, 'workflow shared contract schema changes require approval');
+});
+
 test('parsePlanArtifact summarizes duplicate step titles into distinct short task names', () => {
   const plan = parsePlanArtifact(`
 \`\`\`json

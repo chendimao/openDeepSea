@@ -1,8 +1,23 @@
 import { z } from 'zod';
 import type { AcpBackend, TaskPriority, WorkflowRole } from '../types.js';
+import type { TaskKind, TaskRiskLevel } from './task-risk.js';
 
 export const workflowRoleSchema = z.enum(['analyst', 'planner', 'coordinator', 'executor', 'reviewer', 'acceptor']);
 export const acpBackendSchema = z.enum(['claudecode', 'opencode', 'codex']);
+export const taskKindSchema = z.enum([
+  'chat_answer',
+  'brainstorming',
+  'code_review',
+  'bug_fix',
+  'frontend_change',
+  'backend_change',
+  'fullstack_change',
+  'test_only',
+  'docs_only',
+  'ops_or_config',
+  'unknown',
+]);
+export const taskRiskLevelSchema = z.enum(['low', 'medium', 'high']);
 
 export const verificationCommandSchema = z.object({
   command: z.string().min(1),
@@ -69,6 +84,9 @@ const langChainPlanStepSchema = z.object({
 const langChainPlanSchema = z.object({
   goal: z.string().min(1),
   summary: z.string().min(1),
+  taskKind: taskKindSchema.optional(),
+  riskLevel: taskRiskLevelSchema.optional(),
+  approvalReason: z.string().optional(),
   assumptions: z.array(planTextSchema),
   steps: z.array(langChainPlanStepSchema).min(1),
   risks: z.array(planTextSchema),
@@ -113,6 +131,9 @@ export interface ParsedVerificationCommand {
 export interface ParsedPlan {
   goal: string | null;
   summary: string;
+  taskKind?: TaskKind;
+  riskLevel?: TaskRiskLevel;
+  approvalReason?: string;
   assumptions: string[];
   tasks: ParsedPlanTask[];
   reviewFocus: string[];
@@ -233,6 +254,9 @@ function normalizeLangChainPlan(plan: z.infer<typeof langChainPlanSchema>): Pars
     })),
     risks: plan.risks,
     needsApproval: plan.needsApproval,
+    ...(plan.taskKind !== undefined ? { taskKind: plan.taskKind } : {}),
+    ...(plan.riskLevel !== undefined ? { riskLevel: plan.riskLevel } : {}),
+    ...(plan.approvalReason !== undefined ? { approvalReason: plan.approvalReason } : {}),
   };
 }
 

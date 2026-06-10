@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import type { GraphNodeName, WorkflowPlanJson, WorkflowRole, WorkflowStage, WorkflowStatus } from '../../types.js';
+import {
+  taskKindSchema,
+  taskRiskLevelSchema,
+  verificationCommandSchema,
+} from '../plan-parser.js';
 import type { ParsedPlan } from '../plan-parser.js';
+import type { ApprovalCard, TaskRiskAssessment } from '../task-risk.js';
 
 export const workflowGraphNodeNameSchema = z.enum([
   'context',
@@ -97,6 +103,38 @@ export const superpowersFinishBranchDecisionSchema = z.object({
   decidedAt: z.string().nullable().default(null),
 });
 
+export const workflowExecutionModeSchema = z.enum(['serial', 'parallel', 'hybrid']);
+
+export const taskRiskAssessmentSchema = z.object({
+  taskKind: taskKindSchema,
+  riskLevel: taskRiskLevelSchema,
+  requiresApproval: z.boolean(),
+  approvalReason: z.string(),
+  confidence: z.number(),
+  reasons: z.array(z.string()),
+  scopeRead: z.array(z.string()),
+  scopeWrite: z.array(z.string()),
+  verificationCommands: z.array(verificationCommandSchema).default([]),
+});
+
+export const approvalCardSchema = z.object({
+  riskLevel: z.enum(['medium', 'high']),
+  taskKind: taskKindSchema,
+  summary: z.string(),
+  approvalReason: z.string(),
+  agents: z.array(z.string()),
+  executionMode: workflowExecutionModeSchema,
+  scopeRead: z.array(z.string()),
+  scopeWrite: z.array(z.string()),
+  verification: z.array(verificationCommandSchema).default([]),
+  risks: z.array(z.string()).default([]),
+  assumptions: z.array(z.string()).default([]),
+});
+
+export const structuredAgentEventSchema = z.object({
+  type: z.string().min(1),
+}).passthrough();
+
 export const parsedPlanTaskSchema = z.object({
   title: z.string(),
   description: z.string(),
@@ -112,6 +150,9 @@ export const parsedPlanTaskSchema = z.object({
 export const parsedPlanSchema = z.object({
   goal: z.string().nullable(),
   summary: z.string(),
+  taskKind: taskKindSchema.optional(),
+  riskLevel: taskRiskLevelSchema.optional(),
+  approvalReason: z.string().optional(),
   assumptions: z.array(z.string()),
   tasks: z.array(parsedPlanTaskSchema),
   reviewFocus: z.array(z.string()),
@@ -174,6 +215,9 @@ export const agentWorkflowStateSchema = z.object({
   codeQualityReview: superpowersReviewSchema.nullable().default(null),
   verificationEvidence: z.array(superpowersVerificationEvidenceSchema).default([]),
   finishBranchDecision: superpowersFinishBranchDecisionSchema.nullable().default(null),
+  riskAssessment: taskRiskAssessmentSchema.nullable().default(null),
+  approvalCard: approvalCardSchema.nullable().default(null),
+  agentEvents: z.array(structuredAgentEventSchema).default([]),
   reviewFindings: z.array(z.string()),
   reviewVerdict: z.enum(['pass', 'changes_requested', 'failed']).nullable().default(null),
   verificationResults: z.array(verificationResultSchema),
@@ -191,6 +235,7 @@ export type SuperpowersTddExemption = z.infer<typeof superpowersTddExemptionSche
 export type SuperpowersReview = z.infer<typeof superpowersReviewSchema>;
 export type SuperpowersVerificationEvidence = z.infer<typeof superpowersVerificationEvidenceSchema>;
 export type SuperpowersFinishBranchDecision = z.infer<typeof superpowersFinishBranchDecisionSchema>;
+export type StructuredAgentEvent = z.infer<typeof structuredAgentEventSchema>;
 export interface SupervisorAssignmentHint {
   stage: WorkflowStage;
   role: WorkflowRole;
@@ -218,6 +263,9 @@ export type AgentWorkflowState = Omit<
   | 'codeQualityReview'
   | 'verificationEvidence'
   | 'finishBranchDecision'
+  | 'riskAssessment'
+  | 'approvalCard'
+  | 'agentEvents'
 > & {
   plan: ParsedPlan | null;
   workflowPlan?: WorkflowPlanJson | null;
@@ -238,6 +286,9 @@ export type AgentWorkflowState = Omit<
   codeQualityReview?: SuperpowersReview | null;
   verificationEvidence?: SuperpowersVerificationEvidence[];
   finishBranchDecision?: SuperpowersFinishBranchDecision | null;
+  riskAssessment?: TaskRiskAssessment | null;
+  approvalCard?: ApprovalCard | null;
+  agentEvents?: StructuredAgentEvent[];
 };
 
 export function emptyAgentWorkflowState(input: {
@@ -271,6 +322,9 @@ export function emptyAgentWorkflowState(input: {
     codeQualityReview: null,
     verificationEvidence: [],
     finishBranchDecision: null,
+    riskAssessment: null,
+    approvalCard: null,
+    agentEvents: [],
     reviewFindings: [],
     reviewVerdict: null,
     verificationResults: [],
