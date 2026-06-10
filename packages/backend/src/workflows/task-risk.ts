@@ -1,4 +1,5 @@
 import { inferTaskProfile, type TaskProfile, type TaskProfileInput } from './task-profile.js';
+import type { ParsedVerificationCommand } from './plan-parser.js';
 
 export type TaskKind =
   | 'chat_answer'
@@ -18,30 +19,48 @@ export type TaskRiskLevel = 'low' | 'medium' | 'high';
 export type WorkflowExecutionMode = 'serial' | 'parallel' | 'hybrid';
 
 export interface TaskRiskAssessmentInput extends TaskProfileInput {
-  agents?: string[];
-  executionMode?: WorkflowExecutionMode;
-  verification?: string[];
+  verificationCommands?: ParsedVerificationCommand[];
 }
 
 export interface TaskRiskAssessment {
   taskKind: TaskKind;
   riskLevel: TaskRiskLevel;
   requiresApproval: boolean;
-  approvalReason?: string;
+  approvalReason: string;
+  confidence: number;
   reasons: string[];
-  profile: TaskProfile;
+  scopeRead: string[];
+  scopeWrite: string[];
+  verificationCommands: ParsedVerificationCommand[];
 }
 
-export interface ApprovalCard extends TaskRiskAssessment {
+export interface BuildApprovalCardInput {
+  assessment: TaskRiskAssessment;
   agents: string[];
   executionMode: WorkflowExecutionMode;
-  verification: string[];
+  risks?: string[];
+  assumptions?: string[];
+}
+
+export interface ApprovalCard {
+  riskLevel: Exclude<TaskRiskLevel, 'low'>;
+  taskKind: TaskKind;
+  summary: string;
+  approvalReason: string;
+  agents: string[];
+  executionMode: WorkflowExecutionMode;
+  scopeRead: string[];
+  scopeWrite: string[];
+  verification: ParsedVerificationCommand[];
+  risks: string[];
+  assumptions: string[];
 }
 
 export function assessTaskRisk(input: TaskRiskAssessmentInput): TaskRiskAssessment {
   const profile = inferTaskProfile(input);
-  const writePaths = input.scopeWrite ?? [];
-  const allPaths = [...(input.scopeRead ?? []), ...writePaths];
+  const scopeRead = [...input.scopeRead];
+  const scopeWrite = [...input.scopeWrite];
+  const allPaths = [...scopeRead, ...scopeWrite];
   const text = normalizeText([
     input.title,
     input.description,
@@ -51,23 +70,23 @@ export function assessTaskRisk(input: TaskRiskAssessmentInput): TaskRiskAssessme
   const writeIntentText = normalizeText([
     input.title,
     input.description,
-    ...writePaths,
+    ...scopeWrite,
     ...(input.acceptance ?? []),
   ]);
   const reasons = [...profile.reasons];
-  let taskKind = inferTaskKind(profile, writePaths, text);
+  let taskKind = inferTaskKind(profile, scopeWrite, text);
   let riskLevel: TaskRiskLevel = 'low';
   let requiresApproval = false;
-  let approvalReason: string | undefined;
+  let approvalReason = '';
 
-  const highRiskReason = getHighRiskReason(writePaths, writeIntentText);
+  const highRiskReason = getHighRiskReason(scopeWrite, writeIntentText);
   if (highRiskReason) {
     riskLevel = 'high';
     requiresApproval = true;
     approvalReason = highRiskReason;
     reasons.push(highRiskReason);
-    if (isOpsOrConfigChange(writePaths, writeIntentText)) taskKind = 'ops_or_config';
-  } else if (isSmallDocumentationOnlyTask(profile, writePaths)) {
+    if (isOpsOrConfigChange(scopeWrite, writeIntentText)) taskKind = 'ops_or_config';
+  } else if (isSmallDocumentationOnlyTask(profile, scopeWrite)) {
     taskKind = 'docs_only';
     reasons.push('small documentation-only scope');
   } else {
@@ -83,7 +102,7 @@ export function assessTaskRisk(input: TaskRiskAssessmentInput): TaskRiskAssessme
   if (profile.confidence < 0.45) {
     requiresApproval = true;
     if (riskLevel === 'low') riskLevel = 'medium';
-    approvalReason ??= 'low-confidence task profile requires approval';
+    approvalReason ||= 'low-confidence task profile requires approval';
     reasons.push('low-confidence task profile');
   }
 
@@ -92,19 +111,37 @@ export function assessTaskRisk(input: TaskRiskAssessmentInput): TaskRiskAssessme
     riskLevel,
     requiresApproval,
     approvalReason,
+    confidence: profile.confidence,
     reasons,
-    profile,
+    scopeRead,
+    scopeWrite,
+    verificationCommands: input.verificationCommands ?? [],
   };
 }
 
-export function buildApprovalCard(input: TaskRiskAssessmentInput): ApprovalCard {
-  const assessment = assessTaskRisk(input);
+export function buildApprovalCard({
+  assessment,
+  agents,
+  executionMode,
+  risks = [],
+  assumptions = [],
+}: BuildApprovalCardInput): ApprovalCard {
+  if (assessment.riskLevel === 'low') {
+    throw new Error('Cannot build approval card for low-risk assessment');
+  }
 
   return {
-    ...assessment,
-    agents: input.agents ?? [],
-    executionMode: input.executionMode ?? 'serial',
-    verification: input.verification ?? [],
+    riskLevel: assessment.riskLevel,
+    taskKind: assessment.taskKind,
+    summary: `Approval required for ${assessment.taskKind}: ${assessment.approvalReason}`,
+    approvalReason: assessment.approvalReason,
+    agents,
+    executionMode,
+    scopeRead: assessment.scopeRead,
+    scopeWrite: assessment.scopeWrite,
+    verification: assessment.verificationCommands,
+    risks,
+    assumptions,
   };
 }
 
@@ -121,7 +158,7 @@ function inferTaskKind(profile: TaskProfile, writePaths: string[], text: string)
   return 'unknown';
 }
 
-function getHighRiskReason(writePaths: string[], text: string): string | undefined {
+function getHighRiskReason(writePaths: string[], text: string): string {
   if (writePaths.some(isDependencyPath) || containsAny(text, DEPENDENCY_SIGNALS)) {
     return 'dependency/root config changes require approval';
   }
@@ -129,22 +166,22 @@ function getHighRiskReason(writePaths: string[], text: string): string | undefin
     return 'root config changes require approval';
   }
   if (writePaths.some(isDatabasePath) || containsAny(text, DATABASE_SIGNALS)) {
-    return 'database migration or schema changes require approval';
+    return 'database migration or db changes require approval';
   }
   if (containsAny(text, SECURITY_SIGNALS)) {
     return 'security/permissions/deletion/credential/sandbox changes require approval';
   }
-  return undefined;
+  return '';
 }
 
-function getMediumRiskReason(profile: TaskProfile, paths: string[], text: string): string | undefined {
+function getMediumRiskReason(profile: TaskProfile, paths: string[], text: string): string {
   if (profile.domains.includes('frontend') && profile.domains.includes('backend')) {
     return 'front/back workflow changes require approval';
   }
-  if (isMultiFileSharedWorkflowChange(paths, text)) {
-    return 'workflow/shared contract or schema changes require approval';
+  if (isWorkflowSharedContractChange(paths, text)) {
+    return 'workflow/shared contract schema or types changes require approval';
   }
-  return undefined;
+  return '';
 }
 
 function isSmallDocumentationOnlyTask(profile: TaskProfile, writePaths: string[]): boolean {
@@ -155,8 +192,7 @@ function isSmallDocumentationOnlyTask(profile: TaskProfile, writePaths: string[]
   return writePaths.length > 0 && writePaths.every(isDocumentationPath);
 }
 
-function isMultiFileSharedWorkflowChange(paths: string[], text: string): boolean {
-  if (paths.length < 2) return false;
+function isWorkflowSharedContractChange(paths: string[], text: string): boolean {
   return paths.some((path) => containsAny(normalizePath(path), SHARED_WORKFLOW_PATH_SIGNALS)) ||
     containsAny(text, SHARED_WORKFLOW_TEXT_SIGNALS);
 }
@@ -191,7 +227,7 @@ function isDatabasePath(path: string): boolean {
   const normalized = normalizePath(path);
   return normalized.includes('/migrations/') ||
     /\.sql$/.test(normalized) ||
-    /(^|\/)(db|database|schema|migration)s?\.[cm]?[jt]s$/.test(normalized);
+    /(^|\/)(db|database|migration)s?\.[cm]?[jt]s$/.test(normalized);
 }
 
 function isDocumentationPath(path: string): boolean {
@@ -261,7 +297,6 @@ const ROOT_CONFIG_SIGNALS = [
 const DATABASE_SIGNALS = [
   'migration',
   'database migration',
-  'schema migration',
   'sqlite migration',
   'sql',
   'db migration',

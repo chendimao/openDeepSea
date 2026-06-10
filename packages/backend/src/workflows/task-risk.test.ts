@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assessTaskRisk, buildApprovalCard } from './task-risk.js';
+import type { ParsedVerificationCommand } from './plan-parser.js';
+
+const verificationCommands: ParsedVerificationCommand[] = [
+  {
+    command: 'node --import tsx --test src/workflows/task-risk.test.ts',
+    reason: 'covers task risk assessment behavior',
+    required: true,
+  },
+];
 
 test('classifies small README-only edits as low-risk documentation work', () => {
   const assessment = assessTaskRisk({
@@ -9,12 +18,19 @@ test('classifies small README-only edits as low-risk documentation work', () => 
     scopeRead: ['README.md'],
     scopeWrite: ['README.md'],
     acceptance: ['README explains local setup clearly'],
+    verificationCommands,
   });
 
   assert.equal(assessment.taskKind, 'docs_only');
   assert.equal(assessment.riskLevel, 'low');
   assert.equal(assessment.requiresApproval, false);
+  assert.equal(assessment.approvalReason, '');
+  assert.equal(typeof assessment.confidence, 'number');
+  assert.deepEqual(assessment.scopeRead, ['README.md']);
+  assert.deepEqual(assessment.scopeWrite, ['README.md']);
+  assert.deepEqual(assessment.verificationCommands, verificationCommands);
   assert.ok(assessment.reasons.some((reason) => /small|documentation-only/i.test(reason)));
+  assert.equal('profile' in assessment, false);
 });
 
 test('requires approval for combined frontend and backend workflow changes', () => {
@@ -35,7 +51,7 @@ test('requires approval for combined frontend and backend workflow changes', () 
   assert.equal(assessment.taskKind, 'fullstack_change');
   assert.equal(assessment.riskLevel, 'medium');
   assert.equal(assessment.requiresApproval, true);
-  assert.match(assessment.approvalReason ?? '', /front\/back|前后端/i);
+  assert.match(assessment.approvalReason, /front\/back|前后端/i);
 });
 
 test('marks dependencies root config and database migrations as high risk', () => {
@@ -53,33 +69,100 @@ test('marks dependencies root config and database migrations as high risk', () =
 
   assert.equal(assessment.riskLevel, 'high');
   assert.equal(assessment.requiresApproval, true);
-  assert.match(assessment.approvalReason ?? '', /dependency|database|root config/i);
+  assert.match(assessment.approvalReason, /dependency|database|root config/i);
+});
+
+test('returns verification commands and requires approval for low-confidence tasks', () => {
+  const assessment = assessTaskRisk({
+    title: 'Investigate unknown task',
+    description: 'TBD',
+    scopeRead: [],
+    scopeWrite: [],
+    verificationCommands,
+  });
+
+  assert.equal(assessment.riskLevel, 'medium');
+  assert.equal(assessment.requiresApproval, true);
+  assert.match(assessment.approvalReason, /low-confidence/i);
+  assert.ok(assessment.confidence < 0.45);
+  assert.deepEqual(assessment.verificationCommands, verificationCommands);
+});
+
+test('requires approval for a single workflow shared schema or types file', () => {
+  const assessment = assessTaskRisk({
+    title: 'Adjust risk state',
+    description: 'Update one risk state file.',
+    scopeRead: [],
+    scopeWrite: ['packages/backend/src/workflows/graph/state.ts'],
+  });
+
+  assert.equal(assessment.riskLevel, 'medium');
+  assert.equal(assessment.requiresApproval, true);
+  assert.match(assessment.approvalReason, /workflow|shared|schema|types/i);
+});
+
+test('keeps a small single frontend file below approval until higher-level rules decide', () => {
+  const assessment = assessTaskRisk({
+    title: 'Update frontend copy',
+    description: 'Adjust one React component label.',
+    scopeRead: ['packages/frontend/src/components/Header.tsx'],
+    scopeWrite: ['packages/frontend/src/components/Header.tsx'],
+  });
+
+  assert.equal(assessment.taskKind, 'frontend_change');
+  assert.equal(assessment.riskLevel, 'low');
+  assert.equal(assessment.requiresApproval, false);
 });
 
 test('buildApprovalCard copies assessment fields with agents execution mode and verification', () => {
-  const card = buildApprovalCard({
-    title: 'Backend risk module',
-    description: 'Implement backend workflow risk assessment.',
-    scopeRead: ['packages/backend/src/workflows/task-profile.ts'],
-    scopeWrite: ['packages/backend/src/workflows/task-risk.ts'],
-    agents: ['backend-executor', 'reviewer'],
-    executionMode: 'serial',
-    verification: ['npm run test -w @openclaw-room/backend -- src/workflows/task-risk.test.ts'],
-  });
   const assessment = assessTaskRisk({
-    title: 'Backend risk module',
-    description: 'Implement backend workflow risk assessment.',
-    scopeRead: ['packages/backend/src/workflows/task-profile.ts'],
-    scopeWrite: ['packages/backend/src/workflows/task-risk.ts'],
+    title: 'Update workflow approval UI and API',
+    description: 'Change React workflow approval controls and backend workflow route behavior.',
+    scopeRead: [
+      'packages/frontend/src/pages/WorkflowPage.tsx',
+      'packages/backend/src/workflows/routes.ts',
+    ],
+    scopeWrite: [
+      'packages/frontend/src/pages/WorkflowPage.tsx',
+      'packages/backend/src/workflows/routes.ts',
+    ],
+    verificationCommands,
+  });
+  const card = buildApprovalCard({
+    assessment,
+    agents: ['backend-executor', 'reviewer'],
+    executionMode: 'hybrid',
+    risks: ['Frontend and backend behavior must stay consistent'],
+    assumptions: ['Existing workflow route remains the integration boundary'],
   });
 
   assert.equal(card.taskKind, assessment.taskKind);
   assert.equal(card.riskLevel, assessment.riskLevel);
-  assert.equal(card.requiresApproval, assessment.requiresApproval);
-  assert.deepEqual(card.reasons, assessment.reasons);
+  assert.match(card.summary, /fullstack_change|front\/back|approval/i);
+  assert.equal(card.approvalReason, assessment.approvalReason);
+  assert.deepEqual(card.scopeRead, assessment.scopeRead);
+  assert.deepEqual(card.scopeWrite, assessment.scopeWrite);
   assert.deepEqual(card.agents, ['backend-executor', 'reviewer']);
-  assert.equal(card.executionMode, 'serial');
-  assert.deepEqual(card.verification, [
-    'npm run test -w @openclaw-room/backend -- src/workflows/task-risk.test.ts',
-  ]);
+  assert.equal(card.executionMode, 'hybrid');
+  assert.deepEqual(card.verification, verificationCommands);
+  assert.deepEqual(card.risks, ['Frontend and backend behavior must stay consistent']);
+  assert.deepEqual(card.assumptions, ['Existing workflow route remains the integration boundary']);
+});
+
+test('buildApprovalCard rejects low-risk assessments', () => {
+  const assessment = assessTaskRisk({
+    title: 'Update README',
+    description: 'Small documentation-only README change.',
+    scopeRead: ['README.md'],
+    scopeWrite: ['README.md'],
+  });
+
+  assert.throws(
+    () => buildApprovalCard({
+      assessment,
+      agents: [],
+      executionMode: 'serial',
+    }),
+    /low-risk/i,
+  );
 });
