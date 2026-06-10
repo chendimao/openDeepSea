@@ -110,7 +110,7 @@ export const taskRiskAssessmentSchema = z.object({
   riskLevel: taskRiskLevelSchema,
   requiresApproval: z.boolean(),
   approvalReason: z.string(),
-  confidence: z.number(),
+  confidence: z.number().min(0).max(1),
   reasons: z.array(z.string()),
   scopeRead: z.array(z.string()),
   scopeWrite: z.array(z.string()),
@@ -131,8 +131,35 @@ export const approvalCardSchema = z.object({
   assumptions: z.array(z.string()).default([]),
 });
 
+export const structuredAgentEventTypeSchema = z.enum([
+  'started',
+  'progress',
+  'artifact',
+  'decision_request',
+  'scope_change_request',
+  'blocked',
+  'completed',
+  'failed',
+]);
+
+export const structuredAgentEventDecisionSchema = z.object({
+  question: z.string(),
+  options: z.array(z.string()).optional(),
+  recommendation: z.string().optional(),
+  impact: z.string(),
+});
+
 export const structuredAgentEventSchema = z.object({
-  type: z.string().min(1),
+  workflowRunId: z.string(),
+  stepId: z.string(),
+  agentRunId: z.string(),
+  type: structuredAgentEventTypeSchema,
+  summary: z.string(),
+  detail: z.string().optional(),
+  progress: z.number().min(0).max(100).optional(),
+  artifacts: z.array(z.string()).optional(),
+  requestedDecision: structuredAgentEventDecisionSchema.optional(),
+  createdAt: z.number().int().min(0),
 }).passthrough();
 
 export const parsedPlanTaskSchema = z.object({

@@ -199,9 +199,18 @@ test('parseGraphState preserves risk assessment approval card and agent events',
   };
   const agentEvents: NonNullable<AgentWorkflowState['agentEvents']> = [{
     id: 'event-1',
-    type: 'approval_requested',
-    message: 'Approval requested for medium-risk workflow state change',
-    createdAt: '2026-06-10T00:00:00.000Z',
+    workflowRunId: 'run-risk-metadata',
+    stepId: 'approval',
+    agentRunId: 'agent-run-1',
+    type: 'decision_request',
+    summary: 'Approval requested for medium-risk workflow state change',
+    requestedDecision: {
+      question: 'Approve medium-risk workflow state change?',
+      options: ['approve', 'reject'],
+      recommendation: 'approve',
+      impact: 'Workflow dispatch waits until approval is resolved.',
+    },
+    createdAt: 1710000000000,
     payload: { riskLevel: 'medium' },
   }];
   const state = {
@@ -247,4 +256,96 @@ test('emptyAgentWorkflowState defaults risk metadata fields', () => {
   assert.equal(state.riskAssessment, null);
   assert.equal(state.approvalCard, null);
   assert.deepEqual(state.agentEvents, []);
+});
+
+test('parseGraphState rejects risk assessment confidence above one', () => {
+  const state = {
+    ...emptyAgentWorkflowState({
+      workflowRunId: 'run-invalid-confidence',
+      projectId: 'project-invalid-confidence',
+      roomId: 'room-invalid-confidence',
+      taskId: 'task-invalid-confidence',
+      userGoal: 'Invalid confidence state',
+      projectPath: tempDir,
+    }),
+    riskAssessment: {
+      taskKind: 'backend_change',
+      riskLevel: 'medium',
+      requiresApproval: true,
+      approvalReason: 'workflow shared contract schema or types changes require approval',
+      confidence: 1.1,
+      reasons: [],
+      scopeRead: [],
+      scopeWrite: [],
+      verificationCommands: [],
+    },
+  };
+
+  assert.throws(() => parseGraphState(JSON.stringify(state)), /confidence|less than or equal/i);
+});
+
+test('parseGraphState rejects invalid agent event type and missing core fields', () => {
+  const baseState = emptyAgentWorkflowState({
+    workflowRunId: 'run-invalid-agent-events',
+    projectId: 'project-invalid-agent-events',
+    roomId: 'room-invalid-agent-events',
+    taskId: 'task-invalid-agent-events',
+    userGoal: 'Invalid agent events state',
+    projectPath: tempDir,
+  });
+  const invalidEvents = [
+    {
+      workflowRunId: 'run-invalid-agent-events',
+      stepId: 'step-1',
+      agentRunId: 'agent-run-1',
+      type: 'approval_requested',
+      summary: 'Unsupported event type',
+      createdAt: 1710000000000,
+    },
+    {
+      stepId: 'step-1',
+      agentRunId: 'agent-run-1',
+      type: 'started',
+      summary: 'Missing workflow run id',
+      createdAt: 1710000000000,
+    },
+    {
+      workflowRunId: 'run-invalid-agent-events',
+      stepId: 'step-1',
+      agentRunId: 'agent-run-1',
+      type: 'started',
+      createdAt: 1710000000000,
+    },
+  ];
+
+  for (const agentEvent of invalidEvents) {
+    assert.throws(
+      () => parseGraphState(JSON.stringify({ ...baseState, agentEvents: [agentEvent] })),
+      /agentEvents|workflowRunId|summary|Invalid enum/i,
+    );
+  }
+});
+
+test('parseGraphState rejects agent event progress above one hundred', () => {
+  const state = {
+    ...emptyAgentWorkflowState({
+      workflowRunId: 'run-invalid-progress',
+      projectId: 'project-invalid-progress',
+      roomId: 'room-invalid-progress',
+      taskId: 'task-invalid-progress',
+      userGoal: 'Invalid progress state',
+      projectPath: tempDir,
+    }),
+    agentEvents: [{
+      workflowRunId: 'run-invalid-progress',
+      stepId: 'step-1',
+      agentRunId: 'agent-run-1',
+      type: 'progress',
+      summary: 'Progress exceeded range',
+      progress: 101,
+      createdAt: 1710000000000,
+    }],
+  };
+
+  assert.throws(() => parseGraphState(JSON.stringify(state)), /progress|less than or equal/i);
 });
