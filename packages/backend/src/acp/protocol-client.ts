@@ -408,22 +408,22 @@ function createProtocolClient(args: {
         };
       }
 
-    if (args.permissionMode === 'workspace-write' && !isWorkspaceWritablePermission(params.toolCall)) {
-      args.onChunk({
-        stream: 'stdout',
-        text: '',
-        channel: 'event',
-        rawType: 'permission_request',
-        rawEvent: {
-          type: 'permission_request',
-          outcome: 'cancelled',
-          reason: 'unsupported_workspace_write_tool',
-          toolCall: params.toolCall,
-        },
-      });
-      return {
-        outcome: {
-          outcome: 'cancelled',
+      if (args.permissionMode === 'workspace-write' && !isWorkspaceWritablePermission(params.toolCall)) {
+        args.onChunk({
+          stream: 'stdout',
+          text: '',
+          channel: 'event',
+          rawType: 'permission_request',
+          rawEvent: {
+            type: 'permission_request',
+            outcome: 'cancelled',
+            reason: 'unsupported_workspace_write_tool',
+            toolCall: params.toolCall,
+          },
+        });
+        return {
+          outcome: {
+            outcome: 'cancelled',
           },
         };
       }
@@ -575,11 +575,37 @@ async function shutdownProtocolChild(args: {
   return 0;
 }
 
-function isWorkspaceWritablePermission(toolCall: { kind?: string | null; title?: string | null }): boolean {
+function isWorkspaceWritablePermission(toolCall: {
+  kind?: string | null;
+  title?: string | null;
+  rawInput?: unknown;
+}): boolean {
   const kind = toolCall.kind ?? '';
   if (kind === 'read' || kind === 'edit' || kind === 'delete' || kind === 'move' || kind === 'search') return true;
+  if (kind === 'execute' && isGitIndexOrCommitPermission(toolCall)) return true;
   const title = (toolCall.title ?? '').toLowerCase();
   return /read|search|edit|write|delete|move|patch|file/.test(title);
+}
+
+function isGitIndexOrCommitPermission(toolCall: { title?: string | null; rawInput?: unknown }): boolean {
+  const commandText = extractToolCallCommandText(toolCall);
+  return /^(?:rtk\s+)?git\s+(?:add|commit)(?:\s|$)/.test(commandText);
+}
+
+function extractToolCallCommandText(toolCall: { title?: string | null; rawInput?: unknown }): string {
+  const rawInput = toolCall.rawInput;
+  if (rawInput && typeof rawInput === 'object') {
+    const command = (rawInput as { command?: unknown }).command;
+    if (Array.isArray(command)) {
+      return command
+        .filter((part): part is string => typeof part === 'string')
+        .join(' ')
+        .trim()
+        .toLowerCase();
+    }
+    if (typeof command === 'string') return command.trim().toLowerCase();
+  }
+  return (toolCall.title ?? '').trim().toLowerCase();
 }
 
 function canResumeSession(capabilities: AgentCapabilities | undefined): boolean {

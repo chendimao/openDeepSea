@@ -1369,3 +1369,57 @@ test('runSessionAgent hides and executes split generate_image bridge markers', a
   assert.match(runRecord?.stdout ?? '', /准备生成图片/);
   assert.match(runRecord?.stdout ?? '', /图片生成请求已提交/);
 });
+
+test('runSessionAgent records cancelled permission requests as failed run diagnostics', async () => {
+  const project = projectRepo.create({
+    name: 'runtime permission diagnostic project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-permission-diagnostic-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Permission Diagnostic',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ onSession, onChunk }) => {
+      onSession?.('acp-permission-diagnostic');
+      onChunk({ stream: 'stdout', channel: 'answer', text: '准备提交设计文档。' });
+      onChunk({
+        stream: 'stdout',
+        channel: 'event',
+        text: '',
+        rawType: 'permission_request',
+        rawEvent: {
+          type: 'permission_request',
+          outcome: 'cancelled',
+          reason: 'unsupported_workspace_write_tool',
+          toolCall: {
+            kind: 'execute',
+            title: 'rtk git add docs/superpowers/specs/design.md',
+          },
+        },
+      });
+      return { exitCode: 1, sessionId: 'acp-permission-diagnostic', stderr: '' };
+    },
+  });
+
+  const run = await runSessionAgent({
+    sessionId: session.id,
+    prompt: '确定',
+    provider: 'codex',
+    permissionMode: 'workspace-write',
+  });
+  const storedRun = sessionRunRepo.get(run.id)!;
+  const blocker = sessionEvidenceRepo.listBySession(session.id)
+    .find((event) => event.source_run_id === run.id && event.event_type === 'blocker');
+
+  assert.equal(storedRun.status, 'failed');
+  assert.match(storedRun.error ?? '', /Permission request cancelled/u);
+  assert.match(storedRun.error ?? '', /unsupported_workspace_write_tool/u);
+  assert.match(storedRun.error ?? '', /rtk git add/u);
+  assert.match(blocker?.summary ?? '', /Permission request cancelled/u);
+});

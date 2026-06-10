@@ -500,6 +500,35 @@ test('invokeProtocolSession cancels non-file permissions in workspace-write mode
   assert.equal(permissionEvent?.rawEvent?.outcome, 'cancelled');
 });
 
+test('invokeProtocolSession allows git index permissions in workspace-write mode', async () => {
+  const chunks: Array<{ channel?: string; rawType?: string; rawEvent?: Record<string, unknown> }> = [];
+  const result = await invokeProtocolSession({
+    backend: 'codex',
+    server: {
+      backend: 'codex',
+      mode: 'protocol',
+      command: process.execPath,
+      args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+      transport: 'stdio',
+      enabled: true,
+      env: {
+        OPENCLAW_FAKE_ACP_PERMISSION: '1',
+        OPENCLAW_FAKE_ACP_PERMISSION_KIND: 'execute',
+        OPENCLAW_FAKE_ACP_PERMISSION_TITLE: 'rtk git add docs/superpowers/specs/design.md',
+      },
+    },
+    projectPath: process.cwd(),
+    sessionId: null,
+    prompt: 'hello',
+    acpPermissionMode: 'workspace-write',
+    onChunk: (chunk) => chunks.push(chunk),
+  });
+
+  assert.equal(result.exitCode, 0);
+  const permissionEvent = chunks.find((chunk) => chunk.rawType === 'permission_request');
+  assert.equal(permissionEvent?.rawEvent?.outcome, 'selected');
+});
+
 test('invokeProtocolSession times out unresponsive initialization safely', async () => {
   const result = await invokeProtocolSession({
     backend: 'codex',

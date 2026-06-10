@@ -586,6 +586,8 @@ function extractFailureDiagnosticFromChunk(chunk: AcpStreamChunk): string | null
 
 function extractFailureDiagnosticFromRawEvent(rawEvent: unknown): string | null {
   const raw = record(rawEvent);
+  const permissionDiagnostic = extractPermissionFailureDiagnostic(raw);
+  if (permissionDiagnostic) return permissionDiagnostic;
   const params = record(raw?.params);
   const update = record(params?.update);
   const rawOutput = record(update?.rawOutput) ?? record(update?.output);
@@ -604,6 +606,28 @@ function extractFailureDiagnosticFromRawEvent(rawEvent: unknown): string | null 
     status === 'error' ||
     looksLikeFailureDiagnostic(text);
   return normalizeFailureDiagnostic(text, failed);
+}
+
+function extractPermissionFailureDiagnostic(raw: Record<string, unknown> | null): string | null {
+  if (!raw || raw.type !== 'permission_request' || raw.outcome !== 'cancelled') return null;
+  const reason = firstNonEmptyString(raw.reason) ?? 'cancelled';
+  const toolCall = record(raw.toolCall);
+  const command = firstNonEmptyString(
+    toolCall?.title,
+    commandTextFromRawInput(toolCall?.rawInput),
+  );
+  const detail = command ? `: ${command}` : '';
+  return trimEvidenceText(`Permission request cancelled: ${reason}${detail}`);
+}
+
+function commandTextFromRawInput(rawInput: unknown): string | null {
+  const raw = record(rawInput);
+  const command = raw?.command;
+  if (Array.isArray(command)) {
+    const parts = command.filter((part): part is string => typeof part === 'string');
+    return parts.length > 0 ? parts.join(' ') : null;
+  }
+  return typeof command === 'string' ? command : null;
 }
 
 function extractAcpContentText(value: unknown): string | null {
