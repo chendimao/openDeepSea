@@ -20,7 +20,7 @@ const { workflowDefinitionRepo } = await import('../../repos/workflow-definition
 const { createGraphNodes } = await import('./nodes.js');
 const { emptyAgentWorkflowState, parseGraphState, serializeGraphState } = await import('./state.js');
 const { createGraphTools } = await import('./tools.js');
-const { continueGraphWorkflow, createGraphWorkflowRun, enqueueGraphWorkflow, retryGraphWorkflow, startGraphWorkflow } = await import('./runtime.js');
+const { approveGraphWorkflow, continueGraphWorkflow, createGraphWorkflowRun, enqueueGraphWorkflow, retryGraphWorkflow, startGraphWorkflow } = await import('./runtime.js');
 const { SUPERPOWERS_GRAPH_VERSION } = await import('./superpowers-runtime.js');
 const { setVerificationCommandRunnerForTests } = await import('./verification.js');
 import type { RespondAsAgentInput } from '../../dispatcher.js';
@@ -272,6 +272,210 @@ test('planning node omits legacy skill context for graph planner', async () => {
   assert.equal(plannerCalled, true);
 });
 
+test('low-risk README docs plan passes approval gate without awaiting approval', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-low-risk-docs-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Low Risk Docs', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Low Risk Docs Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Update README docs',
+    description: 'Clarify setup notes in README only.',
+  });
+  const run = createLegacyGraphWorkflowRun({
+    projectId: project.id,
+    projectPath: project.path,
+    roomId: room.id,
+    taskId: task.id,
+    taskTitle: task.title,
+  });
+  const state = parseGraphState(run.graph_state);
+  assert.ok(state);
+
+  const nodes = createGraphNodes(createGraphTools({
+    planner: async () => ({
+      goal: task.title,
+      summary: 'Update README setup documentation.',
+      assumptions: ['Docs-only update.'],
+      tasks: [{
+        title: 'Document setup command',
+        description: 'Edit README setup instructions.',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['README includes the setup command'],
+        scopeRead: ['README.md'],
+        scopeWrite: ['README.md'],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'minimum docs validation', required: true },
+      ],
+      risks: [],
+      needsApproval: false,
+    }),
+  }));
+
+  const plannedState = await nodes.planningNode(state);
+  const approvedState = await nodes.approvalNode(plannedState);
+  const latestRun = workflowRepo.getRun(run.id);
+  const persistedState = parseGraphState(latestRun?.graph_state ?? null);
+  const planArtifact = workflowRepo.listArtifacts(run.id).find((artifact) => artifact.artifact_type === 'plan');
+  const planMetadata = parseArtifactMetadata(planArtifact);
+
+  assert.equal(approvedState.riskAssessment?.riskLevel, 'low');
+  assert.equal(approvedState.plan?.riskLevel, 'low');
+  assert.equal(approvedState.plan?.taskKind, 'docs_only');
+  assert.equal(approvedState.plan?.needsApproval, false);
+  assert.equal(approvedState.approvalCard, null);
+  assert.equal(approvedState.approval, 'not_required');
+  assert.equal(latestRun?.status, 'running');
+  assert.notEqual(latestRun?.status, 'awaiting_approval');
+  assert.equal(persistedState?.riskAssessment?.riskLevel, 'low');
+  assert.equal(planMetadata.risk_assessment?.riskLevel, 'low');
+  assert.equal(planMetadata.approval_card, null);
+});
+
+test('medium-risk workflow plan waits for approval with approval card and decision request artifact', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-medium-risk-workflow-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Medium Risk Workflow', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Medium Risk Workflow Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Connect frontend workflow approval panel to backend events',
+    description: 'Update workflow UI and backend graph handling together.',
+  });
+  const agentRunStages: Array<WorkflowStage | null | undefined> = [];
+
+  const run = await startGraphWorkflow(task.id, {
+    supervisor: lowConfidenceSupervisor,
+    planner: async () => ({
+      goal: task.title,
+      summary: 'Wire frontend approval panel to backend workflow events.',
+      assumptions: ['Existing API shape remains compatible.'],
+      tasks: [
+        {
+          title: 'Update workflow approval UI',
+          description: 'Render approval state from workflow events.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Frontend shows approval card metadata'],
+          scopeRead: ['packages/frontend/src/pages/WorkflowPage.tsx'],
+          scopeWrite: ['packages/frontend/src/pages/WorkflowPage.tsx'],
+          dependsOn: [],
+        },
+        {
+          title: 'Update backend workflow event metadata',
+          description: 'Persist approval card metadata on workflow events.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Backend stores workflow approval metadata'],
+          scopeRead: ['packages/backend/src/workflows/graph/nodes.ts'],
+          scopeWrite: ['packages/backend/src/workflows/graph/nodes.ts'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'fullstack validation', required: true },
+      ],
+      risks: ['Frontend/backend workflow metadata must stay aligned.'],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => {
+      agentRunStages.push(input.workflowStage);
+      return createCompletedAgentRun(room.id, input);
+    },
+  });
+
+  const latestRun = workflowRepo.getRun(run.id);
+  const state = parseGraphState(latestRun?.graph_state ?? null);
+  const decisionArtifact = workflowRepo.listArtifacts(run.id)
+    .find((artifact) => artifact.artifact_type === 'decision_request');
+  const decisionMetadata = parseArtifactMetadata(decisionArtifact);
+  const planArtifact = workflowRepo.listArtifacts(run.id).find((artifact) => artifact.artifact_type === 'plan');
+  const planMetadata = parseArtifactMetadata(planArtifact);
+
+  assert.equal(latestRun?.status, 'awaiting_approval');
+  assert.equal(state?.approval, 'pending');
+  assert.equal(state?.riskAssessment?.riskLevel, 'medium');
+  assert.equal(state?.approvalCard?.riskLevel, 'medium');
+  assert.equal(state?.plan?.needsApproval, true);
+  assert.equal(decisionMetadata.approval_card?.riskLevel, 'medium');
+  assert.equal(decisionMetadata.risk_assessment?.riskLevel, 'medium');
+  assert.equal(planMetadata.approval_card?.riskLevel, 'medium');
+  assert.deepEqual(agentRunStages.filter((stage) => stage === 'implementation'), []);
+  assert.equal(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'dispatch'), false);
+});
+
+test('planner risk metadata is preserved while missing fields are filled by risk assessment', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-explicit-risk-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Explicit Risk', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Explicit Risk Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Review backend workflow schema',
+    description: 'Adjust backend workflow schema handling.',
+  });
+  const run = createLegacyGraphWorkflowRun({
+    projectId: project.id,
+    projectPath: project.path,
+    roomId: room.id,
+    taskId: task.id,
+    taskTitle: task.title,
+  });
+  const state = parseGraphState(run.graph_state);
+  assert.ok(state);
+
+  const nodes = createGraphNodes(createGraphTools({
+    planner: async () => ({
+      goal: task.title,
+      summary: 'Review and adjust backend workflow schema handling.',
+      taskKind: 'code_review',
+      riskLevel: 'high',
+      assumptions: [],
+      tasks: [{
+        title: 'Inspect workflow schema',
+        description: 'Read backend workflow schema and propose updates.',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['Workflow schema behavior is validated'],
+        scopeRead: ['packages/backend/src/workflows/graph/state.ts'],
+        scopeWrite: ['packages/backend/src/workflows/graph/nodes.ts'],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'backend validation', required: true },
+      ],
+      risks: [],
+      needsApproval: false,
+    }),
+  }));
+
+  const plannedState = await nodes.planningNode(state);
+  const planArtifact = workflowRepo.listArtifacts(run.id).find((artifact) => artifact.artifact_type === 'plan');
+  const planMetadata = parseArtifactMetadata(planArtifact);
+
+  assert.equal(plannedState.riskAssessment?.riskLevel, 'medium');
+  assert.equal(plannedState.plan?.taskKind, 'code_review');
+  assert.equal(plannedState.plan?.riskLevel, 'high');
+  assert.equal(plannedState.plan?.approvalReason, 'workflow/shared contract schema or types changes require approval');
+  assert.equal(plannedState.plan?.needsApproval, true);
+  assert.equal(planMetadata.risk_assessment?.riskLevel, 'medium');
+  assert.equal(planMetadata.taskKind, 'code_review');
+  assert.equal(planMetadata.riskLevel, 'high');
+  assert.equal(planMetadata.approvalReason, 'workflow/shared contract schema or types changes require approval');
+});
+
 test('Superpowers run records planning gate steps before dispatch', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-superpowers-gates-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
@@ -290,7 +494,7 @@ test('Superpowers run records planning gate steps before dispatch', async () => 
     title: 'Run Superpowers gates before dispatch',
   });
 
-  const run = await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflowAfterApproval(task.id, {
     supervisor: lowConfidenceSupervisor,
     planner: async () => ({
       ...createApprovalPlan(task.title),
@@ -1076,7 +1280,7 @@ test('startGraphWorkflow keeps high-confidence assignments from default supervis
     title: 'Use default supervisor assignment hint',
   });
 
-  const run = await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflowAfterApproval(task.id, {
     planner: async () => ({
       ...createApprovalPlan(task.title),
       needsApproval: false,
@@ -1292,7 +1496,7 @@ test('supervisor assignment hint can assign implementation child task to executa
     title: 'Use supervisor assignment hint',
   });
 
-  const run = await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflowAfterApproval(task.id, {
     supervisor: async () => ({
       mode: 'select_existing_workflow',
       workflowDefinitionId: workflow.id,
@@ -1336,7 +1540,7 @@ test('supervisor assignment hint ignores non-executable agent and falls back to 
     title: 'Ignore invalid supervisor assignment hint',
   });
 
-  const run = await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflowAfterApproval(task.id, {
     supervisor: async () => ({
       mode: 'select_existing_workflow',
       workflowDefinitionId: workflow.id,
@@ -1374,7 +1578,7 @@ test('graph workflow invites required built-in agents when the room only has pla
   });
   const calls: Array<{ agentId: string; stage: WorkflowStage | null | undefined }> = [];
 
-  const run = await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflowAfterApproval(task.id, {
     planner: async () => ({
       goal: 'Auto invite workflow agents',
       summary: 'Create frontend and backend work items',
@@ -1463,7 +1667,7 @@ test('graph workflow pre-invites domain executors when planner gives broad proje
   const calls: Array<{ agentId: string; stage: WorkflowStage | null | undefined }> = [];
   const broadProjectScope = join(currentProjectRoot(), '.');
 
-  await startGraphWorkflow(task.id, {
+  await startGraphWorkflowAfterApproval(task.id, {
     planner: async () => ({
       goal: '细化文件管理功能',
       summary: 'Create backend and frontend work items with broad scopes.',
@@ -1538,7 +1742,7 @@ test('graph dispatch keeps planner steps as workflow context instead of implemen
   });
   const calls: Array<{ agentId: string; taskId: string | null | undefined; stage: WorkflowStage | null | undefined }> = [];
 
-  const run = await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflowAfterApproval(task.id, {
     planner: async () => ({
       goal: task.title,
       summary: 'Plan contains one coordination item and one executable item.',
@@ -1614,7 +1818,7 @@ test('graph workflow skips optional executor task when no single agent covers it
   });
   const implementationAgents: string[] = [];
 
-  const run = await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflowAfterApproval(task.id, {
     planner: async () => ({
       goal: task.title,
       summary: 'Only the required backend task should run.',
@@ -1680,7 +1884,7 @@ test('graph workflow blocks required executor task when no single agent covers i
   });
   let implementationCalls = 0;
 
-  const run = await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflowAfterApproval(task.id, {
     planner: async () => ({
       goal: task.title,
       summary: 'Required cross-scope task cannot be assigned.',
@@ -1753,7 +1957,7 @@ test('planning node consumes product-manager background without calling planner 
   });
   const implementationAgents: string[] = [];
 
-  const run = await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflowAfterApproval(task.id, {
     planner: async () => {
       throw new Error('planner should not be called for product-manager background');
     },
@@ -1801,7 +2005,7 @@ test('supervisor assignment hint is ignored when multiple executor tasks would m
     title: 'Ignore ambiguous supervisor assignment hint',
   });
 
-  await startGraphWorkflow(task.id, {
+  await startGraphWorkflowAfterApproval(task.id, {
     supervisor: async () => ({
       mode: 'select_existing_workflow',
       workflowDefinitionId: workflow.id,
@@ -2058,7 +2262,7 @@ test('graph dispatch creates child tasks and assignment artifact after no-approv
     description: 'Create child tasks from no-approval plan.',
   });
 
-  const run = await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflowAfterApproval(task.id, {
     planner: async () => ({
       goal: 'Dispatch with graph',
       summary: 'Create one child task',
@@ -2136,7 +2340,7 @@ test('graph dispatch assigns child tasks by frontend and backend scope hints', a
     title: 'Dispatch scoped tasks',
   });
 
-  await startGraphWorkflow(task.id, {
+  await startGraphWorkflowAfterApproval(task.id, {
     planner: async () => ({
       goal: 'Dispatch scoped tasks',
       summary: 'Create frontend and backend child tasks',
@@ -2356,7 +2560,7 @@ test('no-approval graph invites built-in executor instead of selecting non-ACP e
   });
 
   let implementationAgentId: string | null = null;
-  const run = await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflowAfterApproval(task.id, {
     planner: async () => ({
       goal: 'Dispatch without ACP executor',
       summary: 'Create one child task',
@@ -3143,6 +3347,15 @@ test('execute node maps duplicate child titles by child task id instead of title
   assert.ok(afterFrontend.workflowPlan?.tasks[1]?.result_refs.length);
 });
 
+async function startGraphWorkflowAfterApproval(
+  taskId: string,
+  deps: Parameters<typeof startGraphWorkflow>[1] = {},
+): Promise<WorkflowRun> {
+  const run = await startGraphWorkflow(taskId, deps);
+  if (run.status !== 'awaiting_approval') return run;
+  return approveGraphWorkflow(run.id, 'test', deps);
+}
+
 function addAcpWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'acceptor'): RoomAgent {
   const agent = roomAgentRepo.add({
     room_id: roomId,
@@ -3341,6 +3554,11 @@ function listRawSteps(workflowRunId: string): Array<{ node_name: string | null; 
   return db
     .prepare('SELECT node_name, status FROM workflow_steps WHERE workflow_run_id = ? ORDER BY sort_order ASC, created_at ASC')
     .all(workflowRunId) as Array<{ node_name: string | null; status: string }>;
+}
+
+function parseArtifactMetadata(artifact: { metadata: string | null } | undefined): Record<string, any> {
+  assert.ok(artifact);
+  return artifact.metadata ? JSON.parse(artifact.metadata) as Record<string, any> : {};
 }
 
 function createTestWorkflowDefinition(): WorkflowDefinitionGraph {

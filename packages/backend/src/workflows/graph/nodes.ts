@@ -9,6 +9,7 @@ import { ensureWorkflowAgentsForRun } from '../agent-provisioning.js';
 import { buildCoordinatorWorkflowPlan, deriveCoordinatorPlanFromProductManagerBackground } from './coordinator-plan.js';
 import { selectCoordinatorAgentForTask, type CoordinatorWorkflowTask } from './coordinator-agents.js';
 import { inferTaskProfile, type TaskProfile } from '../task-profile.js';
+import { assessTaskRisk, buildApprovalCard } from '../task-risk.js';
 import { getBuiltInAgentTemplate } from '../../crew-templates.js';
 import type {
   Agent,
@@ -87,8 +88,6 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         coordinatorPlan ?? await generatePlannerPlanForContext(tools, context),
         { parentTitle: context.task.title },
       );
-
-      const output = formatParsedPlanArtifact(plan);
       const workflowPlan = plan.tasks.length > 0
         ? buildCoordinatorWorkflowPlan({
           workflowName: context.task.title,
@@ -97,6 +96,31 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           parsedPlan: plan,
         })
         : null;
+      const riskAssessment = assessTaskRisk({
+        title: context.task.title,
+        description: context.task.description ?? '',
+        scopeRead: Array.from(new Set(plan.tasks.flatMap((task) => task.scopeRead))),
+        scopeWrite: Array.from(new Set(plan.tasks.flatMap((task) => task.scopeWrite))),
+        acceptance: plan.tasks.flatMap((task) => task.acceptance),
+        verificationCommands: plan.verificationCommands,
+      });
+      const approvalCard = riskAssessment.requiresApproval && riskAssessment.riskLevel !== 'low'
+        ? buildApprovalCard({
+          assessment: riskAssessment,
+          agents: context.agents.map((agent) => agent.agent_id),
+          executionMode: workflowPlan?.tasks.some((task) => task.mode === 'parallel') ? 'hybrid' : 'serial',
+          risks: plan.risks,
+          assumptions: plan.assumptions,
+        })
+        : null;
+      const planWithRisk = {
+        ...plan,
+        taskKind: plan.taskKind ?? riskAssessment.taskKind,
+        riskLevel: plan.riskLevel ?? riskAssessment.riskLevel,
+        approvalReason: plan.approvalReason ?? riskAssessment.approvalReason,
+        needsApproval: plan.needsApproval || riskAssessment.requiresApproval,
+      };
+      const output = formatParsedPlanArtifact(planWithRisk);
       tools.createArtifact({
         task_id: context.task.id,
         workflow_run_id: context.run.id,
@@ -104,7 +128,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         artifact_type: 'plan',
         title: '执行计划',
         content: output,
-        metadata: { ...plan, workflow_plan_json: workflowPlan } as unknown as Record<string, unknown>,
+        metadata: {
+          ...planWithRisk,
+          workflow_plan_json: workflowPlan,
+          risk_assessment: riskAssessment,
+          approval_card: approvalCard,
+        } as unknown as Record<string, unknown>,
       });
       tools.updateGraphStep(step.id, {
         status: 'completed',
@@ -117,18 +146,20 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         entryType: 'summary',
         title: '规划摘要',
         content: [
-          `目标：${plan.goal ?? plan.summary}`,
-          `摘要：${plan.summary}`,
-          `子任务数：${plan.tasks.length}`,
-          plan.verification.length > 0 ? `验证：${plan.verification.join('; ')}` : '验证：未配置',
-          `是否需要审批：${plan.needsApproval ? '是' : '否'}`,
+          `目标：${planWithRisk.goal ?? planWithRisk.summary}`,
+          `摘要：${planWithRisk.summary}`,
+          `子任务数：${planWithRisk.tasks.length}`,
+          planWithRisk.verification.length > 0 ? `验证：${planWithRisk.verification.join('; ')}` : '验证：未配置',
+          `是否需要审批：${planWithRisk.needsApproval ? '是' : '否'}`,
         ].join('\n'),
         rawCharCount: output.length,
         metadata: {
           graph_node: 'planning',
           workflow_stage: 'planning',
-          task_count: plan.tasks.length,
-          needs_approval: plan.needsApproval,
+          task_count: planWithRisk.tasks.length,
+          needs_approval: planWithRisk.needsApproval,
+          risk_assessment: riskAssessment,
+          approval_card: approvalCard,
         },
       });
       recordEventSafely(tools, context, {
@@ -138,15 +169,19 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         metadata: {
           graph_node: 'planning',
           workflow_stage: 'planning',
-          task_count: plan.tasks.length,
-          needs_approval: plan.needsApproval,
+          task_count: planWithRisk.tasks.length,
+          needs_approval: planWithRisk.needsApproval,
+          risk_assessment: riskAssessment,
+          approval_card: approvalCard,
         },
       });
 
       const nextState: AgentWorkflowState = {
         ...state,
-        plan,
+        plan: planWithRisk,
         workflowPlan,
+        riskAssessment,
+        approvalCard,
         currentNode: 'planning',
         currentStepId: step.id,
       };
@@ -168,6 +203,20 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         status: needsApproval ? 'awaiting_approval' : 'running',
       });
       tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+      if (needsApproval && nextState.approvalCard) {
+        tools.createArtifact({
+          task_id: context.task.id,
+          workflow_run_id: context.run.id,
+          workflow_step_id: state.currentStepId,
+          artifact_type: 'decision_request',
+          title: '风险确认',
+          content: nextState.approvalCard.summary,
+          metadata: {
+            risk_assessment: nextState.riskAssessment,
+            approval_card: nextState.approvalCard,
+          },
+        });
+      }
       recordEventSafely(tools, context, {
         eventType: 'workflow_stage_changed',
         content: needsApproval
@@ -177,6 +226,8 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           graph_node: 'approval',
           workflow_stage: 'planning',
           approval_status: needsApproval ? 'pending' : 'not_required',
+          risk_assessment: nextState.riskAssessment,
+          approval_card: nextState.approvalCard,
         },
       });
       return nextState;

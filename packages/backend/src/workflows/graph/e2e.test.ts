@@ -127,7 +127,7 @@ test('graph runtime completes ACP-only development loop', async () => {
     },
   });
 
-  const run = await workflowOrchestrator.start(task.id);
+  const run = await startWorkflowOrchestratorAfterApproval(task.id);
   const detail = workflowRepo.detail(run.id);
   assert.ok(detail);
   const graphState = parseGraphState(run.graph_state);
@@ -375,7 +375,7 @@ test('graph runtime executes every planned child before review', async () => {
     },
   });
 
-  const run = await workflowOrchestrator.start(task.id);
+  const run = await startWorkflowOrchestratorAfterApproval(task.id);
   const childTasks = taskRepo.listChildren(task.id);
   const implementationCalls = agentCalls.filter((call) => call.stage === 'implementation');
   const reviewCallIndex = agentCalls.findIndex((call) => call.stage === 'code_review');
@@ -468,7 +468,7 @@ test('graph review prompt uses workflow context entries instead of raw implement
     },
   });
 
-  const run = await workflowOrchestrator.start(task.id);
+  const run = await startWorkflowOrchestratorAfterApproval(task.id);
   const detail = workflowRepo.detail(run.id);
   assert.ok(detail);
   const executeStep = requireStep(detail.steps, 'tdd_execute');
@@ -755,6 +755,12 @@ function readWorkflowEvents(roomId: string, workflowRunId: string): MessageMetad
     .filter((metadata): metadata is MessageMetadata =>
       metadata !== null && Boolean(metadata.event_type) && metadata.workflow_run_id === workflowRunId,
     );
+}
+
+async function startWorkflowOrchestratorAfterApproval(taskId: string) {
+  const run = await workflowOrchestrator.start(taskId);
+  if (run.status !== 'awaiting_approval') return run;
+  return workflowOrchestrator.approvePlan(run.id, 'test');
 }
 
 function flushImmediate(): Promise<void> {
