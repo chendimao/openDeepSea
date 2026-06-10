@@ -162,6 +162,9 @@ function getHighRiskReason(writePaths: string[], text: string): string {
   if (writePaths.some(isDependencyPath) || containsAny(text, DEPENDENCY_SIGNALS)) {
     return 'dependency/root config changes require approval';
   }
+  if (writePaths.some(isCiPipelinePath) || hasCiPipelineSignal(text)) {
+    return 'ci/build pipeline changes require approval';
+  }
   if (writePaths.some(isRootConfigPath) || containsAny(text, ROOT_CONFIG_SIGNALS)) {
     return 'root config changes require approval';
   }
@@ -206,8 +209,9 @@ function isTestOnlyChange(writePaths: string[]): boolean {
 }
 
 function isOpsOrConfigChange(writePaths: string[], text: string): boolean {
-  return writePaths.some((path) => isDependencyPath(path) || isRootConfigPath(path)) ||
-    containsAny(text, [...DEPENDENCY_SIGNALS, ...ROOT_CONFIG_SIGNALS]);
+  return writePaths.some((path) => isDependencyPath(path) || isCiPipelinePath(path) || isRootConfigPath(path)) ||
+    containsAny(text, [...DEPENDENCY_SIGNALS, ...ROOT_CONFIG_SIGNALS]) ||
+    hasCiPipelineSignal(text);
 }
 
 function isDependencyPath(path: string): boolean {
@@ -221,6 +225,14 @@ function isRootConfigPath(path: string): boolean {
   if (/(^|\/)tsconfig(\..*)?\.json$/.test(normalized)) return true;
   if (normalized.includes('/')) return false;
   return /^(vite|webpack|rollup|eslint|prettier|tailwind|postcss|vitest|jest|playwright|turbo)\.config\.[cm]?[jt]s$/.test(normalized);
+}
+
+function isCiPipelinePath(path: string): boolean {
+  const normalized = normalizePath(path);
+  return normalized.startsWith('.github/workflows/') ||
+    /(^|\/)\.gitlab-ci\.ya?ml$/.test(normalized) ||
+    /(^|\/)\.?circleci\/config\.ya?ml$/.test(normalized) ||
+    /(^|\/)azure-pipelines\.ya?ml$/.test(normalized);
 }
 
 function isDatabasePath(path: string): boolean {
@@ -250,6 +262,10 @@ function normalizePath(path: string): string {
 
 function containsAny(text: string, signals: string[]): boolean {
   return signals.some((signal) => text.includes(signal));
+}
+
+function hasCiPipelineSignal(text: string): boolean {
+  return /(^|[^a-z0-9])ci([^a-z0-9]|$)/.test(text) || containsAny(text, CI_PIPELINE_SIGNALS);
 }
 
 const CHAT_ANSWER_SIGNALS = [
@@ -292,6 +308,14 @@ const ROOT_CONFIG_SIGNALS = [
   'build config',
   '根配置',
   '构建配置',
+];
+
+const CI_PIPELINE_SIGNALS = [
+  'pipeline',
+  'build pipeline',
+  'build system',
+  'build-system',
+  '持续集成',
 ];
 
 const DATABASE_SIGNALS = [

@@ -72,6 +72,39 @@ test('marks dependencies root config and database migrations as high risk', () =
   assert.match(assessment.approvalReason, /dependency|database|root config/i);
 });
 
+test('marks CI and build pipeline files as high risk before workflow medium rules', () => {
+  const ciConfigPaths = [
+    '.github/workflows/ci.yml',
+    '.gitlab-ci.yml',
+    'circleci/config.yml',
+    'azure-pipelines.yml',
+  ];
+
+  for (const path of ciConfigPaths) {
+    const assessment = assessTaskRisk({
+      title: 'Update CI pipeline',
+      description: 'Change build pipeline checks.',
+      scopeRead: [],
+      scopeWrite: [path],
+    });
+
+    assert.equal(assessment.riskLevel, 'high', path);
+    assert.equal(assessment.requiresApproval, true, path);
+    assert.match(assessment.approvalReason, /ci|pipeline|build/i, path);
+  }
+
+  const textSignalAssessment = assessTaskRisk({
+    title: 'Update release checks',
+    description: 'Change 持续集成 build pipeline behavior.',
+    scopeRead: [],
+    scopeWrite: ['scripts/release-checks.sh'],
+  });
+
+  assert.equal(textSignalAssessment.riskLevel, 'high');
+  assert.equal(textSignalAssessment.requiresApproval, true);
+  assert.match(textSignalAssessment.approvalReason, /ci|pipeline|build/i);
+});
+
 test('returns verification commands and requires approval for low-confidence tasks', () => {
   const assessment = assessTaskRisk({
     title: 'Investigate unknown task',
