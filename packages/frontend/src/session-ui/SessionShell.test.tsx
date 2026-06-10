@@ -4,38 +4,51 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ProjectUsedAgentsPayload, SessionAgentEvent, SessionWorkspacePayload } from '../lib/types';
+import type { ActiveSessionSummary, ProjectUsedAgentsPayload, SessionAgentEvent, SessionWorkspacePayload } from '../lib/types';
 import { I18nProvider } from '../lib/i18n';
 import {
   SessionShellView,
-  buildVisualCompanionAcceptanceSubmit,
-  recordVisualCompanionOfferAccepted,
-  shouldShowVisualCompanionAction,
+  SESSION_SIDEBAR_PREFS_STORAGE_KEY,
   buildProjectReorderInput,
   buildSessionKnowledgeActionKey,
+  buildSessionSidebarModel,
   buildTranscriptFollowKey,
   buildSessionRunTranscriptItems,
+  buildVisualCompanionAcceptanceSubmit,
   getLatestUserMessageKey,
   getSessionRunThinkingDuration,
   isSessionInspectorVisibleForWorkspacePane,
   isTranscriptNearBottom,
+  readSessionSidebarPrefs,
+  recordVisualCompanionOfferAccepted,
+  shouldShowVisualCompanionAction,
   shouldIgnoreProjectDragStart,
+  sortSessionsForSidebar,
   syncExpandedProjectIds,
+  writeSessionSidebarPrefs,
   type SessionKnowledgeActionKey,
   type SessionKnowledgeSaveInput,
 } from './SessionShellView';
 
 const sessionOsCss = readFileSync(new URL('./session-os.css', import.meta.url), 'utf8');
 const sessionShellViewSource = readFileSync(new URL('./SessionShellView.tsx', import.meta.url), 'utf8');
+const localStorageValues = new Map<string, string>();
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
 globalWithReact.React = React;
 
 Object.defineProperty(globalThis, 'localStorage', {
   value: {
-    getItem: () => null,
-    setItem: () => undefined,
-    removeItem: () => undefined,
+    getItem: (key: string) => localStorageValues.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      localStorageValues.set(key, value);
+    },
+    removeItem: (key: string) => {
+      localStorageValues.delete(key);
+    },
+    clear: () => {
+      localStorageValues.clear();
+    },
   },
   configurable: true,
 });
@@ -607,8 +620,10 @@ test('SessionShell project rail CSS keeps the reference-style compact hierarchy'
     sessionOsCss,
     /\.deepsea-project-tree-heading:hover,\s*\.deepsea-project-tree-heading:focus-within\s*\{\s*background:\s*rgba\(67,\s*70,\s*84,\s*0\.1\)/s,
   );
-  assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*font-size:\s*16px/s);
-  assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*line-height:\s*22px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*font-size:\s*13px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-heading > span\s*\{[^}]*line-height:\s*18px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-heading button\s*\{[^}]*width:\s*22px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-tree-heading button\s*\{[^}]*height:\s*22px/s);
   assert.match(sessionOsCss, /\.deepsea-project-node\s*\{[^}]*min-height:\s*30px/s);
   assert.match(
     sessionOsCss,
@@ -639,6 +654,14 @@ test('SessionShell project rail CSS keeps the reference-style compact hierarchy'
   assert.match(sessionOsCss, /\.deepsea-project-session-row__time\s*\{[^}]*text-align:\s*right/s);
 });
 
+test('SessionShell styles sidebar organize menu and time rows', () => {
+  assert.match(sessionOsCss, /\.deepsea-project-filter-menu\s*\{[^}]*z-index:\s*80/s);
+  assert.match(sessionOsCss, /\.deepsea-project-filter-menu__item\s*\{[^}]*min-height:\s*28px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row--time\s*\{[^}]*min-height:\s*42px/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row__stack\s*\{[^}]*display:\s*grid/s);
+  assert.match(sessionOsCss, /\.deepsea-project-session-row__project\s*\{[^}]*font-size:\s*11px/s);
+});
+
 test('SessionShell renders current session when active sessions are absent from legacy payloads', () => {
   const { activeSessions: _activeSessions, ...legacyPayload } = createPayload();
 
@@ -656,6 +679,10 @@ test('SessionShell expands the current project by default and collapses other pr
     name: 'EmptyProject',
     path: '/workspace/empty',
     active: false,
+    created_at: Date.now() - 10_000,
+    updated_at: Date.now() - 10_000,
+    pinned_at: null,
+    sort_order: null,
     recentSessions: [],
   });
 
@@ -665,7 +692,7 @@ test('SessionShell expands the current project by default and collapses other pr
   assert.match(html, /<span>项目<\/span>/);
   assert.match(html, /OpenClaw/);
   assert.match(html, /AnotherProject/);
-  assert.match(html, /EmptyProject/);
+  assert.doesNotMatch(html, /EmptyProject/);
   assert.match(html, /SessionOS 迁移/);
   assert.doesNotMatch(html, /接口联调/);
   assert.doesNotMatch(html, /暂无活跃会话/);
@@ -707,6 +734,104 @@ test('SessionShell uses Radix project action menu with only rename and remove it
   assert.doesNotMatch(sessionOsCss, /\.deepsea-project-node__menu\s*\{[^}]*right:\s*8px/s);
 });
 
+test('SessionShell renders sidebar organize menu and create project action', () => {
+  localStorageValues.clear();
+  const html = renderSessionShell(createPayload());
+
+  assert.match(html, /aria-label="筛选、排序和整理会话"/);
+  assert.match(html, /aria-label="添加项目"/);
+  assert.match(sessionShellViewSource, /整理/);
+  assert.match(sessionShellViewSource, /按项目/);
+  assert.match(sessionShellViewSource, /时间顺序列表/);
+  assert.match(sessionShellViewSource, /排序条件/);
+  assert.match(sessionShellViewSource, /已创建/);
+  assert.match(sessionShellViewSource, /已更新/);
+  assert.match(sessionShellViewSource, /所有聊天/);
+  assert.match(sessionShellViewSource, /置顶/);
+});
+
+test('writeSessionSidebarPrefs ignores localStorage persistence failures', () => {
+  const originalLocalStorage = globalThis.localStorage;
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: {
+      setItem: () => {
+        throw new Error('storage disabled');
+      },
+    },
+    configurable: true,
+  });
+
+  try {
+    assert.doesNotThrow(() => writeSessionSidebarPrefs({
+      groupMode: 'time',
+      sortMode: 'updated',
+      visibility: 'all',
+    }));
+  } finally {
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: originalLocalStorage,
+      configurable: true,
+    });
+  }
+});
+
+test('session sidebar prefs ignore localStorage getter failures', () => {
+  const originalLocalStorage = globalThis.localStorage;
+  Object.defineProperty(globalThis, 'localStorage', {
+    get: () => {
+      throw new Error('storage unavailable');
+    },
+    configurable: true,
+  });
+
+  try {
+    assert.deepEqual(readSessionSidebarPrefs(), {
+      groupMode: 'project',
+      sortMode: 'updated',
+      visibility: 'all',
+    });
+    assert.doesNotThrow(() => writeSessionSidebarPrefs({
+      groupMode: 'time',
+      sortMode: 'updated',
+      visibility: 'all',
+    }));
+  } finally {
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: originalLocalStorage,
+      configurable: true,
+    });
+  }
+});
+
+test('SessionShell renders time ordered sidebar rows from stored preferences', () => {
+  localStorageValues.clear();
+  localStorageValues.set(SESSION_SIDEBAR_PREFS_STORAGE_KEY, JSON.stringify({
+    groupMode: 'time',
+    sortMode: 'updated',
+    visibility: 'all',
+  }));
+  const payload = createPayload();
+  payload.projectSwitcher.projects.push({
+    id: 'project-2',
+    name: 'AnotherProject',
+    path: '/workspace/another',
+    active: false,
+    created_at: Date.now() - 12_000,
+    updated_at: Date.now() - 8_000,
+    pinned_at: null,
+    sort_order: null,
+    recentSessions: [],
+  });
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-session-sidebar-mode="time"/);
+  assert.match(html, /<span>聊天<\/span>/);
+  assert.match(html, /data-session-sidebar-time-row="true"/);
+  assert.match(html, /AnotherProject/);
+  assert.doesNotMatch(html, /aria-label="切换 OpenClaw 项目展开状态"/);
+});
+
 test('SessionShell source wires project and session action callbacks', () => {
   assert.match(
     sessionShellViewSource,
@@ -723,6 +848,7 @@ test('SessionShell source wires project and session action callbacks', () => {
 });
 
 test('SessionShell renders project row without a collapse icon before the project name', () => {
+  localStorageValues.clear();
   const html = renderSessionShell(createPayload());
 
   assert.doesNotMatch(html, /data-project-collapse-icon="true"/);
@@ -789,6 +915,192 @@ test('buildProjectReorderInput returns pinned layer ids for pinned same-layer re
   });
 });
 
+test('sortSessionsForSidebar uses last viewed time before updated time', () => {
+  const now = Date.now();
+  const sessions = [
+    createActiveSummary({
+      id: 'updated-only',
+      project_id: 'project-1',
+      title: '仅更新',
+      updated_at: now - 1_000,
+      last_viewed_at: null,
+    }),
+    createActiveSummary({
+      id: 'viewed',
+      project_id: 'project-1',
+      title: '已查看',
+      updated_at: now - 10_000,
+      last_viewed_at: now,
+    }),
+    createActiveSummary({
+      id: 'older',
+      project_id: 'project-1',
+      title: '更早',
+      updated_at: now - 20_000,
+      last_viewed_at: null,
+    }),
+  ];
+
+  assert.deepEqual(sortSessionsForSidebar(sessions, 'updated').map((session) => session.id), [
+    'viewed',
+    'updated-only',
+    'older',
+  ]);
+});
+
+test('sortSessionsForSidebar falls back to id when timestamps and titles tie', () => {
+  const now = Date.now();
+  const sessions = [
+    createActiveSummary({ id: 'session-b', project_id: 'project-1', title: '重复标题', created_at: now, updated_at: now }),
+    createActiveSummary({ id: 'session-a', project_id: 'project-1', title: '重复标题', created_at: now, updated_at: now }),
+  ];
+
+  assert.deepEqual(sortSessionsForSidebar(sessions, 'updated').map((session) => session.id), [
+    'session-a',
+    'session-b',
+  ]);
+});
+
+test('buildSessionSidebarModel filters pinned sessions and hides empty projects', () => {
+  const now = Date.now();
+  const projects = [
+    {
+      id: 'project-a',
+      name: 'Project A',
+      path: '/workspace/a',
+      active: false,
+      created_at: now - 3_000,
+      updated_at: now - 2_000,
+      pinned_at: null,
+      sort_order: null,
+      recentSessions: [],
+    },
+    {
+      id: 'project-empty',
+      name: 'Empty Project',
+      path: '/workspace/empty',
+      active: false,
+      created_at: now - 1_000,
+      updated_at: now - 1_000,
+      pinned_at: null,
+      sort_order: null,
+      recentSessions: [],
+    },
+  ];
+  const sessions = [
+    createActiveSummary({
+      id: 'normal',
+      project_id: 'project-a',
+      title: '普通会话',
+      pinned_at: null,
+      created_at: now - 4_000,
+      updated_at: now - 4_000,
+    }),
+    createActiveSummary({
+      id: 'pinned',
+      project_id: 'project-a',
+      title: '置顶会话',
+      pinned_at: now,
+      created_at: now - 5_000,
+      updated_at: now - 5_000,
+    }),
+  ];
+  const model = buildSessionSidebarModel({
+    projects,
+    sessions,
+    currentSession: {
+      ...createPayload().activeSession.session,
+      id: 'missing-current',
+      status: 'archived',
+      phase: 'archived',
+      archived_at: now,
+    },
+    currentProjectId: 'project-a',
+    currentProjectName: 'Project A',
+    normalizedQuery: '',
+    prefs: { groupMode: 'project', sortMode: 'updated', visibility: 'pinned' },
+  });
+
+  assert.equal(model.heading, '项目');
+  assert.deepEqual(model.projects.map((project) => project.id), ['project-a']);
+  assert.deepEqual(model.projects[0]?.sessions.map((session) => session.id), ['pinned']);
+  assert.equal(model.emptyMessage, '暂无置顶会话。');
+});
+
+test('buildSessionSidebarModel hides empty projects even when the project itself matches search', () => {
+  const now = Date.now();
+  const model = buildSessionSidebarModel({
+    projects: [{
+      id: 'project-empty',
+      name: 'Empty Project',
+      path: '/workspace/empty',
+      active: false,
+      created_at: now - 1_000,
+      updated_at: now,
+      pinned_at: null,
+      sort_order: null,
+      recentSessions: [],
+    }],
+    sessions: [],
+    currentSession: {
+      ...createPayload().activeSession.session,
+      id: 'archived-current',
+      status: 'archived',
+      phase: 'archived',
+      archived_at: now,
+    },
+    currentProjectId: 'project-empty',
+    currentProjectName: 'Empty Project',
+    normalizedQuery: 'empty',
+    prefs: { groupMode: 'project', sortMode: 'updated', visibility: 'all' },
+  });
+
+  assert.deepEqual(model.projects, []);
+});
+
+test('buildSessionSidebarModel creates time ordered flat session rows', () => {
+  const now = Date.now();
+  const sessions = [
+    createActiveSummary({
+      id: 'old',
+      project_id: 'project-a',
+      project_name: 'Project A',
+      title: '旧会话',
+      created_at: now - 50_000,
+      updated_at: now - 40_000,
+      last_viewed_at: null,
+    }),
+    createActiveSummary({
+      id: 'recent-view',
+      project_id: 'project-b',
+      project_name: 'Project B',
+      title: '最近查看',
+      created_at: now - 60_000,
+      updated_at: now - 55_000,
+      last_viewed_at: now - 1_000,
+    }),
+  ];
+  const model = buildSessionSidebarModel({
+    projects: [],
+    sessions,
+    currentSession: {
+      ...createPayload().activeSession.session,
+      id: 'archived-current',
+      status: 'archived',
+      phase: 'archived',
+      archived_at: now,
+    },
+    currentProjectId: 'project-a',
+    currentProjectName: 'Project A',
+    normalizedQuery: '',
+    prefs: { groupMode: 'time', sortMode: 'updated', visibility: 'all' },
+  });
+
+  assert.equal(model.heading, '聊天');
+  assert.deepEqual(model.timeRows.map((session) => session.id), ['recent-view', 'old']);
+  assert.deepEqual(model.projects, []);
+});
+
 test('syncExpandedProjectIds opens the current project without overwriting existing project state', () => {
   assert.deepEqual(
     syncExpandedProjectIds(
@@ -831,6 +1143,7 @@ test('shouldIgnoreProjectDragStart is SSR-safe and wired into project drag start
 });
 
 test('SessionShell does not add an archived current session to the project tree fallback', () => {
+  localStorageValues.clear();
   const payload = createPayload();
   payload.activeSessions = [];
   payload.activeSession.session.status = 'archived';
@@ -841,7 +1154,7 @@ test('SessionShell does not add an archived current session to the project tree 
 
   assert.match(html, /新建会话/);
   assert.match(html, /<span>项目<\/span>/);
-  assert.match(html, /暂无活跃会话/);
+  assert.match(html, /没有匹配的会话。/);
   assert.doesNotMatch(html, /data-project-session-row="true"/);
 });
 
@@ -1888,6 +2201,8 @@ export function createPayload(): SessionWorkspacePayload {
         provider: 'codex',
         model: 'gpt-5.3-codex',
         pinned_at: now - 4_000,
+        created_at: now - 3_600_000,
+        last_viewed_at: now - 6_000,
         updated_at: now - 8_000,
         unread_count: 2,
         active_run_count: 1,
@@ -1904,6 +2219,8 @@ export function createPayload(): SessionWorkspacePayload {
         provider: 'codex',
         model: 'gpt-5.5',
         pinned_at: null,
+        created_at: now - 7_200_000,
+        last_viewed_at: now - 120_000,
         updated_at: now,
         unread_count: 0,
         active_run_count: 0,
@@ -2008,6 +2325,10 @@ export function createPayload(): SessionWorkspacePayload {
         name: 'OpenClaw',
         path: '/workspace/openclaw',
         active: true,
+        created_at: now - 86_400_000,
+        updated_at: now - 2_000,
+        pinned_at: null,
+        sort_order: null,
         recentSessions: [{
           id: 'session-1',
           title: 'SessionOS 迁移',
@@ -2090,6 +2411,30 @@ function createProjectUsedAgentsPayload(agent: { agent_id: string; name: string 
         workflow_role: 'executor',
       }],
     }],
+  };
+}
+
+function createActiveSummary(
+  overrides: Partial<ActiveSessionSummary> & Pick<ActiveSessionSummary, 'id' | 'project_id' | 'title'>,
+): ActiveSessionSummary {
+  const now = Date.now();
+  return {
+    id: overrides.id,
+    project_id: overrides.project_id,
+    project_name: overrides.project_name ?? `Project ${overrides.project_id}`,
+    project_path: overrides.project_path ?? `/workspace/${overrides.project_id}`,
+    title: overrides.title,
+    status: overrides.status ?? 'active',
+    phase: overrides.phase ?? 'implementing',
+    provider: overrides.provider ?? 'codex',
+    model: overrides.model ?? 'gpt-5.5',
+    pinned_at: overrides.pinned_at ?? null,
+    created_at: overrides.created_at ?? now,
+    updated_at: overrides.updated_at ?? now,
+    last_viewed_at: overrides.last_viewed_at ?? null,
+    unread_count: overrides.unread_count ?? 0,
+    active_run_count: overrides.active_run_count ?? 0,
+    latest_event_summary: overrides.latest_event_summary ?? null,
   };
 }
 

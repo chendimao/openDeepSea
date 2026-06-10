@@ -100,6 +100,8 @@ test('active session subscribers receive upsert and remove broadcasts', () => {
       provider: null,
       model: null,
       pinned_at: null,
+      created_at: 1,
+      last_viewed_at: null,
       updated_at: 1,
       unread_count: 0,
       active_run_count: 0,

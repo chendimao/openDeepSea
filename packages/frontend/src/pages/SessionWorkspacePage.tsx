@@ -86,6 +86,8 @@ export function projectSessionToActiveSummary({
     provider: session.provider,
     model: session.model,
     pinned_at: session.pinned_at,
+    created_at: session.created_at,
+    last_viewed_at: session.last_viewed_at,
     updated_at: session.updated_at,
     unread_count: 0,
     active_run_count: 0,
@@ -189,6 +191,7 @@ export function SessionWorkspacePage({
   const [compactPreview, setCompactPreview] = useState<SessionCompaction | null>(null);
   const [workspacePayload, setWorkspacePayload] = useState<SessionWorkspacePayload | null>(null);
   const [activeSessions, setActiveSessions] = useState<ActiveSessionSummary[] | null>(null);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [renameProject, setRenameProject] = useState<SessionSwitcherProject | null>(null);
   const [removeProject, setRemoveProject] = useState<SessionSwitcherProject | null>(null);
   const [renameProjectName, setRenameProjectName] = useState('');
@@ -381,6 +384,7 @@ export function SessionWorkspacePage({
               active: existing?.active ?? project.id === current.project.id,
               recentSessions: existing?.recentSessions ?? [],
               created_at: project.created_at,
+              updated_at: project.updated_at,
               pinned_at: project.pinned_at,
               sort_order: project.sort_order,
             };
@@ -533,6 +537,7 @@ export function SessionWorkspacePage({
         sessionSocket.requestSessionWorkspace({ projectId, sessionId });
       }}
       onCreateSession={createProjectSession}
+      onCreateProject={() => setCreateProjectOpen(true)}
       onRenameProject={(project) => {
         setRenameProject(project);
         setRenameProjectName(project.name);
@@ -543,6 +548,7 @@ export function SessionWorkspacePage({
       onSaveKnowledge={(input) => saveKnowledgeMutation.mutate(input)}
       savingKnowledgeKey={saveKnowledgeMutation.isPending ? saveKnowledgeMutation.variables?.key ?? null : null}
     />
+    <CreateProjectDialog open={createProjectOpen} onOpenChange={setCreateProjectOpen} />
     <Dialog
       open={renameProject !== null}
       onOpenChange={(open) => {

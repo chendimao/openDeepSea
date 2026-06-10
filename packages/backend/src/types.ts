@@ -1388,6 +1388,8 @@ export interface CliSessionSummary {
   firstUserMessage?: string;
 }
 
+type ActiveSessionWsEventSummary = import('./session-types.js').ActiveSessionSummary;
+
 export type WsServerEvent =
   | ImageGenerationWsEvent
   | { type: 'message:new'; roomId: string; message: Message }
@@ -1416,8 +1418,8 @@ export type WsServerEvent =
   | { type: 'workflow_step:created'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_step:updated'; roomId: string; step: WorkflowStep }
   | { type: 'workflow_artifact:created'; roomId: string; artifact: TaskArtifact }
-  | { type: 'active_sessions:snapshot'; sessions: import('./session-types.js').ActiveSessionSummary[] }
-  | { type: 'active_session:upsert'; session: import('./session-types.js').ActiveSessionSummary }
+  | { type: 'active_sessions:snapshot'; sessions: ActiveSessionWsEventSummary[] }
+  | { type: 'active_session:upsert'; session: ActiveSessionWsEventSummary }
   | { type: 'active_session:remove'; sessionId: string }
   | {
       type: 'session_workspace:snapshot';

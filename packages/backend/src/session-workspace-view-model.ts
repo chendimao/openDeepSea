@@ -38,6 +38,7 @@ export function buildSessionProjectSwitcher(activeProjectId: string): SessionPro
     path: project.path,
     active: project.id === activeProjectId,
     created_at: project.created_at,
+    updated_at: project.updated_at,
     pinned_at: project.pinned_at,
     sort_order: project.sort_order,
     recentSessions: buildRecentProjectSessions(project),

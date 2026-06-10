@@ -568,6 +568,8 @@ export interface ActiveSessionSummary {
   provider: AcpBackend | null;
   model: string | null;
   pinned_at: number | null;
+  created_at: number;
+  last_viewed_at: number | null;
   updated_at: number;
   unread_count: number;
   active_run_count: number;
@@ -803,6 +805,7 @@ export interface SessionProjectSwitcher {
     path: string;
     active: boolean;
     created_at?: number;
+    updated_at?: number;
     pinned_at?: number | null;
     sort_order?: number | null;
     recentSessions: Array<{

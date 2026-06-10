@@ -77,17 +77,19 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   '.yml': 'text/yaml',
   '.toml': 'text/plain',
   '.txt': 'text/plain',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
+  '.svg': 'image/svg+xml',
   '.css': 'text/css',
   '.scss': 'text/plain',
   '.less': 'text/plain',
   '.html': 'text/html',
   '.htm': 'text/html',
-  '.gif': 'image/gif',
-  '.jpeg': 'image/jpeg',
-  '.jpg': 'image/jpeg',
-  '.png': 'image/png',
-  '.webp': 'image/webp',
-  '.svg': 'image/svg+xml',
   '.xml': 'application/xml',
   '.sql': 'text/plain',
   '.sh': 'text/plain',
@@ -106,9 +108,7 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   '.php': 'text/plain',
   '.vue': 'text/plain',
   '.apng': 'image/apng',
-  '.bmp': 'image/bmp',
   '.ico': 'image/x-icon',
-  '.avif': 'image/avif',
 };
 
 export type WorkspaceFileErrorCode =
@@ -516,15 +516,16 @@ export async function readWorkspaceImageBlob(
   const resolved = await resolveWorkspacePath(projectPath, inputPath);
   ensureWorkspacePathAllowed(resolved.relativePath, resolved.symlinkTargetRelativePath);
 
+  const mimeType = inferMimeType(resolved.relativePath);
+  if (!mimeType.startsWith('image/')) {
+    throw workspaceFileError('WORKSPACE_FILE_BINARY');
+  }
+
   const fileHandle = await openWorkspaceFileForRead(resolved.absolutePath);
   try {
     const fileStats = await fileHandle.stat();
     if (!fileStats.isFile()) {
       throw workspaceFileError('WORKSPACE_PATH_NOT_FILE');
-    }
-    const mimeType = inferMimeType(resolved.relativePath);
-    if (!mimeType.startsWith('image/')) {
-      throw workspaceFileError('WORKSPACE_FILE_BINARY');
     }
     if (fileStats.size > WORKSPACE_IMAGE_BLOB_SIZE_LIMIT) {
       throw workspaceFileError('WORKSPACE_FILE_TOO_LARGE');

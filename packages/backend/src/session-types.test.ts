@@ -95,6 +95,7 @@ test('SessionWorkspacePayload supports the initial workspace contract', () => {
           name: 'OpenClaw',
           path: '/tmp/openclaw',
           active: true,
+          updated_at: 2,
           recentSessions: [
             {
               id: 'session-1',

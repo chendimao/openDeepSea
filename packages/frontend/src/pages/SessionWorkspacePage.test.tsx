@@ -24,6 +24,7 @@ import {
 
 const globalWithReact = globalThis as typeof globalThis & { React: typeof React };
 globalWithReact.React = React;
+const sessionWorkspacePageSource = readFileSync(new URL('./SessionWorkspacePage.tsx', import.meta.url), 'utf8');
 
 Object.defineProperty(globalThis, 'localStorage', {
   value: {
@@ -52,7 +53,7 @@ test('SessionWorkspacePage can render from keep-alive host route params', () => 
 });
 
 test('SessionWorkspacePage exposes override props for keep-alive host params', () => {
-  const source = readFileSync(new URL('./SessionWorkspacePage.tsx', import.meta.url), 'utf8');
+  const source = sessionWorkspacePageSource;
 
   assert.match(source, /type SessionWorkspacePageProps =/);
   assert.match(source, /projectIdOverride\?: string/);
@@ -65,10 +66,18 @@ test('SessionWorkspacePage exposes override props for keep-alive host params', (
 test('SessionWorkspacePage wires save knowledge note mutation to session messages', () => {
   const source = readFileSync(new URL('./SessionWorkspacePage.tsx', import.meta.url), 'utf8');
 
-  assert.match(source, /api\.createSessionKnowledgeNote\(workspacePayload\.activeSession\.session\.id,\s*\{\s*messageId:\s*message\.id\s*\}\)/s);
+  assert.match(source, /if \(input\.kind === 'message'\) \{/);
+  assert.match(source, /api\.createSessionKnowledgeNote\(workspacePayload\.activeSession\.session\.id,\s*\{\s*messageId:\s*input\.message\.id\s*\}\)/s);
+  assert.match(source, /api\.createSessionKnowledgeNote\(workspacePayload\.activeSession\.session\.id,\s*\{\s*title:\s*input\.title,\s*content:\s*input\.content,\s*\}\)/s);
   assert.match(source, /queryClient\.invalidateQueries\(\{\s*queryKey:\s*\['knowledge-sources'\]\s*\}\)/s);
   assert.match(source, /queryClient\.invalidateQueries\(\{\s*queryKey:\s*\['knowledge-search'\]\s*\}\)/s);
   assert.match(source, /deduplicated\s*\?\s*'知识笔记已存在'\s*:\s*'已保存为知识笔记'/s);
+});
+
+test('SessionWorkspacePage wires project creation dialog into SessionShell', () => {
+  assert.match(sessionWorkspacePageSource, /const \[createProjectOpen,\s*setCreateProjectOpen\] = useState\(false\)/);
+  assert.match(sessionWorkspacePageSource, /onCreateProject=\{\(\) => setCreateProjectOpen\(true\)\}/);
+  assert.match(sessionWorkspacePageSource, /<CreateProjectDialog open=\{createProjectOpen\} onOpenChange=\{setCreateProjectOpen\}/);
 });
 
 test('root session route shows project onboarding when no projects exist', () => {
@@ -271,11 +280,52 @@ test('projectSessionToActiveSummary creates a rail record under the target proje
     provider: 'codex',
     model: 'gpt-5.5',
     pinned_at: null,
+    created_at: 100,
+    last_viewed_at: null,
     updated_at: 200,
     unread_count: 0,
     active_run_count: 0,
     latest_event_summary: null,
   });
+});
+
+test('projectSessionToActiveSummary preserves created and last viewed timestamps', () => {
+  const now = Date.now();
+  const summary = projectSessionToActiveSummary({
+    project: {
+      id: 'project-1',
+      name: 'OpenDeepSea',
+      path: '/workspace/opendeepsea',
+    },
+    session: {
+      id: 'session-1',
+      project_id: 'project-1',
+      title: '侧栏排序',
+      current_goal: null,
+      mode: 'code',
+      phase: 'implementing',
+      status: 'active',
+      provider: 'codex',
+      model: 'gpt-5.5',
+      workspace_path: '/workspace/opendeepsea',
+      worktree_path: null,
+      branch_name: null,
+      forked_from_session_id: null,
+      forked_from_history_record_id: null,
+      latest_compaction_id: null,
+      latest_context_manifest_id: null,
+      closed_at: null,
+      pinned_at: null,
+      last_viewed_at: now - 5_000,
+      created_at: now - 10_000,
+      updated_at: now,
+      archived_at: null,
+    },
+  });
+
+  assert.equal(summary.created_at, now - 10_000);
+  assert.equal(summary.last_viewed_at, now - 5_000);
+  assert.equal(summary.updated_at, now);
 });
 
 test('applyProjectSwitcherProjectPatch updates project switcher and active project name', () => {
@@ -478,6 +528,8 @@ function createCommandPayload(): SessionWorkspacePayload {
         provider: 'codex',
         model: 'gpt-5.5',
         pinned_at: null,
+        created_at: 100,
+        last_viewed_at: null,
         updated_at: 200,
         unread_count: 0,
         active_run_count: 0,
@@ -494,6 +546,8 @@ function createCommandPayload(): SessionWorkspacePayload {
         provider: 'codex',
         model: 'gpt-5.5',
         pinned_at: null,
+        created_at: 90,
+        last_viewed_at: null,
         updated_at: 180,
         unread_count: 0,
         active_run_count: 0,
@@ -546,6 +600,7 @@ function createCommandPayload(): SessionWorkspacePayload {
           path: '/workspace/opendeepsea',
           active: true,
           created_at: 100,
+          updated_at: 200,
           pinned_at: null,
           sort_order: 1,
           recentSessions: [],
@@ -556,6 +611,7 @@ function createCommandPayload(): SessionWorkspacePayload {
           path: '/workspace/another',
           active: false,
           created_at: 90,
+          updated_at: 180,
           pinned_at: null,
           sort_order: 2,
           recentSessions: [],

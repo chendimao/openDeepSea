@@ -140,6 +140,7 @@ export function SessionShellView({
   onSaveContract,
   onOpenSession,
   onCreateSession,
+  onCreateProject,
   onRenameProject,
   onRemoveProject,
   onReorderProjects,
@@ -155,6 +156,7 @@ export function SessionShellView({
   onSaveContract?: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) => void;
   onOpenSession?: (projectId: string, sessionId: string) => void;
   onCreateSession?: (projectId: string) => void | Promise<void>;
+  onCreateProject?: () => void;
   onRenameProject?: (project: ProjectSwitcherProject) => void;
   onRemoveProject?: (project: ProjectSwitcherProject) => void;
   onReorderProjects?: (input: { ids: string[]; pinned: boolean }) => void;
@@ -179,6 +181,7 @@ export function SessionShellView({
           onCommand={onCommand}
           onOpenSession={onOpenSession}
           onCreateSession={onCreateSession}
+          onCreateProject={onCreateProject}
           onRenameProject={onRenameProject}
           onRemoveProject={onRemoveProject}
           onReorderProjects={onReorderProjects}
@@ -353,6 +356,7 @@ type ProjectSessionTreeProject = {
   path: string;
   active: boolean;
   created_at?: number;
+  updated_at?: number;
   pinned_at?: number | null;
   sort_order?: number | null;
   recentSessions: ProjectSwitcherProject['recentSessions'];
@@ -361,6 +365,31 @@ type ProjectSessionTreeProject = {
 };
 
 type ProjectSwitcherProject = SessionWorkspacePayload['projectSwitcher']['projects'][number];
+
+export type SessionSidebarGroupMode = 'project' | 'time';
+export type SessionSidebarSortMode = 'created' | 'updated';
+export type SessionSidebarVisibility = 'all' | 'pinned';
+
+export type SessionSidebarPrefs = {
+  groupMode: SessionSidebarGroupMode;
+  sortMode: SessionSidebarSortMode;
+  visibility: SessionSidebarVisibility;
+};
+
+export const SESSION_SIDEBAR_PREFS_STORAGE_KEY = 'opendeepsea.sessionSidebar.viewPrefs';
+
+export const DEFAULT_SESSION_SIDEBAR_PREFS: SessionSidebarPrefs = {
+  groupMode: 'project',
+  sortMode: 'updated',
+  visibility: 'all',
+};
+
+export type SessionSidebarModel = {
+  heading: '项目' | '聊天';
+  projects: ProjectSessionTreeProject[];
+  timeRows: ActiveSessionSummary[];
+  emptyMessage: string;
+};
 
 const projectActionMenuItems: Array<{
   label: '编辑名称' | '移除';
@@ -445,6 +474,7 @@ function ProjectSessionTreeRail({
   onCommand,
   onOpenSession,
   onCreateSession,
+  onCreateProject,
   onRenameProject,
   onRemoveProject,
   onReorderProjects,
@@ -458,6 +488,7 @@ function ProjectSessionTreeRail({
   onCommand: (command: string) => void;
   onOpenSession?: (projectId: string, sessionId: string) => void;
   onCreateSession?: (projectId: string) => void | Promise<void>;
+  onCreateProject?: () => void;
   onRenameProject?: (project: ProjectSwitcherProject) => void;
   onRemoveProject?: (project: ProjectSwitcherProject) => void;
   onReorderProjects?: (input: { ids: string[]; pinned: boolean }) => void;
@@ -465,27 +496,38 @@ function ProjectSessionTreeRail({
 }): JSX.Element {
   const [q, setQ] = useState('');
   const normalizedQuery = q.trim().toLowerCase();
-  const tree = buildProjectSessionTree({
+  const [sidebarPrefs, setSidebarPrefs] = useState(readSessionSidebarPrefs);
+  const sidebarModel = buildSessionSidebarModel({
     projects,
     sessions,
     currentSession,
     currentProjectId,
     currentProjectName,
+    normalizedQuery,
+    prefs: sidebarPrefs,
   });
+  const visibleProjects = sidebarModel.projects;
+  const visibleTimeRows = sidebarModel.timeRows;
   const [expandedProjectIds, setExpandedProjectIds] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(tree.map((project) => [project.id, project.id === currentProjectId]))
+    Object.fromEntries(visibleProjects.map((project) => [project.id, project.id === currentProjectId]))
   );
   const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null);
   const [draggingProjectId, setDraggingProjectId] = useState<string | null>(null);
   const [dropProjectId, setDropProjectId] = useState<string | null>(null);
-  const visibleProjects = filterProjectSessionTree(tree, normalizedQuery);
-  const treeProjectIdKey = tree.map((project) => project.id).join('\0');
+  const treeProjectIdKey = visibleProjects.map((project) => project.id).join('\0');
   useEffect(() => {
     setExpandedProjectIds((current) => {
-      const next = syncExpandedProjectIds(current, tree, currentProjectId);
+      const next = syncExpandedProjectIds(current, visibleProjects, currentProjectId);
       return expandedProjectIdsEqual(current, next) ? current : next;
     });
   }, [currentProjectId, treeProjectIdKey]);
+  const updateSidebarPrefs = (patch: Partial<SessionSidebarPrefs>) => {
+    setSidebarPrefs((current) => {
+      const next = normalizeSessionSidebarPrefs({ ...current, ...patch });
+      writeSessionSidebarPrefs(next);
+      return next;
+    });
+  };
   const createSessionForProject = (projectId: string) => {
     setExpandedProjectIds((current) => ({ ...current, [projectId]: true }));
     setOpenProjectMenuId(null);
@@ -544,19 +586,82 @@ function ProjectSessionTreeRail({
       </div>
 
       <div className="deepsea-history__list deepsea-project-tree">
-        <div className="deepsea-project-tree-heading">
-          <span>项目</span>
+        <div className="deepsea-project-tree-heading" data-session-sidebar-mode={sidebarPrefs.groupMode}>
+          <span>{sidebarModel.heading}</span>
           <div>
-            <button type="button" aria-label="筛选项目">
-              <Filter aria-hidden="true" />
-            </button>
-            <button type="button" aria-label="新建项目文件夹">
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button type="button" aria-label="筛选、排序和整理会话">
+                  <Filter aria-hidden="true" />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content align="end" sideOffset={8} className="deepsea-project-filter-menu">
+                  <SidebarMenuSection title="整理">
+                    <SidebarMenuItem
+                      icon={FolderOpen}
+                      label="按项目"
+                      active={sidebarPrefs.groupMode === 'project'}
+                      onSelect={() => updateSidebarPrefs({ groupMode: 'project' })}
+                    />
+                    <SidebarMenuItem
+                      icon={Timer}
+                      label="时间顺序列表"
+                      active={sidebarPrefs.groupMode === 'time'}
+                      onSelect={() => updateSidebarPrefs({ groupMode: 'time' })}
+                    />
+                  </SidebarMenuSection>
+                  <SidebarMenuSection title="排序条件">
+                    <SidebarMenuItem
+                      icon={Timer}
+                      label="已创建"
+                      active={sidebarPrefs.sortMode === 'created'}
+                      onSelect={() => updateSidebarPrefs({ sortMode: 'created' })}
+                    />
+                    <SidebarMenuItem
+                      icon={SquarePen}
+                      label="已更新"
+                      active={sidebarPrefs.sortMode === 'updated'}
+                      onSelect={() => updateSidebarPrefs({ sortMode: 'updated' })}
+                    />
+                  </SidebarMenuSection>
+                  <SidebarMenuSection title="显示">
+                    <SidebarMenuItem
+                      icon={MessageSquare}
+                      label="所有聊天"
+                      active={sidebarPrefs.visibility === 'all'}
+                      onSelect={() => updateSidebarPrefs({ visibility: 'all' })}
+                    />
+                    <SidebarMenuItem
+                      icon={Pin}
+                      label="置顶"
+                      active={sidebarPrefs.visibility === 'pinned'}
+                      onSelect={() => updateSidebarPrefs({ visibility: 'pinned' })}
+                    />
+                  </SidebarMenuSection>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+            <button type="button" aria-label="添加项目" onClick={onCreateProject}>
               <FolderPlus aria-hidden="true" />
             </button>
           </div>
         </div>
-        {visibleProjects.length === 0 ? (
-          <div className="deepsea-empty">没有匹配的项目或会话。</div>
+        {sidebarPrefs.groupMode === 'time' ? (
+          visibleTimeRows.length === 0 ? (
+            <div className="deepsea-empty">{sidebarModel.emptyMessage}</div>
+          ) : visibleTimeRows.map((session) => (
+            <ProjectSessionTimeRow
+              currentSessionId={currentSession.id}
+              key={session.id}
+              onOpenSession={onOpenSession}
+              onToggleSessionPin={onToggleSessionPin}
+              session={session}
+              sortMode={sidebarPrefs.sortMode}
+            />
+          ))
+        ) : visibleProjects.length === 0 ? (
+          <div className="deepsea-empty">{sidebarModel.emptyMessage}</div>
         ) : visibleProjects.map((project) => {
           const expanded = normalizedQuery
             ? true
@@ -683,6 +788,7 @@ function ProjectSessionTreeRail({
                       onOpenSession={onOpenSession}
                       onToggleSessionPin={onToggleSessionPin}
                       session={session}
+                      sortMode={sidebarPrefs.sortMode}
                     />
                   ))}
                 </div>
@@ -695,14 +801,118 @@ function ProjectSessionTreeRail({
   );
 }
 
-function ProjectSessionRow({
+function SidebarMenuSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <div className="deepsea-project-filter-menu__section">
+      <div className="deepsea-project-filter-menu__title">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function SidebarMenuItem({
+  icon: Icon,
+  label,
+  active,
+  onSelect,
+}: {
+  icon: LucideIcon;
+  label: string;
+  active: boolean;
+  onSelect: () => void;
+}): JSX.Element {
+  return (
+    <DropdownMenu.Item asChild onSelect={onSelect}>
+      <button
+        type="button"
+        className="deepsea-project-filter-menu__item"
+        data-active={active ? 'true' : undefined}
+      >
+        <Icon aria-hidden="true" />
+        <span>{label}</span>
+        {active ? <CheckCircle2 aria-hidden="true" /> : null}
+      </button>
+    </DropdownMenu.Item>
+  );
+}
+
+function ProjectSessionTimeRow({
   session,
   currentSessionId,
+  sortMode,
   onOpenSession,
   onToggleSessionPin,
 }: {
   session: ActiveSessionSummary;
   currentSessionId: string;
+  sortMode: SessionSidebarSortMode;
+  onOpenSession?: (projectId: string, sessionId: string) => void;
+  onToggleSessionPin?: (session: ActiveSessionSummary) => void;
+}): JSX.Element {
+  const isCurrent = session.id === currentSessionId;
+  return (
+    <div
+      className="deepsea-project-session-row-wrap deepsea-project-session-row-wrap--time"
+      data-current={isCurrent ? 'true' : undefined}
+      data-pinned={session.pinned_at !== null ? 'true' : 'false'}
+      data-session-sidebar-time-row="true"
+    >
+      <button
+        type="button"
+        className="deepsea-project-session-pin"
+        data-session-pin-button="true"
+        data-pinned={session.pinned_at !== null ? 'true' : 'false'}
+        aria-label={`${session.pinned_at !== null ? '取消置顶会话' : '置顶会话'}：${session.title}`}
+        aria-pressed={session.pinned_at !== null}
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggleSessionPin?.(session);
+        }}
+      >
+        <Pin aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        aria-current={isCurrent ? 'true' : undefined}
+        className="deepsea-project-session-row deepsea-project-session-row--time"
+        data-current={isCurrent ? 'true' : undefined}
+        data-project-session-row="true"
+        data-running={session.active_run_count > 0 ? 'true' : undefined}
+        data-status={session.status}
+        onClick={() => onOpenSession?.(session.project_id, session.id)}
+      >
+        <span className="deepsea-project-session-row__stack">
+          <span className="deepsea-project-session-row__title" title={session.title}>
+            {formatCompactSessionTitle(session.title, 31)}
+          </span>
+          <span className="deepsea-project-session-row__project" title={session.project_name}>
+            {session.project_name}
+          </span>
+        </span>
+        <time className="deepsea-project-session-row__time">
+          {formatRelativeTime(Date.now(), getSessionSidebarSortTime(session, sortMode))}
+        </time>
+      </button>
+    </div>
+  );
+}
+
+function ProjectSessionRow({
+  session,
+  currentSessionId,
+  sortMode,
+  onOpenSession,
+  onToggleSessionPin,
+}: {
+  session: ActiveSessionSummary;
+  currentSessionId: string;
+  sortMode: SessionSidebarSortMode;
   onOpenSession?: (projectId: string, sessionId: string) => void;
   onToggleSessionPin?: (session: ActiveSessionSummary) => void;
 }): JSX.Element {
@@ -740,7 +950,9 @@ function ProjectSessionRow({
         <span className="deepsea-project-session-row__title" title={session.title}>
           {formatCompactSessionTitle(session.title, 31)}
         </span>
-        <time className="deepsea-project-session-row__time">{formatRelativeTime(Date.now(), session.updated_at)}</time>
+        <time className="deepsea-project-session-row__time">
+          {formatRelativeTime(Date.now(), getSessionSidebarSortTime(session, sortMode))}
+        </time>
       </button>
     </div>
   );
@@ -759,6 +971,13 @@ function buildProjectSessionTree(input: {
     input.currentProjectId,
     input.currentProjectName,
   ).filter((session) => session.status !== 'archived');
+  return buildProjectSessionTreeFromActiveSessions(input.projects, activeSessions);
+}
+
+function buildProjectSessionTreeFromActiveSessions(
+  projects: ProjectSwitcherProject[],
+  activeSessions: ActiveSessionSummary[],
+): ProjectSessionTreeProject[] {
   const sessionsByProjectId = new Map<string, ActiveSessionSummary[]>();
   for (const session of activeSessions) {
     const bucket = sessionsByProjectId.get(session.project_id) ?? [];
@@ -766,13 +985,14 @@ function buildProjectSessionTree(input: {
     sessionsByProjectId.set(session.project_id, bucket);
   }
 
-  const knownProjectIds = new Set(input.projects.map((project) => project.id));
-  const projectNodes: ProjectSessionTreeProject[] = input.projects.map((project) => ({
+  const knownProjectIds = new Set(projects.map((project) => project.id));
+  const projectNodes: ProjectSessionTreeProject[] = projects.map((project) => ({
     id: project.id,
     name: project.name,
     path: project.path,
     active: project.active,
     created_at: project.created_at,
+    updated_at: project.updated_at,
     pinned_at: project.pinned_at,
     sort_order: project.sort_order,
     recentSessions: project.recentSessions,
@@ -789,6 +1009,8 @@ function buildProjectSessionTree(input: {
       name: session.project_name || '其他项目',
       path: session.project_path,
       active: false,
+      created_at: session.created_at,
+      updated_at: session.updated_at,
       recentSessions: [],
       sortable: false,
       sessions: [],
@@ -798,6 +1020,143 @@ function buildProjectSessionTree(input: {
   }
 
   return [...projectNodes, ...orphanProjects.values()];
+}
+
+export function normalizeSessionSidebarPrefs(value: unknown): SessionSidebarPrefs {
+  if (!value || typeof value !== 'object') return DEFAULT_SESSION_SIDEBAR_PREFS;
+  const record = value as Partial<Record<keyof SessionSidebarPrefs, unknown>>;
+  const groupMode = record.groupMode === 'time' || record.groupMode === 'project'
+    ? record.groupMode
+    : DEFAULT_SESSION_SIDEBAR_PREFS.groupMode;
+  const sortMode = record.sortMode === 'created' || record.sortMode === 'updated'
+    ? record.sortMode
+    : DEFAULT_SESSION_SIDEBAR_PREFS.sortMode;
+  const visibility = record.visibility === 'all' || record.visibility === 'pinned'
+    ? record.visibility
+    : DEFAULT_SESSION_SIDEBAR_PREFS.visibility;
+  return { groupMode, sortMode, visibility };
+}
+
+export function readSessionSidebarPrefs(): SessionSidebarPrefs {
+  const storage = getSessionSidebarStorage();
+  if (!storage) return DEFAULT_SESSION_SIDEBAR_PREFS;
+  try {
+    const raw = storage.getItem(SESSION_SIDEBAR_PREFS_STORAGE_KEY);
+    return normalizeSessionSidebarPrefs(raw ? JSON.parse(raw) : null);
+  } catch {
+    return DEFAULT_SESSION_SIDEBAR_PREFS;
+  }
+}
+
+export function writeSessionSidebarPrefs(prefs: SessionSidebarPrefs): void {
+  const storage = getSessionSidebarStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(SESSION_SIDEBAR_PREFS_STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    // Ignore persistence failures so the current interaction can still update in memory.
+  }
+}
+
+function getSessionSidebarStorage(): Storage | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function getSessionSidebarSortTime(session: ActiveSessionSummary, sortMode: SessionSidebarSortMode): number {
+  if (sortMode === 'created') return session.created_at;
+  return session.last_viewed_at ?? session.updated_at;
+}
+
+function getProjectSidebarSortTime(project: ProjectSessionTreeProject, sortMode: SessionSidebarSortMode): number {
+  if (sortMode === 'created') return project.created_at ?? 0;
+  return project.updated_at ?? project.created_at ?? 0;
+}
+
+export function sortSessionsForSidebar(
+  sessions: ActiveSessionSummary[],
+  sortMode: SessionSidebarSortMode,
+): ActiveSessionSummary[] {
+  return [...sessions].sort((left, right) => {
+    const delta = getSessionSidebarSortTime(right, sortMode) - getSessionSidebarSortTime(left, sortMode);
+    return delta || right.updated_at - left.updated_at || left.title.localeCompare(right.title) || left.id.localeCompare(right.id);
+  });
+}
+
+function sortProjectsForSidebar(
+  projects: ProjectSessionTreeProject[],
+  sortMode: SessionSidebarSortMode,
+): ProjectSessionTreeProject[] {
+  return [...projects].sort((left, right) => {
+    const delta = getProjectSidebarSortTime(right, sortMode) - getProjectSidebarSortTime(left, sortMode);
+    return delta || left.name.localeCompare(right.name);
+  });
+}
+
+function filterSessionsByVisibility(
+  sessions: ActiveSessionSummary[],
+  visibility: SessionSidebarVisibility,
+): ActiveSessionSummary[] {
+  return visibility === 'pinned'
+    ? sessions.filter((session) => session.pinned_at !== null)
+    : sessions;
+}
+
+function filterSessionsByQuery(
+  sessions: ActiveSessionSummary[],
+  normalizedQuery: string,
+): ActiveSessionSummary[] {
+  if (!normalizedQuery) return sessions;
+  return sessions.filter((session) =>
+    [
+      session.title,
+      session.project_name,
+      session.project_path,
+      session.latest_event_summary ?? '',
+    ].some((value) => value.toLowerCase().includes(normalizedQuery))
+  );
+}
+
+export function buildSessionSidebarModel(input: {
+  projects: ProjectSwitcherProject[];
+  sessions: ActiveSessionSummary[];
+  currentSession: Session;
+  currentProjectId: string;
+  currentProjectName: string;
+  normalizedQuery: string;
+  prefs: SessionSidebarPrefs;
+}): SessionSidebarModel {
+  const activeSessions = ensureCurrentActiveSessionSummary(
+    input.sessions,
+    input.currentSession,
+    input.currentProjectId,
+    input.currentProjectName,
+  ).filter((session) => session.status !== 'archived');
+  const visibleSessions = sortSessionsForSidebar(
+    filterSessionsByVisibility(activeSessions, input.prefs.visibility),
+    input.prefs.sortMode,
+  );
+  const tree = buildProjectSessionTreeFromActiveSessions(input.projects, visibleSessions)
+    .map((project) => ({
+      ...project,
+      sessions: sortSessionsForSidebar(project.sessions, input.prefs.sortMode),
+    }));
+  const queryFilteredProjects = filterProjectSessionTree(tree, input.normalizedQuery);
+  const displayProjects = queryFilteredProjects.filter((project) => project.sessions.length > 0);
+  const projects = sortProjectsForSidebar(
+    displayProjects,
+    input.prefs.sortMode,
+  );
+  const timeRows = filterSessionsByQuery(visibleSessions, input.normalizedQuery);
+  return {
+    heading: input.prefs.groupMode === 'time' ? '聊天' : '项目',
+    projects: input.prefs.groupMode === 'project' ? projects : [],
+    timeRows: input.prefs.groupMode === 'time' ? timeRows : [],
+    emptyMessage: input.prefs.visibility === 'pinned' ? '暂无置顶会话。' : '没有匹配的会话。',
+  };
 }
 
 function filterProjectSessionTree(
@@ -2437,6 +2796,8 @@ function ensureCurrentActiveSessionSummary(
     provider: currentSession.provider,
     model: currentSession.model,
     pinned_at: currentSession.pinned_at,
+    created_at: currentSession.created_at,
+    last_viewed_at: currentSession.last_viewed_at,
     updated_at: currentSession.updated_at,
     unread_count: 0,
     active_run_count: 0,

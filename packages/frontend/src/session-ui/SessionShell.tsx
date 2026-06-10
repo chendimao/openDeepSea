@@ -14,6 +14,7 @@ export function SessionShell({
   onSaveContract,
   onOpenSession,
   onCreateSession,
+  onCreateProject,
   onRenameProject,
   onRemoveProject,
   onReorderProjects,
@@ -29,6 +30,7 @@ export function SessionShell({
   onSaveContract?: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) => void;
   onOpenSession?: (projectId: string, sessionId: string) => void;
   onCreateSession?: (projectId: string) => void | Promise<void>;
+  onCreateProject?: () => void;
   onRenameProject?: (project: SessionShellProject) => void;
   onRemoveProject?: (project: SessionShellProject) => void;
   onReorderProjects?: (input: { ids: string[]; pinned: boolean }) => void;
@@ -46,6 +48,7 @@ export function SessionShell({
       onSaveContract={onSaveContract}
       onOpenSession={onOpenSession}
       onCreateSession={onCreateSession}
+      onCreateProject={onCreateProject}
       onRenameProject={onRenameProject}
       onRemoveProject={onRemoveProject}
       onReorderProjects={onReorderProjects}
