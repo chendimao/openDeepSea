@@ -434,14 +434,21 @@ test('SessionShell renders failed run output with collapsed error details and a 
     status: 'failed',
     stdout: '准备启动可视化辅助。',
     stderr: 'fatal: Unable to create .git/index.lock: Operation not permitted',
+    activity_log: '收尾阶段尝试提交变更。',
     error: 'Error: listen EPERM: operation not permitted 127.0.0.1:55063',
   };
 
   const html = renderSessionShell(payload);
+  const thoughtIndex = html.indexOf('class="deepsea-agent-thought"');
+  const errorDetailsIndex = html.indexOf('class="deepsea-run-error-details"');
+  const runBodyIndex = html.indexOf('class="deepsea-run-log-body"');
 
   assert.match(html, /准备启动可视化辅助。/);
   assert.match(html, /<details class="deepsea-run-error-details"/);
   assert.doesNotMatch(html, /<details class="deepsea-run-error-details" open/);
+  assert.ok(thoughtIndex >= 0);
+  assert.ok(errorDetailsIndex > thoughtIndex);
+  assert.ok(errorDetailsIndex < runBodyIndex);
   assert.match(html, /错误详情/);
   assert.match(html, /stderr/);
   assert.match(html, /fatal: Unable to create \.git\/index\.lock/);

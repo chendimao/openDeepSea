@@ -1044,7 +1044,12 @@ function TranscriptCanvas({
                     />
                   </div>
                 </div>
-                <AgentThoughtPanel run={item.run} evidence={runEvidence} agentEvents={runAgentEvents} />
+                <AgentThoughtPanel
+                  run={item.run}
+                  evidence={runEvidence}
+                  agentEvents={runAgentEvents}
+                  failureDetails={failureDetails}
+                />
                 <div className="deepsea-run-log-body">
                   {displayMode === 'source' ? (
                     <MessageContent content={output} mode={displayMode} suppressTraceEvents />
@@ -1057,7 +1062,6 @@ function TranscriptCanvas({
                   )}
                 </div>
                 <GeneratedImageEvidencePanel evidence={runEvidence} />
-                <RunFailureDetails details={failureDetails} />
               </section>
             </article>
           );
@@ -1712,10 +1716,12 @@ function AgentThoughtPanel({
   run,
   evidence,
   agentEvents,
+  failureDetails,
 }: {
   run: SessionRun;
   evidence: SessionEvidenceEvent[];
   agentEvents: SessionAgentEvent[];
+  failureDetails: RunFailureDetail[];
 }): JSX.Element | null {
   const thought = agentThoughtText(run, evidence, agentEvents);
   const defaultOpen = isRunThoughtOpenByDefault(run.status);
@@ -1726,7 +1732,7 @@ function AgentThoughtPanel({
   }));
   const open = openState.runId === run.id && openState.status === run.status ? openState.open : defaultOpen;
 
-  if (!thought) return null;
+  if (!thought && failureDetails.length === 0) return null;
   const status = runThoughtStatusLabel(run.status);
   return (
     <details
@@ -1757,7 +1763,8 @@ function AgentThoughtPanel({
           </span>
         </span>
       </summary>
-      <p>{thought}</p>
+      {thought ? <p>{thought}</p> : null}
+      <RunFailureDetails details={failureDetails} />
     </details>
   );
 }
