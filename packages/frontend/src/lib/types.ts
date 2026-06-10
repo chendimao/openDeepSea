@@ -278,6 +278,20 @@ export interface ApprovalCardMetadata {
   risks: string[];
   assumptions: string[];
 }
+export type SessionApprovalStatus = 'pending' | 'approved' | 'rejected';
+export interface SessionApprovalMetadata {
+  status: SessionApprovalStatus;
+  sourceMessageId: string;
+  originalContent: string;
+  riskAssessment: TaskRiskAssessment;
+  approvalCard: ApprovalCardMetadata;
+  workspaceFileRefs: string[];
+  libraryFileRefs: string[];
+  platformSkillRefs: PlatformSkillRef[];
+  createdAt: number;
+  decidedAt?: number;
+  decidedByMessageId?: string;
+}
 export interface StructuredAgentEventMetadata {
   workflowRunId: string;
   stepId: string;
@@ -1598,6 +1612,7 @@ export interface MessageMetadata {
   timeline_status?: 'running' | 'completed' | 'failed';
   risk_assessment?: TaskRiskAssessment;
   approval_card?: ApprovalCardMetadata;
+  session_approval?: SessionApprovalMetadata;
   agent_event?: StructuredAgentEventMetadata;
   source_message_id?: string;
   fallback_agent_id?: string;

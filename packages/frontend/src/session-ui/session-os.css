@@ -2895,6 +2895,153 @@
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+.deepsea-risk-approval {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+.deepsea-risk-approval__summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.deepsea-risk-approval__summary > div {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+.deepsea-risk-approval__summary strong {
+  color: var(--deepsea-text);
+  font-size: 13px;
+  font-weight: 860;
+  letter-spacing: 0;
+}
+.deepsea-risk-approval__summary span {
+  color: rgba(67, 70, 84, 0.68);
+  font-size: 11px;
+  font-weight: 800;
+}
+.deepsea-risk-approval__icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  border-radius: 6px;
+  background: var(--deepsea-warn-soft);
+  color: var(--deepsea-warn);
+}
+.deepsea-risk-approval[data-approval-status="approved"] .deepsea-risk-approval__icon {
+  border-color: rgba(0, 108, 73, 0.18);
+  background: var(--deepsea-ok-soft);
+  color: var(--deepsea-ok);
+}
+.deepsea-risk-approval[data-approval-status="rejected"] .deepsea-risk-approval__icon {
+  border-color: rgba(225, 29, 72, 0.18);
+  background: var(--deepsea-danger-soft);
+  color: var(--deepsea-danger);
+}
+.deepsea-risk-approval__icon svg {
+  width: 14px;
+  height: 14px;
+}
+.deepsea-risk-approval__table {
+  width: 100%;
+  table-layout: fixed;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 14%, var(--deepsea-border-subtle));
+  border-collapse: collapse;
+  border-spacing: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--deepsea-surface) 94%, var(--deepsea-primary));
+  overflow: hidden;
+}
+.deepsea-risk-approval__table th,
+.deepsea-risk-approval__table td {
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 14%, var(--deepsea-border-subtle));
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.deepsea-risk-approval__table th {
+  width: 92px;
+  background: color-mix(in srgb, var(--deepsea-primary) 7%, var(--deepsea-surface-strong));
+  color: rgba(67, 70, 84, 0.78);
+  font-weight: 860;
+  white-space: nowrap;
+}
+.deepsea-risk-approval__table td {
+  color: var(--deepsea-text);
+  font-family: var(--deepsea-mono);
+  font-weight: 700;
+}
+.deepsea-risk-approval__actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.deepsea-risk-approval__button,
+.deepsea-risk-approval__decision {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 860;
+  line-height: 1;
+  white-space: nowrap;
+}
+.deepsea-risk-approval__button {
+  border: 1px solid rgba(0, 108, 73, 0.2);
+  background: var(--deepsea-ok-soft);
+  color: var(--deepsea-ok);
+  cursor: pointer;
+}
+.deepsea-risk-approval__button[data-approval-action="reject"] {
+  border-color: rgba(225, 29, 72, 0.18);
+  background: var(--deepsea-danger-soft);
+  color: var(--deepsea-danger);
+}
+.deepsea-risk-approval__button:hover,
+.deepsea-risk-approval__button:focus-visible {
+  filter: saturate(1.12);
+  transform: translateY(-1px);
+}
+.deepsea-risk-approval__button:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.28);
+  outline-offset: 2px;
+}
+.deepsea-risk-approval__button svg,
+.deepsea-risk-approval__decision svg {
+  width: 13px;
+  height: 13px;
+}
+.deepsea-risk-approval__decision {
+  border: 1px solid rgba(100, 116, 139, 0.16);
+  background: rgba(100, 116, 139, 0.1);
+  color: rgba(67, 70, 84, 0.76);
+}
+.deepsea-risk-approval[data-approval-status="approved"] .deepsea-risk-approval__decision {
+  border-color: rgba(0, 108, 73, 0.16);
+  background: var(--deepsea-ok-soft);
+  color: var(--deepsea-ok);
+}
+.deepsea-risk-approval[data-approval-status="rejected"] .deepsea-risk-approval__decision {
+  border-color: rgba(225, 29, 72, 0.18);
+  background: var(--deepsea-danger-soft);
+  color: var(--deepsea-danger);
+}
 .deepsea-message-attachments {
   display: flex;
   flex-wrap: wrap;

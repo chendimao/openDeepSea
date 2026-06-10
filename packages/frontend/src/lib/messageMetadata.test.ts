@@ -410,10 +410,45 @@ test('parseMessageMetadata preserves workflow risk approval metadata', () => {
       risks: [],
       assumptions: [],
     },
+    session_approval: {
+      status: 'pending',
+      sourceMessageId: 'message-1',
+      originalContent: '实现前后端联动任务',
+      riskAssessment: {
+        taskKind: 'fullstack_change',
+        riskLevel: 'medium',
+        requiresApproval: true,
+        approvalReason: '涉及前后端联动。',
+        confidence: 0.8,
+        reasons: ['frontend and backend coordination'],
+        scopeRead: ['packages/backend'],
+        scopeWrite: ['packages/backend/src/workflows'],
+        verificationCommands: [],
+      },
+      approvalCard: {
+        riskLevel: 'medium',
+        taskKind: 'fullstack_change',
+        summary: '涉及前后端联动。',
+        approvalReason: '涉及前后端联动。',
+        agents: ['planner', 'backend-executor'],
+        executionMode: 'serial',
+        scopeRead: ['packages/backend'],
+        scopeWrite: ['packages/backend/src/workflows'],
+        verification: [],
+        risks: [],
+        assumptions: [],
+      },
+      workspaceFileRefs: [],
+      libraryFileRefs: [],
+      platformSkillRefs: [],
+      createdAt: 1_700_000_000_000,
+    },
   }));
 
   assert.equal(metadata.risk_assessment?.riskLevel, 'medium');
   assert.equal(metadata.approval_card?.taskKind, 'fullstack_change');
+  assert.equal(metadata.session_approval?.status, 'pending');
+  assert.equal(metadata.session_approval?.originalContent, '实现前后端联动任务');
 });
 
 test('parseMessageMetadata preserves structured agent event metadata', () => {

@@ -4,7 +4,7 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ActiveSessionSummary, ProjectUsedAgentsPayload, SessionAgentEvent, SessionWorkspacePayload } from '../lib/types';
+import type { ActiveSessionSummary, ProjectUsedAgentsPayload, SessionAgentEvent, SessionMessage, SessionWorkspacePayload } from '../lib/types';
 import { I18nProvider } from '../lib/i18n';
 import {
   SessionShellView,
@@ -2055,6 +2055,66 @@ test('SessionShell groups message actions and markdown switch in one compact too
   assert.doesNotMatch(sessionOsCss, /\.deepsea-message__action \+ \.deepsea-markdown-switch/);
 });
 
+test('SessionShell renders pending risk approval messages as a table with decision buttons', () => {
+  const payload = createPayload();
+  payload.activeSession.messages.push(createRiskGateMessage({
+    id: 'risk-gate-1',
+    sourceMessageId: 'message-1',
+    status: 'pending',
+    created_at: Date.now() - 10_000,
+  }));
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /deepsea-risk-approval/);
+  assert.match(html, /data-approval-status="pending"/);
+  assert.match(html, /deepsea-risk-approval__table/);
+  assert.match(html, /风险级别/);
+  assert.match(html, /medium/);
+  assert.match(html, /任务类型/);
+  assert.match(html, /fullstack_change/);
+  assert.match(html, /原因/);
+  assert.match(html, /front\/back workflow changes require approval/);
+  assert.match(html, /执行方式/);
+  assert.match(html, /hybrid/);
+  assert.match(html, /data-approval-action="approve"/);
+  assert.match(html, /aria-label="确定执行风险任务"/);
+  assert.match(html, />确定</);
+  assert.match(html, /data-approval-action="reject"/);
+  assert.match(html, /aria-label="取消本次风险任务"/);
+  assert.match(html, />取消</);
+  assert.doesNotMatch(html, /请回复/);
+});
+
+test('SessionShell uses the latest risk approval decision to hide stale gate buttons', () => {
+  const payload = createPayload();
+  const sourceMessageId = 'message-1';
+  payload.activeSession.messages.push(createRiskGateMessage({
+    id: 'risk-gate-1',
+    sourceMessageId,
+    status: 'pending',
+    created_at: Date.now() - 20_000,
+    approvalCreatedAt: Date.now() - 20_000,
+  }));
+  payload.activeSession.messages.push(createRiskGateMessage({
+    id: 'risk-gate-decision-1',
+    sourceMessageId,
+    status: 'approved',
+    includeApprovalCard: false,
+    content: '风险确认已确认，正在启动 planner 执行原任务。',
+    created_at: Date.now() - 5_000,
+    approvalCreatedAt: Date.now() - 20_000,
+    approvalDecidedAt: Date.now() - 5_000,
+  }));
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-approval-status="approved"/);
+  assert.match(html, /已确认执行/);
+  assert.doesNotMatch(html, /data-approval-action="approve"/);
+  assert.doesNotMatch(html, /data-approval-action="reject"/);
+});
+
 test('SessionShell renders a concise active session title with the full title available', () => {
   const payload = createPayload();
   payload.activeSession.session.title = '用户在当前会话第一次发送消息的时候要同时修改当前会话名称并避免超长溢出';
@@ -2071,6 +2131,88 @@ function getAgentThoughtTag(html: string): string {
   const match = html.match(/<details class="deepsea-agent-thought"[^>]*>/);
   assert.ok(match, 'expected an agent thought details element');
   return match[0];
+}
+
+function createRiskGateMessage(input: {
+  id: string;
+  sourceMessageId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: number;
+  includeApprovalCard?: boolean;
+  content?: string;
+  approvalCreatedAt?: number;
+  approvalDecidedAt?: number;
+}): SessionMessage {
+  const riskAssessment = {
+    taskKind: 'fullstack_change',
+    riskLevel: 'medium',
+    requiresApproval: true,
+    approvalReason: 'front/back workflow changes require approval',
+    confidence: 0.86,
+    reasons: ['front/back workflow changes require approval'],
+    scopeRead: ['packages/frontend', 'packages/backend'],
+    scopeWrite: ['packages/frontend/src/session-ui', 'packages/backend/src'],
+    verificationCommands: [{
+      command: 'npm run build',
+      reason: '验证前后端 TypeScript 和前端打包',
+      required: true,
+    }],
+  };
+  const approvalCard = {
+    riskLevel: 'medium',
+    taskKind: 'fullstack_change',
+    summary: 'front/back workflow changes require approval',
+    approvalReason: 'front/back workflow changes require approval',
+    agents: ['planner', 'frontend-dev', 'backend-dev'],
+    executionMode: 'hybrid',
+    scopeRead: ['packages/frontend', 'packages/backend'],
+    scopeWrite: ['packages/frontend/src/session-ui', 'packages/backend/src'],
+    verification: [{
+      command: 'npm run build',
+      reason: '验证前后端 TypeScript 和前端打包',
+      required: true,
+    }],
+    risks: [],
+    assumptions: [],
+  };
+  const sessionApproval = {
+    status: input.status,
+    sourceMessageId: input.sourceMessageId,
+    originalContent: '实现一个需要前后端联动的任务',
+    riskAssessment,
+    approvalCard,
+    workspaceFileRefs: [],
+    libraryFileRefs: [],
+    platformSkillRefs: [],
+    createdAt: input.approvalCreatedAt ?? input.created_at,
+    ...(input.approvalDecidedAt ? { decidedAt: input.approvalDecidedAt } : {}),
+  };
+  const metadata: Record<string, unknown> = {
+    session_approval: sessionApproval,
+    source_message_id: input.sourceMessageId,
+  };
+  if (input.includeApprovalCard !== false) {
+    metadata.risk_assessment = riskAssessment;
+    metadata.approval_card = approvalCard;
+  }
+  return {
+    id: input.id,
+    session_id: 'session-1',
+    role: 'system',
+    sender_id: 'risk-gate',
+    sender_name: '风险门禁',
+    content: input.content ?? [
+      '风险确认：该任务被判定为 medium 风险，需要确认后再启动 planner。',
+      '任务类型：fullstack_change',
+      '原因：front/back workflow changes require approval',
+      '执行方式：hybrid',
+      '请回复“确认”继续执行，或回复“取消”放弃本次执行。',
+    ].join('\n'),
+    message_type: 'system',
+    status: 'completed',
+    metadata: JSON.stringify(metadata),
+    created_at: input.created_at,
+  };
 }
 
 function createAgentEvent(input: Partial<SessionAgentEvent> & Pick<SessionAgentEvent, 'id' | 'seq' | 'channel' | 'event_type'>): SessionAgentEvent {

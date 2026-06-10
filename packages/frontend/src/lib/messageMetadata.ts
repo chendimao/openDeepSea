@@ -351,6 +351,9 @@ function sanitizeTaskEventMetadata(value: Record<string, unknown>) {
   if (isRecord(value.approval_card)) {
     metadata.approval_card = value.approval_card as unknown as MessageMetadata['approval_card'];
   }
+  if (isRecord(value.session_approval)) {
+    metadata.session_approval = value.session_approval as unknown as MessageMetadata['session_approval'];
+  }
   if (isRecord(value.agent_event)) {
     metadata.agent_event = value.agent_event as unknown as MessageMetadata['agent_event'];
   }

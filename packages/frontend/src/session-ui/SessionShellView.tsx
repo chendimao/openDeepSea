@@ -37,8 +37,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import type {
   ActiveSessionSummary,
+  ApprovalCardMetadata,
+  MessageMetadata,
   ProjectUsedAgentsPayload,
   Session,
+  SessionApprovalStatus,
   SessionContract,
   SessionDetail,
   SessionDiffRow,
@@ -90,9 +93,15 @@ export function buildSessionKnowledgeActionKey(
 }
 
 const VISUAL_COMPANION_ACCEPTANCE_MESSAGE = '同意，打开设计预览。';
+const RISK_APPROVAL_APPROVE_MESSAGE = '确认';
+const RISK_APPROVAL_REJECT_MESSAGE = '取消';
 
 export function buildVisualCompanionAcceptanceSubmit(): SessionComposerSubmit {
   return { content: VISUAL_COMPANION_ACCEPTANCE_MESSAGE };
+}
+
+function buildRiskApprovalDecisionSubmit(decision: 'approved' | 'rejected'): SessionComposerSubmit {
+  return { content: decision === 'approved' ? RISK_APPROVAL_APPROVE_MESSAGE : RISK_APPROVAL_REJECT_MESSAGE };
 }
 
 export function recordVisualCompanionOfferAccepted(acceptedKeys: Set<string>, offerKey: string): boolean {
@@ -1212,12 +1221,24 @@ function TranscriptCanvas({
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
   const followTranscriptRef = useRef(true);
   const acceptedVisualCompanionOfferKeysRef = useRef(new Set<string>());
+  const [optimisticApprovalStatuses, setOptimisticApprovalStatuses] = useState<Record<string, SessionApprovalStatus>>({});
   const { data: projectAgents } = useQuery({
     queryKey: ['project-used-agents', projectId],
     queryFn: () => api.getProjectUsedAgents(projectId),
     staleTime: 20_000,
   });
   const timeline = buildTranscriptTimeline(detail).slice(-36);
+  const persistedApprovalStatusBySourceMessageId = useMemo(
+    () => buildSessionApprovalStatusLookup(detail.messages),
+    [detail.messages],
+  );
+  const approvalStatusBySourceMessageId = useMemo(() => {
+    const statuses = new Map(persistedApprovalStatusBySourceMessageId);
+    for (const [sourceMessageId, status] of Object.entries(optimisticApprovalStatuses)) {
+      statuses.set(sourceMessageId, { status, updatedAt: Number.MAX_SAFE_INTEGER });
+    }
+    return statuses;
+  }, [optimisticApprovalStatuses, persistedApprovalStatusBySourceMessageId]);
   const hasLiveRun = timeline.some((item) => item.kind === 'run' && isRunLive(item.run.status));
   const [nowTick, setNowTick] = useState(() => Date.now());
   const timelineEndKey = timeline.at(-1)?.key ?? 'empty';
@@ -1243,6 +1264,10 @@ function TranscriptCanvas({
     if (!recordVisualCompanionOfferAccepted(acceptedVisualCompanionOfferKeysRef.current, offerKey)) return;
     setAcceptedVisualCompanionOfferKeys(new Set(acceptedVisualCompanionOfferKeysRef.current));
     onSendMessage(buildVisualCompanionAcceptanceSubmit());
+  };
+  const submitRiskApprovalDecision = (sourceMessageId: string, status: Exclude<SessionApprovalStatus, 'pending'>): void => {
+    setOptimisticApprovalStatuses((current) => ({ ...current, [sourceMessageId]: status }));
+    onSendMessage(buildRiskApprovalDecisionSubmit(status));
   };
   const copyTranscriptText = async (content: string, key: string) => {
     try {
@@ -1318,6 +1343,8 @@ function TranscriptCanvas({
                 visualCompanionAccepted={acceptedVisualCompanionOfferKeys.has(`message:${item.message.id}`)}
                 onAcceptVisualCompanion={() => acceptVisualCompanionOffer(`message:${item.message.id}`)}
                 onOpenWorkspaceFile={openWorkspaceFilePreview}
+                onSubmitRiskApprovalDecision={submitRiskApprovalDecision}
+                approvalStatusBySourceMessageId={approvalStatusBySourceMessageId}
               />
             );
           }
@@ -1466,6 +1493,60 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
   ].sort((left, right) => left.timestamp - right.timestamp || left.key.localeCompare(right.key));
 }
 
+interface SessionApprovalStatusSnapshot {
+  status: SessionApprovalStatus;
+  updatedAt: number;
+}
+
+function buildSessionApprovalStatusLookup(messages: SessionMessage[]): Map<string, SessionApprovalStatusSnapshot> {
+  const statuses = new Map<string, SessionApprovalStatusSnapshot>();
+  for (const message of messages) {
+    const metadata = parseMessageMetadata(message.metadata);
+    const approval = metadata.session_approval;
+    if (!approval || !isSessionApprovalStatus(approval.status)) continue;
+    const sourceMessageId = typeof approval.sourceMessageId === 'string' ? approval.sourceMessageId.trim() : '';
+    if (!sourceMessageId) continue;
+    const updatedAt = firstNumber(approval.decidedAt, approval.createdAt, message.created_at) ?? message.created_at;
+    const current = statuses.get(sourceMessageId);
+    if (!current || updatedAt >= current.updatedAt) {
+      statuses.set(sourceMessageId, { status: approval.status, updatedAt });
+    }
+  }
+  return statuses;
+}
+
+function isSessionApprovalStatus(value: unknown): value is SessionApprovalStatus {
+  return value === 'pending' || value === 'approved' || value === 'rejected';
+}
+
+function shouldRenderRiskApprovalPanel(message: SessionMessage, metadata: MessageMetadata): boolean {
+  return message.role === 'system' && message.sender_id === 'risk-gate' && Boolean(metadata.approval_card);
+}
+
+function getSessionApprovalSourceMessageId(metadata: MessageMetadata, fallbackMessageId: string): string {
+  const approvalSource = metadata.session_approval?.sourceMessageId;
+  if (typeof approvalSource === 'string' && approvalSource.trim()) return approvalSource.trim();
+  if (typeof metadata.source_message_id === 'string' && metadata.source_message_id.trim()) {
+    return metadata.source_message_id.trim();
+  }
+  return fallbackMessageId;
+}
+
+function getEffectiveSessionApprovalStatus({
+  metadata,
+  fallbackMessageId,
+  approvalStatusBySourceMessageId,
+}: {
+  metadata: MessageMetadata;
+  fallbackMessageId: string;
+  approvalStatusBySourceMessageId: Map<string, SessionApprovalStatusSnapshot>;
+}): SessionApprovalStatus {
+  const sourceMessageId = getSessionApprovalSourceMessageId(metadata, fallbackMessageId);
+  const latest = approvalStatusBySourceMessageId.get(sourceMessageId)?.status;
+  if (latest) return latest;
+  return isSessionApprovalStatus(metadata.session_approval?.status) ? metadata.session_approval.status : 'pending';
+}
+
 const TRANSCRIPT_FOLLOW_THRESHOLD_PX = 220;
 
 export function isTranscriptNearBottom(
@@ -1511,6 +1592,117 @@ export function buildTranscriptFollowKey({
   ].join(':');
 }
 
+function RiskApprovalMessagePanel({
+  approvalCard,
+  status,
+  onApprove,
+  onReject,
+}: {
+  approvalCard: ApprovalCardMetadata;
+  status: SessionApprovalStatus;
+  onApprove: () => void;
+  onReject: () => void;
+}): JSX.Element {
+  const rows = buildRiskApprovalRows(approvalCard);
+  return (
+    <div className="deepsea-risk-approval" data-approval-status={status}>
+      <div className="deepsea-risk-approval__summary">
+        <span className="deepsea-risk-approval__icon" aria-hidden="true">
+          <ShieldCheck />
+        </span>
+        <div>
+          <strong>风险确认</strong>
+          <span>{riskApprovalStatusLabel(status)}</span>
+        </div>
+      </div>
+      <table className="deepsea-risk-approval__table" aria-label="风险确认详情">
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <th scope="row">{row.label}</th>
+              <td>{row.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="deepsea-risk-approval__actions">
+        {status === 'pending' ? (
+          <>
+            <button
+              type="button"
+              className="deepsea-risk-approval__button"
+              data-approval-action="approve"
+              aria-label="确定执行风险任务"
+              title="发送确认并启动 planner"
+              onClick={onApprove}
+            >
+              <Check aria-hidden="true" />
+              <span>确定</span>
+            </button>
+            <button
+              type="button"
+              className="deepsea-risk-approval__button"
+              data-approval-action="reject"
+              aria-label="取消本次风险任务"
+              title="发送取消并放弃本次执行"
+              onClick={onReject}
+            >
+              <X aria-hidden="true" />
+              <span>取消</span>
+            </button>
+          </>
+        ) : (
+          <span className="deepsea-risk-approval__decision">{riskApprovalDecisionLabel(status)}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function buildRiskApprovalRows(approvalCard: ApprovalCardMetadata): Array<{ label: string; value: string }> {
+  const verificationCommands = Array.isArray(approvalCard.verification)
+    ? approvalCard.verification
+      .map((item) => item?.command)
+      .filter((command): command is string => typeof command === 'string' && command.trim().length > 0)
+    : [];
+  return [
+    { label: '风险级别', value: formatRiskApprovalValue(approvalCard.riskLevel) },
+    { label: '任务类型', value: formatRiskApprovalValue(approvalCard.taskKind) },
+    { label: '原因', value: formatRiskApprovalValue(approvalCard.approvalReason) ?? formatRiskApprovalValue(approvalCard.summary) },
+    { label: '执行方式', value: formatRiskApprovalValue(approvalCard.executionMode) },
+    { label: '智能体', value: formatRiskApprovalList(approvalCard.agents) },
+    { label: '读取范围', value: formatRiskApprovalList(approvalCard.scopeRead) },
+    { label: '写入范围', value: formatRiskApprovalList(approvalCard.scopeWrite) },
+    { label: '验证命令', value: formatRiskApprovalList(verificationCommands, '；') },
+  ].filter((row): row is { label: string; value: string } => Boolean(row.value));
+}
+
+function formatRiskApprovalValue(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+function formatRiskApprovalList(value: unknown, separator = '、'): string | null {
+  if (!Array.isArray(value)) return null;
+  const items = value
+    .map(formatRiskApprovalValue)
+    .filter((item): item is string => Boolean(item));
+  return items.length > 0 ? items.join(separator) : null;
+}
+
+function riskApprovalStatusLabel(status: SessionApprovalStatus): string {
+  if (status === 'approved') return '已确认';
+  if (status === 'rejected') return '已取消';
+  return '等待确认';
+}
+
+function riskApprovalDecisionLabel(status: SessionApprovalStatus): string {
+  if (status === 'approved') return '已确认执行';
+  if (status === 'rejected') return '已取消执行';
+  return '等待确认';
+}
+
 function TranscriptMessage({
   projectId,
   message,
@@ -1523,6 +1715,8 @@ function TranscriptMessage({
   visualCompanionAccepted,
   onAcceptVisualCompanion,
   onOpenWorkspaceFile,
+  onSubmitRiskApprovalDecision,
+  approvalStatusBySourceMessageId,
 }: {
   projectId: string;
   message: SessionMessage;
@@ -1535,9 +1729,26 @@ function TranscriptMessage({
   visualCompanionAccepted: boolean;
   onAcceptVisualCompanion: () => void;
   onOpenWorkspaceFile?: WorkspaceFileOpenHandler;
+  onSubmitRiskApprovalDecision: (sourceMessageId: string, status: Exclude<SessionApprovalStatus, 'pending'>) => void;
+  approvalStatusBySourceMessageId: Map<string, SessionApprovalStatusSnapshot>;
 }): JSX.Element {
   const metadata = parseMessageMetadata(message.metadata);
   const imageJobId = metadata.image_generation_job_id;
+  const riskApprovalSourceMessageId = shouldRenderRiskApprovalPanel(message, metadata)
+    ? getSessionApprovalSourceMessageId(metadata, message.id)
+    : null;
+  const riskApprovalPanel = shouldRenderRiskApprovalPanel(message, metadata) && metadata.approval_card ? (
+    <RiskApprovalMessagePanel
+      approvalCard={metadata.approval_card}
+      status={getEffectiveSessionApprovalStatus({
+        metadata,
+        fallbackMessageId: message.id,
+        approvalStatusBySourceMessageId,
+      })}
+      onApprove={() => riskApprovalSourceMessageId && onSubmitRiskApprovalDecision(riskApprovalSourceMessageId, 'approved')}
+      onReject={() => riskApprovalSourceMessageId && onSubmitRiskApprovalDecision(riskApprovalSourceMessageId, 'rejected')}
+    />
+  ) : undefined;
   const knowledgeActionKey = buildSessionKnowledgeActionKey('message', message.id);
   const copyActionKey = `copy:${knowledgeActionKey}`;
   const copied = copiedActionKey === copyActionKey;
@@ -1561,6 +1772,7 @@ function TranscriptMessage({
         displayMode={displayMode}
         onDisplayModeChange={onDisplayModeChange}
         onOpenWorkspaceFile={onOpenWorkspaceFile}
+        structuredContent={riskApprovalPanel}
         actions={(
           <>
             <button
