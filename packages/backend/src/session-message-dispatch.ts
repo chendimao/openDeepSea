@@ -54,6 +54,7 @@ interface SessionApprovalMetadata {
   status: 'pending' | 'approved' | 'rejected';
   sourceMessageId: string;
   originalContent: string;
+  contextContent?: string;
   riskAssessment: TaskRiskAssessment;
   approvalCard: ApprovalCard;
   workspaceFileRefs: string[];
@@ -79,6 +80,7 @@ interface SessionExecutionMetadata {
 
 interface SessionWorkflowRequest {
   originalContent: string;
+  contextContent?: string;
   riskAssessment: TaskRiskAssessment;
   agents: string[];
   executionMode: ApprovalCard['executionMode'];
@@ -169,6 +171,8 @@ export async function dispatchSessionUserMessage(input: {
   }
 
   const riskGate = assessSessionMessageRisk({
+    sessionId: runtimeSession.id,
+    sourceMessageId: message.id,
     content: input.content,
     workspaceFileRefs,
     platformSkillRefs,
@@ -179,6 +183,7 @@ export async function dispatchSessionUserMessage(input: {
       sourceMessage: message,
       assessment: riskGate.assessment,
       approvalCard: riskGate.approvalCard,
+      contextContent: riskGate.contextContent,
       workspaceFileRefs,
       libraryFileRefs,
       platformSkillRefs,
@@ -186,12 +191,13 @@ export async function dispatchSessionUserMessage(input: {
     return message;
   }
 
-  if (shouldStartAutomaticWorkflow(riskGate.assessment)) {
+  if (riskGate.applies && shouldStartAutomaticWorkflow(riskGate.assessment)) {
     startAutomaticSessionWorkflow({
       project,
       session: runtimeSession,
       sourceMessage: message,
       assessment: riskGate.assessment,
+      contextContent: riskGate.contextContent,
       workspaceFileRefs,
     });
     return message;
@@ -259,6 +265,7 @@ function startAutomaticSessionWorkflow(input: {
   session: Session;
   sourceMessage: SessionMessage;
   assessment: TaskRiskAssessment;
+  contextContent: string | null;
   workspaceFileRefs: string[];
 }): void {
   void runAutomaticSessionWorkflow(input).catch((error) => {
@@ -286,6 +293,7 @@ async function runAutomaticSessionWorkflow(input: {
   session: Session;
   sourceMessage: SessionMessage;
   assessment: TaskRiskAssessment;
+  contextContent: string | null;
   workspaceFileRefs: string[];
 }): Promise<void> {
   const request = buildAutomaticSessionWorkflowRequest(input);
@@ -344,10 +352,12 @@ async function runAutomaticSessionWorkflow(input: {
 function buildAutomaticSessionWorkflowRequest(input: {
   sourceMessage: SessionMessage;
   assessment: TaskRiskAssessment;
+  contextContent: string | null;
   workspaceFileRefs: string[];
 }): SessionWorkflowRequest {
   return {
     originalContent: input.sourceMessage.content,
+    ...(input.contextContent ? { contextContent: input.contextContent } : {}),
     riskAssessment: input.assessment,
     agents: approvalAgentsForAssessment(input.assessment),
     executionMode: approvalExecutionModeForAssessment(input.assessment),
@@ -439,6 +449,8 @@ export function recordSessionImageGenerationToolResultEvidence(input: {
 }
 
 function assessSessionMessageRisk(input: {
+  sessionId: string;
+  sourceMessageId: string;
   content: string;
   workspaceFileRefs: string[];
   platformSkillRefs: ResolvedPlatformSkillRef[];
@@ -446,18 +458,37 @@ function assessSessionMessageRisk(input: {
   assessment: TaskRiskAssessment;
   requiresApproval: boolean;
   approvalCard: ApprovalCard | null;
+  contextContent: string | null;
+  applies: boolean;
 } {
   const applies = shouldApplySessionRiskGate(input.content, input.platformSkillRefs);
   const scopeWrite = applies
     ? dedupeStringList([...extractPathLikeScopes(input.content), ...input.workspaceFileRefs])
     : extractPathLikeScopes(input.content);
-  const assessment = assessTaskRisk({
+  let assessment = assessTaskRisk({
     title: input.content,
     description: input.content,
     scopeRead: input.workspaceFileRefs,
     scopeWrite,
     verificationCommands: [],
   });
+  let contextContent: string | null = null;
+  if (shouldEnhanceRiskWithSessionContext({ content: input.content, assessment })) {
+    contextContent = buildRecentSessionTaskContext(input.sessionId, input.sourceMessageId);
+    if (contextContent) {
+      const enhancedDescription = [input.content, '', '最近会话上下文：', contextContent].join('\n');
+      const enhancedScopeWrite = applies
+        ? dedupeStringList([...extractPathLikeScopes(enhancedDescription), ...input.workspaceFileRefs])
+        : extractPathLikeScopes(enhancedDescription);
+      assessment = assessTaskRisk({
+        title: input.content,
+        description: enhancedDescription,
+        scopeRead: input.workspaceFileRefs,
+        scopeWrite: enhancedScopeWrite,
+        verificationCommands: [],
+      });
+    }
+  }
   const lowConfidenceOnly = assessment.approvalReason === 'low-confidence task profile requires approval';
   const requiresApproval = applies &&
     assessment.requiresApproval &&
@@ -472,7 +503,7 @@ function assessSessionMessageRisk(input: {
         assumptions: ['确认后将使用原始任务内容和原始引用上下文继续执行。'],
       })
     : null;
-  return { assessment, requiresApproval, approvalCard };
+  return { assessment, requiresApproval, approvalCard, contextContent, applies };
 }
 
 function recordSessionApprovalRequest(input: {
@@ -480,6 +511,7 @@ function recordSessionApprovalRequest(input: {
   sourceMessage: SessionMessage;
   assessment: TaskRiskAssessment;
   approvalCard: ApprovalCard;
+  contextContent: string | null;
   workspaceFileRefs: string[];
   libraryFileRefs: string[];
   platformSkillRefs: ResolvedPlatformSkillRef[];
@@ -489,6 +521,7 @@ function recordSessionApprovalRequest(input: {
     status: 'pending',
     sourceMessageId: input.sourceMessage.id,
     originalContent: input.sourceMessage.content,
+    ...(input.contextContent ? { contextContent: input.contextContent } : {}),
     riskAssessment: input.assessment,
     approvalCard: input.approvalCard,
     workspaceFileRefs: input.workspaceFileRefs,
@@ -635,7 +668,7 @@ async function handleSessionApprovalDecision(input: {
   await startSessionPlannerRun({
     project: input.project,
     session: input.session,
-    content: nextApproval.originalContent,
+    content: buildSessionApprovalExecutionContent(nextApproval),
     workspacePath: input.workspacePath,
     workspaceFileRefs: nextApproval.workspaceFileRefs ?? input.workspaceFileRefs,
     libraryFileRefs: nextApproval.libraryFileRefs ?? input.libraryFileRefs,
@@ -741,6 +774,7 @@ async function runApprovedSessionWorkflow(input: {
 function buildApprovedSessionWorkflowRequest(approval: SessionApprovalMetadata): SessionWorkflowRequest {
   return {
     originalContent: approval.originalContent,
+    ...(approval.contextContent ? { contextContent: approval.contextContent } : {}),
     riskAssessment: approval.riskAssessment,
     agents: approval.approvalCard.agents,
     executionMode: approval.approvalCard.executionMode,
@@ -751,6 +785,11 @@ function buildApprovedSessionWorkflowRequest(approval: SessionApprovalMetadata):
     assumptions: approval.approvalCard.assumptions,
     workspaceFileRefs: approval.workspaceFileRefs,
   };
+}
+
+function buildSessionApprovalExecutionContent(approval: SessionApprovalMetadata): string {
+  if (!approval.contextContent) return approval.originalContent;
+  return [approval.originalContent, '', '最近会话上下文：', approval.contextContent].join('\n');
 }
 
 function createSessionWorkflowBridgeTask(input: {
@@ -947,6 +986,7 @@ function buildSessionWorkflowTaskDescription(input: {
     '',
     '产品经理方案背景：',
     `用户原始需求：${input.request.originalContent}`,
+    input.request.contextContent ? `最近会话上下文：${input.request.contextContent}` : null,
     `来源会话：${input.session.id}`,
     `来源消息：${input.sourceMessageId}`,
     `风险等级：${input.request.riskAssessment.riskLevel}`,
@@ -1097,6 +1137,9 @@ function parseSessionApprovalMetadata(message: SessionMessage): SessionApprovalM
     status: approval.status,
     sourceMessageId: typeof approval.sourceMessageId === 'string' ? approval.sourceMessageId : message.id,
     originalContent: approval.originalContent,
+    contextContent: typeof approval.contextContent === 'string' && approval.contextContent.trim()
+      ? approval.contextContent
+      : undefined,
     riskAssessment: approval.riskAssessment as unknown as TaskRiskAssessment,
     approvalCard: approval.approvalCard as unknown as ApprovalCard,
     workspaceFileRefs: Array.isArray(approval.workspaceFileRefs) ? approval.workspaceFileRefs.filter(isString) : [],
@@ -1152,8 +1195,52 @@ function buildSessionApprovalRequestContent(approvalCard: ApprovalCard): string 
 
 function shouldApplySessionRiskGate(content: string, platformSkillRefs: ResolvedPlatformSkillRef[]): boolean {
   if (platformSkillRefs.length > 0) return true;
+  if (isAnalysisOnlySessionRequest(content)) return false;
   const normalized = content.toLowerCase();
   return SESSION_DEVELOPMENT_SIGNALS.some((signal) => normalized.includes(signal.toLowerCase()));
+}
+
+function shouldEnhanceRiskWithSessionContext(input: {
+  content: string;
+  assessment: TaskRiskAssessment;
+}): boolean {
+  return input.assessment.taskKind === 'unknown' &&
+    input.assessment.riskLevel === 'low' &&
+    isContextualFixRequest(input.content);
+}
+
+function buildRecentSessionTaskContext(sessionId: string, sourceMessageId: string): string | null {
+  const messages = sessionMessageRepo.listBySession(sessionId, { limit: 12 });
+  const contextLines: string[] = [];
+  for (const message of [...messages].reverse()) {
+    if (message.id === sourceMessageId) continue;
+    if (message.role !== 'user') continue;
+    const content = message.content.trim();
+    if (!content || isContextualFixRequest(content)) continue;
+    contextLines.push(content);
+    if (contextLines.length >= 3) break;
+  }
+  const context = contextLines.reverse().join('\n');
+  return context ? truncateText(context, 1000) : null;
+}
+
+function isAnalysisOnlySessionRequest(content: string): boolean {
+  const normalized = content.trim().toLowerCase();
+  if (!containsAny(normalized, SESSION_ANALYSIS_SIGNALS)) return false;
+  return !containsAny(normalized, SESSION_IMPLEMENTATION_ACTION_SIGNALS);
+}
+
+function isContextualFixRequest(content: string): boolean {
+  const normalized = normalizeSessionApprovalDecisionText(content);
+  if (!normalized) return false;
+  return /^(帮我)?修复(一下)?(这个|该|上面|刚才)?(问题|bug|缺陷)?$/.test(normalized) ||
+    /^继续(修复|处理|实现|开发)$/.test(normalized) ||
+    /^按(上面|刚才|前面).*(修复|处理|实现|开发)$/.test(normalized) ||
+    /^(fix|fix it|fix this|fix this issue|continue fixing|continue implementation)$/i.test(normalized);
+}
+
+function containsAny(text: string, signals: string[]): boolean {
+  return signals.some((signal) => text.includes(signal.toLowerCase()));
 }
 
 function extractPathLikeScopes(content: string): string[] {
@@ -1531,4 +1618,52 @@ const SESSION_DEVELOPMENT_SIGNALS = [
   '状态栏',
   '代码',
   'git',
+];
+
+const SESSION_ANALYSIS_SIGNALS = [
+  'analyze',
+  'analysis',
+  'explain',
+  'why',
+  'investigate',
+  'diagnose',
+  '分析',
+  '解释',
+  '说明',
+  '为什么',
+  '为何',
+  '排查',
+  '诊断',
+  '看一下',
+];
+
+const SESSION_IMPLEMENTATION_ACTION_SIGNALS = [
+  'implement',
+  'develop',
+  'modify',
+  'change',
+  'edit',
+  'fix',
+  'add',
+  'update',
+  'refactor',
+  'migration',
+  'delete',
+  'remove',
+  '实现',
+  '开发',
+  '修改',
+  '编辑',
+  '修复',
+  '新增',
+  '添加',
+  '调整',
+  '去掉',
+  '移除',
+  '隐藏',
+  '接入',
+  '重构',
+  '迁移',
+  '升级',
+  '删除',
 ];

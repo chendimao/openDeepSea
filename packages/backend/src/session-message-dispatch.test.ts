@@ -285,6 +285,120 @@ test('dispatchSessionUserMessage starts graph workflow for approved fullstack se
   assert.ok(messages.some((item) => item.sender_id === 'risk-gate' && /启动 workflow/.test(item.content)));
 });
 
+test('dispatchSessionUserMessage preserves contextual fix content after risk approval', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Contextual Approval',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-contextual-approval-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Contextual Approval',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: 'user',
+    content: GIT_STATUS_BAR_TASK,
+    message_type: 'text',
+  });
+  const workflowAgentCalls: Array<{ agentId: string; stage: string | null | undefined }> = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async () => ({ exitCode: 0, sessionId: 'codex-contextual-approval', stderr: '' }),
+  });
+  setVerificationCommandRunnerForTests(async (command) => ({
+    command,
+    status: 'passed',
+    exitCode: 0,
+    stdout: 'contextual approval workflow verification passed',
+    stderr: '',
+  }));
+  setWorkflowOrchestratorGraphDeps({
+    planner: async () => {
+      throw new Error('planner should not be called for approved contextual workflow handoff');
+    },
+    runAcpAgent: async (input) => {
+      workflowAgentCalls.push({ agentId: input.agent.agent_id, stage: input.workflowStage });
+      const output = outputForWorkflowStage(input.workflowStage);
+      const run = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      const message = messageRepo.create({
+        room_id: input.roomId,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: output,
+        message_type: 'text',
+      });
+      return {
+        run: { ...run, stdout: output },
+        message,
+        status: 'completed',
+      };
+    },
+  });
+
+  const taskMessage = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '帮我修复这个问题',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  const pendingMessage = sessionMessageRepo.get(taskMessage.id);
+  const pendingMetadata = JSON.parse(pendingMessage?.metadata ?? '{}') as {
+    risk_assessment?: { taskKind?: string; riskLevel?: string };
+    session_approval?: { status?: string; contextContent?: string };
+  };
+  assert.equal(pendingMetadata.risk_assessment?.taskKind, 'bug_fix');
+  assert.equal(pendingMetadata.risk_assessment?.riskLevel, 'medium');
+  assert.equal(pendingMetadata.session_approval?.status, 'pending');
+  assert.match(pendingMetadata.session_approval?.contextContent ?? '', /Git 分支/);
+
+  await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '确认',
+  });
+  await waitFor(
+    () => {
+      const updated = sessionMessageRepo.get(taskMessage.id);
+      const metadata = JSON.parse(updated?.metadata ?? '{}') as {
+        session_approval?: { workflowTaskId?: string };
+      };
+      return Boolean(metadata.session_approval?.workflowTaskId);
+    },
+    1000,
+    () => `calls=${JSON.stringify(workflowAgentCalls)}`,
+  );
+
+  const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
+  assert.equal(workflowTasks.length, 1);
+  assert.equal(workflowTasks[0]?.title, '帮我修复这个问题');
+  assert.match(workflowTasks[0]?.description ?? '', /最近会话上下文/);
+  assert.match(workflowTasks[0]?.description ?? '', /Git 分支/);
+
+  const approvedMessage = sessionMessageRepo.get(taskMessage.id);
+  const approvedMetadata = JSON.parse(approvedMessage?.metadata ?? '{}') as {
+    session_approval?: { status?: string; contextContent?: string; workflowTaskId?: string };
+  };
+  assert.equal(approvedMetadata.session_approval?.status, 'approved');
+  assert.match(approvedMetadata.session_approval?.contextContent ?? '', /Git 分支/);
+  assert.equal(approvedMetadata.session_approval?.workflowTaskId, workflowTasks[0]?.id);
+});
+
 test('dispatchSessionUserMessage auto-starts graph workflow for low-risk frontend implementation', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Session Low Risk Frontend Workflow',
@@ -382,6 +496,123 @@ test('dispatchSessionUserMessage auto-starts graph workflow for low-risk fronten
       workflowRunId?: string;
     };
   };
+  assert.equal(metadata.session_execution?.executionPath, 'workflow_graph');
+  assert.equal(metadata.session_execution?.trigger, 'low_risk_auto');
+  assert.equal(metadata.session_execution?.workflowTaskId, workflowTasks[0]?.id);
+  assert.equal(metadata.session_execution?.workflowRunId, workflowRuns[0]?.id);
+});
+
+test('dispatchSessionUserMessage routes contextual fix follow-ups through workflow', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Contextual Fix Workflow',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-contextual-fix-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Contextual Fix Workflow',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const plannerPrompts: string[] = [];
+  const workflowAgentCalls: Array<{ agentId: string; stage: string | null | undefined }> = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      plannerPrompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-contextual-fix', stderr: '' };
+    },
+  });
+  setVerificationCommandRunnerForTests(async (command) => ({
+    command,
+    status: 'passed',
+    exitCode: 0,
+    stdout: 'contextual fix workflow verification passed',
+    stderr: '',
+  }));
+  setWorkflowOrchestratorGraphDeps({
+    planner: async () => {
+      throw new Error('planner should not be called for contextual fix workflow handoff');
+    },
+    runAcpAgent: async (input) => {
+      workflowAgentCalls.push({ agentId: input.agent.agent_id, stage: input.workflowStage });
+      const output = outputForWorkflowStage(input.workflowStage);
+      const run = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      const message = messageRepo.create({
+        room_id: input.roomId,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: output,
+        message_type: 'text',
+      });
+      return {
+        run: { ...run, stdout: output },
+        message,
+        status: 'completed',
+      };
+    },
+  });
+
+  await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '分析一下，会话页面右侧栏的本次会话变更为什么没有生效',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const taskMessage = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '帮我修复这个问题',
+  });
+  await waitFor(
+    () => workflowAgentCalls.some((call) => call.stage === 'acceptance'),
+    1000,
+    () => `calls=${JSON.stringify(workflowAgentCalls)}`,
+  );
+
+  assert.equal(plannerPrompts.length, 1);
+  assert.deepEqual(
+    workflowAgentCalls
+      .filter((call) => call.stage !== 'planning')
+      .map((call) => `${call.stage}:${call.agentId}`),
+    [
+      'implementation:frontend-executor',
+      'code_review:reviewer',
+      'code_review:reviewer',
+      'acceptance:acceptor',
+    ],
+  );
+
+  const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
+  assert.equal(workflowTasks.length, 1);
+  assert.equal(workflowTasks[0]?.title, '帮我修复这个问题');
+  assert.match(workflowTasks[0]?.description ?? '', /会话页面右侧栏/);
+
+  const workflowRuns = workflowRepo.listByTask(workflowTasks[0]!.id);
+  assert.equal(workflowRuns.length, 1);
+
+  const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
+  const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
+    risk_assessment?: { taskKind?: string; riskLevel?: string };
+    session_execution?: {
+      executionPath?: string;
+      trigger?: string;
+      workflowTaskId?: string;
+      workflowRunId?: string;
+    };
+  };
+  assert.equal(metadata.risk_assessment?.taskKind, 'frontend_change');
+  assert.equal(metadata.risk_assessment?.riskLevel, 'low');
   assert.equal(metadata.session_execution?.executionPath, 'workflow_graph');
   assert.equal(metadata.session_execution?.trigger, 'low_risk_auto');
   assert.equal(metadata.session_execution?.workflowTaskId, workflowTasks[0]?.id);
