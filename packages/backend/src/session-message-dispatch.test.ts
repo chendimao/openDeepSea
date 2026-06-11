@@ -642,6 +642,163 @@ test('dispatchSessionUserMessage routes contextual fix follow-ups through workfl
   assert.equal(metadata.session_execution?.workflowRunId, workflowRuns[0]?.id);
 });
 
+test('dispatchSessionUserMessage routes bare contextual fix command through workflow', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Bare Contextual Fix Workflow',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-bare-contextual-fix-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Bare Contextual Fix Workflow',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const plannerPrompts: string[] = [];
+  const workflowAgentCalls: Array<{ agentId: string; stage: string | null | undefined }> = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      plannerPrompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-bare-contextual-fix', stderr: '' };
+    },
+  });
+  setVerificationCommandRunnerForTests(async (command) => ({
+    command,
+    status: 'passed',
+    exitCode: 0,
+    stdout: 'bare contextual fix workflow verification passed',
+    stderr: '',
+  }));
+  setWorkflowOrchestratorGraphDeps({
+    planner: async () => {
+      throw new Error('planner should not be called for bare contextual fix workflow handoff');
+    },
+    runAcpAgent: async (input) => {
+      workflowAgentCalls.push({ agentId: input.agent.agent_id, stage: input.workflowStage });
+      const output = outputForWorkflowStage(input.workflowStage);
+      const run = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      const message = messageRepo.create({
+        room_id: input.roomId,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: output,
+        message_type: 'text',
+      });
+      return {
+        run: { ...run, stdout: output },
+        message,
+        status: 'completed',
+      };
+    },
+  });
+
+  await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '分析一下右侧栏的会话变更为什么所有会话的变更数量都是一样的',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  const taskMessage = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '修复',
+  });
+  await waitFor(
+    () => workflowAgentCalls.some((call) => call.stage === 'acceptance'),
+    1000,
+    () => `calls=${JSON.stringify(workflowAgentCalls)}`,
+  );
+
+  assert.equal(plannerPrompts.length, 1);
+  assert.deepEqual(
+    workflowAgentCalls
+      .filter((call) => call.stage !== 'planning')
+      .map((call) => `${call.stage}:${call.agentId}`),
+    [
+      'implementation:frontend-executor',
+      'code_review:reviewer',
+      'code_review:reviewer',
+      'acceptance:acceptor',
+    ],
+  );
+
+  const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
+  assert.equal(workflowTasks.length, 1);
+  assert.equal(workflowTasks[0]?.title, '修复');
+  assert.match(workflowTasks[0]?.description ?? '', /右侧栏的会话变更/);
+
+  const workflowRuns = workflowRepo.listByTask(workflowTasks[0]!.id);
+  assert.equal(workflowRuns.length, 1);
+
+  const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
+  const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
+    risk_assessment?: { taskKind?: string; riskLevel?: string };
+    session_execution?: {
+      executionPath?: string;
+      trigger?: string;
+      workflowTaskId?: string;
+      workflowRunId?: string;
+    };
+  };
+  assert.equal(metadata.risk_assessment?.taskKind, 'frontend_change');
+  assert.equal(metadata.risk_assessment?.riskLevel, 'low');
+  assert.equal(metadata.session_execution?.executionPath, 'workflow_graph');
+  assert.equal(metadata.session_execution?.trigger, 'low_risk_auto');
+  assert.equal(metadata.session_execution?.workflowTaskId, workflowTasks[0]?.id);
+  assert.equal(metadata.session_execution?.workflowRunId, workflowRuns[0]?.id);
+});
+
+test('dispatchSessionUserMessage keeps bare fix without context on planner path', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Bare Fix Without Context',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-bare-fix-no-context-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Bare Fix Without Context',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const plannerPrompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      plannerPrompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-bare-fix-no-context', stderr: '' };
+    },
+  });
+
+  const message = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '修复',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.equal(plannerPrompts.length, 1);
+  assert.match(plannerPrompts[0] ?? '', /## User Request\s+修复/);
+  assert.equal(taskRepo.listByProject(project.id).filter((task) => task.source_message_id === message.id).length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 1);
+
+  const metadata = JSON.parse(sessionMessageRepo.get(message.id)?.metadata ?? '{}') as {
+    risk_assessment?: unknown;
+    session_execution?: unknown;
+  };
+  assert.equal(metadata.risk_assessment, undefined);
+  assert.equal(metadata.session_execution, undefined);
+});
+
 test('dispatchSessionUserMessage records low-risk workflow run before background graph planning completes', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Session Low Risk Background Run',

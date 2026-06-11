@@ -81,6 +81,10 @@ export function inferTaskProfile(input: TaskProfileInput): TaskProfile {
     domains.push('backend');
     recommendedTemplateId = 'backend-executor';
     reasons.push('backend signals matched');
+  } else if (bugfix > 0) {
+    taskType = 'bugfix';
+    recommendedTemplateId = 'backend-executor';
+    reasons.push('bugfix signals matched');
   }
 
   return {
@@ -155,6 +159,9 @@ const FRONTEND_SIGNALS = [
   'src/components',
   '前端',
   '侧边栏',
+  '侧栏',
+  '右侧栏',
+  '左侧栏',
   '页面',
   '组件',
   '状态栏',
@@ -172,6 +179,9 @@ const UI_SIGNALS = [
   'i18n',
   '文案',
   '侧边栏',
+  '侧栏',
+  '右侧栏',
+  '左侧栏',
   '状态栏',
   '底部栏',
 ];

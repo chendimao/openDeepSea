@@ -18,6 +18,34 @@ test('classifies recent room sidebar task as frontend feature', () => {
   assert.ok(profile.requiredCapabilities.includes('frontend'));
 });
 
+test('classifies right sidebar wording as frontend UI', () => {
+  const profile = inferTaskProfile({
+    title: '修复右侧栏的本次会话变更数量',
+    description: '右侧栏展示了所有会话的变更数量，应该只显示当前会话的文件变更。',
+    scopeRead: [],
+    scopeWrite: [],
+    acceptance: ['右侧栏只展示当前会话变更'],
+  });
+
+  assert.equal(profile.taskType, 'frontend_feature');
+  assert.deepEqual(profile.domains, ['frontend', 'ui']);
+  assert.equal(profile.recommendedTemplateId, 'frontend-executor');
+});
+
+test('classifies generic fix wording as bugfix even without domain signals', () => {
+  const profile = inferTaskProfile({
+    title: '修复',
+    description: '修复刚才分析出来的问题，并补充回归验证。',
+    scopeRead: [],
+    scopeWrite: [],
+    acceptance: ['问题已修复'],
+  });
+
+  assert.equal(profile.taskType, 'bugfix');
+  assert.deepEqual(profile.domains, []);
+  assert.ok(profile.requiredCapabilities.includes('testing'));
+});
+
 test('classifies product report PPT as presentation without frontend or backend template', () => {
   const profile = inferTaskProfile({
     title: '制作一个产品汇报 PPT',

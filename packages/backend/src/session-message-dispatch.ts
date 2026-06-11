@@ -529,19 +529,26 @@ function assessSessionMessageRisk(input: {
   let contextContent: string | null = null;
   if (shouldEnhanceRiskWithSessionContext({ content: input.content, assessment })) {
     contextContent = buildRecentSessionTaskContext(input.sessionId, input.sourceMessageId);
-    if (contextContent) {
-      const enhancedDescription = [input.content, '', '最近会话上下文：', contextContent].join('\n');
-      const enhancedScopeWrite = applies
-        ? dedupeStringList([...extractPathLikeScopes(enhancedDescription), ...input.workspaceFileRefs])
-        : extractPathLikeScopes(enhancedDescription);
-      assessment = assessTaskRisk({
-        title: input.content,
-        description: enhancedDescription,
-        scopeRead: input.workspaceFileRefs,
-        scopeWrite: enhancedScopeWrite,
-        verificationCommands: [],
-      });
+    if (!contextContent) {
+      return {
+        assessment,
+        requiresApproval: false,
+        approvalCard: null,
+        contextContent,
+        applies: false,
+      };
     }
+    const enhancedDescription = [input.content, '', '最近会话上下文：', contextContent].join('\n');
+    const enhancedScopeWrite = applies
+      ? dedupeStringList([...extractPathLikeScopes(enhancedDescription), ...input.workspaceFileRefs])
+      : extractPathLikeScopes(enhancedDescription);
+    assessment = assessTaskRisk({
+      title: input.content,
+      description: enhancedDescription,
+      scopeRead: input.workspaceFileRefs,
+      scopeWrite: enhancedScopeWrite,
+      verificationCommands: [],
+    });
   }
   const lowConfidenceOnly = assessment.approvalReason === 'low-confidence task profile requires approval';
   const requiresApproval = applies &&
@@ -1258,9 +1265,9 @@ function shouldEnhanceRiskWithSessionContext(input: {
   content: string;
   assessment: TaskRiskAssessment;
 }): boolean {
-  return input.assessment.taskKind === 'unknown' &&
-    input.assessment.riskLevel === 'low' &&
-    isContextualFixRequest(input.content);
+  return input.assessment.riskLevel === 'low' &&
+    isContextualFixRequest(input.content) &&
+    (input.assessment.taskKind === 'unknown' || input.assessment.taskKind === 'bug_fix');
 }
 
 function buildRecentSessionTaskContext(sessionId: string, sourceMessageId: string): string | null {

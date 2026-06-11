@@ -326,9 +326,16 @@ export function SessionWorkspacePage({
         }
         void refreshSessionTodoStats(event.sessionId);
       }
+      if (shouldRefreshSessionWorkspace(event, {
+        activeSessionId: activeSessionIdRef.current,
+        activeProjectId,
+        activeWorkspaceProjectId: workspacePayload?.project.id,
+      }) && activeProjectId) {
+        sessionSocket.requestSessionWorkspace({ projectId: activeProjectId, sessionId: event.sessionId });
+      }
       setWorkspacePayload((current) => current ? applySessionWorkspaceEvent(current, event) : current);
     });
-  }, [activeProjectId, navigate, navigationEnabled, refreshSessionTodoStats, sessionId]);
+  }, [activeProjectId, navigate, navigationEnabled, refreshSessionTodoStats, sessionId, workspacePayload?.project.id]);
 
   useEffect(() => {
     const activeSessionId = workspacePayload?.activeSession.session.id;
@@ -698,9 +705,28 @@ export function SessionWorkspacePage({
   );
 }
 
-export function shouldRefreshSessionWorkspace(event: WsServerEvent): boolean {
+export function shouldRefreshSessionWorkspace(
+  event: WsServerEvent,
+  context?: string | {
+    activeSessionId?: string | null;
+    activeProjectId?: string | null;
+    activeWorkspaceProjectId?: string | null;
+  } | null,
+): event is Extract<WsServerEvent, { type: 'session_evidence:new' }> {
+  const activeSessionId = typeof context === 'string' ? context : context?.activeSessionId;
+  if (
+    context &&
+    typeof context !== 'string' &&
+    context.activeProjectId &&
+    context.activeWorkspaceProjectId &&
+    context.activeProjectId !== context.activeWorkspaceProjectId
+  ) {
+    return false;
+  }
   if (!isSessionWorkspaceEvent(event)) return false;
-  return false;
+  if (!activeSessionId || !('sessionId' in event) || event.sessionId !== activeSessionId) return false;
+  if (event.type !== 'session_evidence:new') return false;
+  return isSessionChangeEvidence(event.event);
 }
 
 export function shouldRefreshSessionTodoStats(
@@ -758,6 +784,43 @@ export function isCompactPreviewForActiveSession(
 
 function isSessionWorkspaceEvent(event: WsServerEvent): boolean {
   return event.type.startsWith('session_') || event.type === 'session:updated' || event.type === 'history_record:new';
+}
+
+function isSessionChangeEvidence(event: Extract<WsServerEvent, { type: 'session_evidence:new' }>['event']): boolean {
+  if (event.event_type === 'file_diff') return true;
+  const payload = event.payload;
+  const toolName = firstString(payload.name, payload.toolName, payload.tool_name);
+  if (toolName && isSessionChangeToolName(toolName)) return true;
+  const trace = record(payload.trace);
+  const traceToolName = firstString(trace?.name, trace?.toolName, trace?.tool_name);
+  if (traceToolName && isSessionChangeToolName(traceToolName)) return true;
+  const nestedEvent = record(payload.event);
+  const nestedEventPayload = record(nestedEvent?.payload);
+  const nestedToolName = firstString(nestedEvent?.name, nestedEvent?.toolName, nestedEvent?.tool_name);
+  if (nestedToolName && isSessionChangeToolName(nestedToolName)) return true;
+  const nestedPayloadToolName = firstString(
+    nestedEventPayload?.name,
+    nestedEventPayload?.toolName,
+    nestedEventPayload?.tool_name,
+  );
+  if (nestedPayloadToolName && isSessionChangeToolName(nestedPayloadToolName)) return true;
+  const rawType = firstString(payload.rawType, nestedEvent?.type);
+  return Boolean(rawType && /file_diff|patch|diff/i.test(rawType));
+}
+
+function isSessionChangeToolName(toolName: string): boolean {
+  return /^(edit|multiedit|patch|apply_patch)$/i.test(toolName);
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
 }
 
 export function upsertActiveSessionSummary(
