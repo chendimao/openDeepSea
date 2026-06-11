@@ -33,6 +33,7 @@ import type {
   Session,
   SessionMessage,
   SessionMode,
+  WorkflowRun,
 } from './types.js';
 
 const DEFAULT_SESSION_TITLE = 'New Session';
@@ -550,8 +551,28 @@ async function runApprovedSessionWorkflow(input: {
     },
   });
 
+  mergeSessionApprovalMetadata({
+    sessionId: input.session.id,
+    sourceMessageId: input.sourceMessageId,
+    patch: {
+      executionPath: 'workflow_graph',
+      workflowRoomId: room.id,
+      workflowTaskId: task.id,
+    },
+  });
+
   const started = await workflowOrchestrator.start(task.id);
-  const run = started.status === 'awaiting_approval'
+  mergeSessionApprovalMetadata({
+    sessionId: input.session.id,
+    sourceMessageId: input.sourceMessageId,
+    patch: {
+      executionPath: 'workflow_graph',
+      workflowRoomId: room.id,
+      workflowTaskId: task.id,
+      workflowRunId: started.id,
+    },
+  });
+  const run = shouldAutoApproveWorkflowRun(started, input.approval)
     ? await workflowOrchestrator.approvePlan(started.id, 'session-risk-gate')
     : started;
   const approvalPatch: Partial<SessionApprovalMetadata> = {
@@ -625,6 +646,57 @@ function shouldStartWorkflowForApproval(approval: SessionApprovalMetadata): bool
   ].includes(approval.riskAssessment.taskKind);
 }
 
+function shouldAutoApproveWorkflowRun(run: WorkflowRun, approval: SessionApprovalMetadata): boolean {
+  if (run.status !== 'awaiting_approval') return false;
+  const workflowRiskLevel = getWorkflowRunHighestRiskLevel(run);
+  if (!workflowRiskLevel) return false;
+  if (workflowRiskLevel === 'high') return false;
+  return compareRiskLevel(workflowRiskLevel, approval.riskAssessment.riskLevel) <= 0;
+}
+
+function getWorkflowRunHighestRiskLevel(run: WorkflowRun): TaskRiskAssessment['riskLevel'] | null {
+  const levels: TaskRiskAssessment['riskLevel'][] = [];
+  collectRiskLevelsFromUnknown(parseUnknownJson(run.graph_state), levels);
+  const detail = workflowOrchestrator.detail(run.id);
+  for (const artifact of detail?.artifacts ?? []) {
+    collectRiskLevelsFromUnknown(parseUnknownJson(artifact.metadata), levels);
+  }
+  if (levels.length === 0) return null;
+  return levels.sort((left, right) => compareRiskLevel(right, left))[0] ?? null;
+}
+
+function collectRiskLevelsFromUnknown(value: unknown, levels: TaskRiskAssessment['riskLevel'][]): void {
+  if (!isRecord(value)) return;
+  if (isTaskRiskLevel(value.riskLevel)) levels.push(value.riskLevel);
+  collectRiskLevelsFromUnknown(value.riskAssessment, levels);
+  collectRiskLevelsFromUnknown(value.risk_assessment, levels);
+  collectRiskLevelsFromUnknown(value.approvalCard, levels);
+  collectRiskLevelsFromUnknown(value.approval_card, levels);
+  collectRiskLevelsFromUnknown(value.plan, levels);
+}
+
+function parseUnknownJson(value: string | null): unknown {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function isTaskRiskLevel(value: unknown): value is TaskRiskAssessment['riskLevel'] {
+  return value === 'low' || value === 'medium' || value === 'high';
+}
+
+function compareRiskLevel(left: TaskRiskAssessment['riskLevel'], right: TaskRiskAssessment['riskLevel']): number {
+  const order: Record<TaskRiskAssessment['riskLevel'], number> = {
+    low: 0,
+    medium: 1,
+    high: 2,
+  };
+  return order[left] - order[right];
+}
+
 function buildSessionWorkflowRoomName(session: Session): string {
   const title = session.title?.trim() || DEFAULT_SESSION_TITLE;
   return truncateText(`Session Workflow: ${title}`, 80);
@@ -645,11 +717,19 @@ function buildSessionWorkflowTaskDescription(input: {
   const scopeWrite = input.approval.approvalCard.scopeWrite.length > 0
     ? input.approval.approvalCard.scopeWrite.join(', ')
     : '由 planner 分析后确定';
+  const handoffTasks = buildSessionWorkflowHandoffTasks(input.approval);
+  const verification = buildSessionWorkflowVerification(input.approval);
+  const assumptions = input.approval.approvalCard.assumptions.length > 0
+    ? input.approval.approvalCard.assumptions.join('；')
+    : '保持风险确认范围内的最小充分改动。';
+  const risks = input.approval.approvalCard.risks.length > 0
+    ? input.approval.approvalCard.risks.join('；')
+    : input.approval.riskAssessment.reasons.join('；');
   return [
     input.approval.originalContent,
     '',
-    'SessionOS 风险确认已通过，请按 workflow graph 执行：先规划，再按前后端/审查/验收阶段分派子智能体。',
-    '',
+    '产品经理方案背景：',
+    `用户原始需求：${input.approval.originalContent}`,
     `来源会话：${input.session.id}`,
     `来源消息：${input.sourceMessageId}`,
     `风险等级：${input.approval.riskAssessment.riskLevel}`,
@@ -658,7 +738,120 @@ function buildSessionWorkflowTaskDescription(input: {
     `执行方式：${input.approval.approvalCard.executionMode}`,
     `读取范围：${scopeRead}`,
     `写入范围：${scopeWrite}`,
-  ].join('\n');
+    '',
+    ...handoffTasks.flatMap((task, index) => [
+      `任务 ${index + 1}：${task.title}`,
+      task.description,
+      ...(task.scopeRead.length > 0 ? [`读范围：${task.scopeRead.join(', ')}`] : []),
+      ...(task.scopeWrite.length > 0 ? [`写范围：${task.scopeWrite.join(', ')}`] : []),
+      `验收：${task.acceptance}`,
+      ...(task.dependsOn.length > 0 ? [`依赖：${task.dependsOn.join(', ')}`] : []),
+      '',
+    ]),
+    `验证方式：${verification}`,
+    `假设：${assumptions}`,
+    risks ? `风险：${risks}` : null,
+    '',
+    '任务意图：implementation',
+    '',
+    'SessionOS 风险确认已通过，请按 workflow graph 执行：先规划，再按前后端/审查/验收阶段分派子智能体。',
+    '',
+  ].filter((line): line is string => line !== null).join('\n');
+}
+
+interface SessionWorkflowHandoffTask {
+  title: string;
+  description: string;
+  scopeRead: string[];
+  scopeWrite: string[];
+  acceptance: string;
+  dependsOn: string[];
+}
+
+function buildSessionWorkflowHandoffTasks(approval: SessionApprovalMetadata): SessionWorkflowHandoffTask[] {
+  const taskKind = approval.riskAssessment.taskKind;
+  const agents = new Set(approval.approvalCard.agents);
+  const allReadScopes = dedupeStringList([
+    ...approval.approvalCard.scopeRead,
+    ...approval.riskAssessment.scopeRead,
+    ...approval.workspaceFileRefs,
+  ]);
+  const allWriteScopes = dedupeStringList([
+    ...approval.approvalCard.scopeWrite,
+    ...approval.riskAssessment.scopeWrite,
+    ...approval.workspaceFileRefs,
+  ]);
+  const tasks: SessionWorkflowHandoffTask[] = [];
+  const includeBackend = taskKind === 'fullstack_change' ||
+    taskKind === 'backend_change' ||
+    taskKind === 'bug_fix' ||
+    agents.has('backend-executor');
+  const includeFrontend = taskKind === 'fullstack_change' ||
+    taskKind === 'frontend_change' ||
+    agents.has('frontend-executor');
+
+  if (includeBackend) {
+    tasks.push({
+      title: '实现后端能力和接口支撑',
+      description: '按用户需求补充后端读取、处理或 API 能力，并保持接口边界清晰。',
+      scopeRead: domainScopes(allReadScopes, 'backend'),
+      scopeWrite: domainScopes(allWriteScopes, 'backend'),
+      acceptance: '后端能力满足用户原始需求，并通过验证流程。',
+      dependsOn: [],
+    });
+  }
+  if (includeFrontend) {
+    tasks.push({
+      title: '实现前端界面和状态刷新',
+      description: '按用户需求更新会话页面交互与展示，并接入必要的数据刷新流程。',
+      scopeRead: domainScopes(allReadScopes, 'frontend'),
+      scopeWrite: domainScopes(allWriteScopes, 'frontend'),
+      acceptance: '前端界面能展示目标状态，关键交互和刷新路径可用。',
+      dependsOn: [],
+    });
+  }
+  if (tasks.length === 0 && taskKind === 'test_only') {
+    tasks.push({
+      title: '补充测试覆盖',
+      description: '围绕用户需求补充定向测试，并确保测试能验证目标行为。',
+      scopeRead: allReadScopes,
+      scopeWrite: allWriteScopes,
+      acceptance: '新增或调整的测试覆盖关键路径，并能稳定运行。',
+      dependsOn: [],
+    });
+  }
+  if (tasks.length === 0) {
+    tasks.push({
+      title: '实现已确认的开发改动',
+      description: '在风险确认范围内完成用户原始需求，避免扩大改动面。',
+      scopeRead: allReadScopes,
+      scopeWrite: allWriteScopes,
+      acceptance: '实现结果满足用户原始需求和风险确认范围。',
+      dependsOn: [],
+    });
+  }
+  return tasks;
+}
+
+function domainScopes(
+  scopes: string[],
+  domain: 'backend' | 'frontend',
+  fallback: string[] = [],
+): string[] {
+  const matched = scopes.filter((scope) => {
+    const normalized = scope.toLowerCase();
+    if (domain === 'backend') {
+      return normalized.includes('backend') || normalized.includes('server') || normalized.includes('api');
+    }
+    return normalized.includes('frontend') || normalized.includes('client') || normalized.includes('ui') ||
+      /\.(?:tsx|jsx|css|scss)$/i.test(scope);
+  });
+  return matched.length > 0 ? dedupeStringList(matched) : fallback;
+}
+
+function buildSessionWorkflowVerification(approval: SessionApprovalMetadata): string {
+  const commands = approval.approvalCard.verification.map((item) => item.command).filter(Boolean);
+  return commands.length > 0 ? commands.join('；') : 'npm run build';
 }
 
 function truncateText(value: string, maxLength: number): string {

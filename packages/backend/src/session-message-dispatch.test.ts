@@ -24,7 +24,7 @@ const {
   recordSessionImageGenerationToolResultEvidence,
 } = await import('./session-message-dispatch.js');
 const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
-const { setWorkflowOrchestratorGraphDeps } = await import('./workflows/orchestrator.js');
+const { setWorkflowOrchestratorGraphDeps, workflowOrchestrator } = await import('./workflows/orchestrator.js');
 const { setVerificationCommandRunnerForTests } = await import('./workflows/graph/verification.js');
 
 afterEach(() => {
@@ -183,40 +183,9 @@ test('dispatchSessionUserMessage starts graph workflow for approved fullstack se
     stderr: '',
   }));
   setWorkflowOrchestratorGraphDeps({
-    planner: async () => ({
-      goal: GIT_STATUS_BAR_TASK,
-      summary: 'Implement backend API and frontend title badge.',
-      assumptions: [],
-      tasks: [
-        {
-          title: 'Update session todo API',
-          description: 'Add backend route and stats helper.',
-          suggestedRole: 'executor',
-          priority: 'normal',
-          acceptance: ['Backend route returns todo stats'],
-          scopeRead: ['packages/backend/src/session.routes.ts'],
-          scopeWrite: ['packages/backend/src/session.routes.ts'],
-          dependsOn: [],
-        },
-        {
-          title: 'Update session title badge',
-          description: 'Add frontend badge and refresh behavior.',
-          suggestedRole: 'executor',
-          priority: 'normal',
-          acceptance: ['Frontend title shows todo count'],
-          scopeRead: ['packages/frontend/src/pages/SessionWorkspacePage.tsx'],
-          scopeWrite: ['packages/frontend/src/pages/SessionWorkspacePage.tsx'],
-          dependsOn: [],
-        },
-      ],
-      reviewFocus: ['API contract and title badge refresh'],
-      verification: ['npm run build'],
-      verificationCommands: [
-        { command: 'npm run build', reason: 'stubbed verification', required: true },
-      ],
-      risks: [],
-      needsApproval: false,
-    }),
+    planner: async () => {
+      throw new Error('planner should not be called for approved session workflow handoff');
+    },
     runAcpAgent: async (input) => {
       workflowAgentCalls.push({ agentId: input.agent.agent_id, stage: input.workflowStage });
       const output = outputForWorkflowStage(input.workflowStage);
@@ -287,6 +256,7 @@ test('dispatchSessionUserMessage starts graph workflow for approved fullstack se
   const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
   assert.equal(workflowTasks.length, 1);
   assert.equal(workflowTasks[0]?.title, GIT_STATUS_BAR_TASK);
+  assert.match(workflowTasks[0]?.description ?? '', /产品经理方案背景/);
 
   const workflowRuns = workflowRepo.listByTask(workflowTasks[0]!.id);
   assert.equal(workflowRuns.length, 1);
@@ -313,6 +283,252 @@ test('dispatchSessionUserMessage starts graph workflow for approved fullstack se
 
   const messages = sessionMessageRepo.listBySession(session.id);
   assert.ok(messages.some((item) => item.sender_id === 'risk-gate' && /启动 workflow/.test(item.content)));
+});
+
+test('dispatchSessionUserMessage does not auto-approve escalated graph workflow risk', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Workflow Escalated Risk',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-workflow-escalated-risk-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Workflow Escalated Risk',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async () => ({ exitCode: 0, sessionId: 'codex-risk-escalated', stderr: '' }),
+  });
+
+  const taskMessage = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: GIT_STATUS_BAR_TASK,
+  });
+
+  const originalStart = workflowOrchestrator.start;
+  const originalApprovePlan = workflowOrchestrator.approvePlan;
+  let approveCalls = 0;
+  workflowOrchestrator.start = async (taskId) => {
+    const task = taskRepo.get(taskId);
+    assert.ok(task);
+    const run = workflowRepo.createRun({
+      room_id: task.room_id,
+      project_id: task.project_id,
+      task_id: task.id,
+      status: 'awaiting_approval',
+      current_stage: 'planning',
+      approval_required: true,
+      graph_version: 'phase-b-v1',
+      graph_state: JSON.stringify({
+        plan: { riskLevel: 'high', needsApproval: true },
+        riskAssessment: { riskLevel: 'high' },
+        approvalCard: { riskLevel: 'high' },
+      }),
+    });
+    workflowRepo.createArtifact({
+      task_id: task.id,
+      workflow_run_id: run.id,
+      workflow_step_id: null,
+      artifact_type: 'decision_request',
+      title: '风险确认',
+      content: 'High risk workflow confirmation',
+      metadata: {
+        risk_assessment: { riskLevel: 'high' },
+        approval_card: { riskLevel: 'high' },
+      },
+    });
+    return run;
+  };
+  workflowOrchestrator.approvePlan = async (runId, approvedBy) => {
+    approveCalls += 1;
+    const updated = workflowRepo.updateRun(runId, { status: 'running', approved_by: approvedBy });
+    assert.ok(updated);
+    return updated;
+  };
+
+  try {
+    await dispatchSessionUserMessage({
+      sessionId: session.id,
+      content: '确认',
+    });
+    await waitFor(() => {
+      const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
+      const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
+        session_approval?: { workflowRunId?: string };
+      };
+      return Boolean(metadata.session_approval?.workflowRunId);
+    });
+
+    const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
+    const workflowRuns = workflowTasks.flatMap((task) => workflowRepo.listByTask(task.id));
+    assert.equal(approveCalls, 0);
+    assert.equal(workflowRuns[0]?.status, 'awaiting_approval');
+    assert.equal(workflowRuns[0]?.approved_by, null);
+  } finally {
+    workflowOrchestrator.start = originalStart;
+    workflowOrchestrator.approvePlan = originalApprovePlan;
+  }
+});
+
+test('dispatchSessionUserMessage keeps workflow room and task metadata when workflow start fails', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Workflow Start Failure',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-workflow-start-failure-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Workflow Start Failure',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async () => ({ exitCode: 0, sessionId: 'codex-risk-start-failure', stderr: '' }),
+  });
+
+  const taskMessage = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: GIT_STATUS_BAR_TASK,
+  });
+
+  const originalStart = workflowOrchestrator.start;
+  workflowOrchestrator.start = async () => {
+    throw new Error('workflow start failed after task creation');
+  };
+
+  try {
+    await dispatchSessionUserMessage({
+      sessionId: session.id,
+      content: '确认',
+    });
+    await waitFor(() => {
+      const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
+      const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
+        session_approval?: {
+          executionPath?: string;
+          workflowRoomId?: string;
+          workflowTaskId?: string;
+          workflowRunId?: string;
+        };
+      };
+      return Boolean(
+        metadata.session_approval?.executionPath === 'workflow_graph' &&
+        metadata.session_approval.workflowRoomId &&
+        metadata.session_approval.workflowTaskId,
+      );
+    });
+
+    const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
+    const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
+      session_approval?: {
+        executionPath?: string;
+        workflowRoomId?: string;
+        workflowTaskId?: string;
+        workflowRunId?: string;
+      };
+    };
+    const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
+    assert.equal(metadata.session_approval?.executionPath, 'workflow_graph');
+    assert.equal(metadata.session_approval?.workflowTaskId, workflowTasks[0]?.id);
+    assert.equal(metadata.session_approval?.workflowRunId, undefined);
+  } finally {
+    workflowOrchestrator.start = originalStart;
+  }
+});
+
+test('dispatchSessionUserMessage records workflow run id before auto-approval finishes', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Workflow Run Id Before Approval',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-workflow-run-id-before-approval-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Workflow Run Id Before Approval',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async () => ({ exitCode: 0, sessionId: 'codex-risk-run-id-before-approval', stderr: '' }),
+  });
+
+  const taskMessage = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: GIT_STATUS_BAR_TASK,
+  });
+
+  const originalStart = workflowOrchestrator.start;
+  const originalApprovePlan = workflowOrchestrator.approvePlan;
+  let workflowRunId: string | undefined;
+  let approveStarted = false;
+  let releaseApprove: (() => void) | undefined;
+  workflowOrchestrator.start = async (taskId) => {
+    const task = taskRepo.get(taskId);
+    assert.ok(task);
+    const run = workflowRepo.createRun({
+      room_id: task.room_id,
+      project_id: task.project_id,
+      task_id: task.id,
+      status: 'awaiting_approval',
+      current_stage: 'planning',
+      approval_required: true,
+      graph_version: 'phase-b-v1',
+      graph_state: JSON.stringify({
+        plan: { riskLevel: 'medium', needsApproval: true },
+        riskAssessment: { riskLevel: 'medium' },
+        approvalCard: { riskLevel: 'medium' },
+      }),
+    });
+    workflowRunId = run.id;
+    workflowRepo.createArtifact({
+      task_id: task.id,
+      workflow_run_id: run.id,
+      workflow_step_id: null,
+      artifact_type: 'decision_request',
+      title: '风险确认',
+      content: 'Medium risk workflow confirmation',
+      metadata: {
+        risk_assessment: { riskLevel: 'medium' },
+        approval_card: { riskLevel: 'medium' },
+      },
+    });
+    return run;
+  };
+  workflowOrchestrator.approvePlan = async (runId, approvedBy) => {
+    approveStarted = true;
+    return new Promise((resolve) => {
+      releaseApprove = () => {
+        const updated = workflowRepo.updateRun(runId, { status: 'running', approved_by: approvedBy });
+        assert.ok(updated);
+        resolve(updated);
+      };
+    });
+  };
+
+  try {
+    await dispatchSessionUserMessage({
+      sessionId: session.id,
+      content: '确认',
+    });
+    await waitFor(() => approveStarted && Boolean(workflowRunId));
+
+    const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
+    const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
+      session_approval?: { workflowRunId?: string };
+    };
+    assert.equal(metadata.session_approval?.workflowRunId, workflowRunId);
+
+    releaseApprove?.();
+    await waitFor(() => workflowRepo.getRun(workflowRunId ?? '')?.approved_by === 'session-risk-gate');
+  } finally {
+    releaseApprove?.();
+    workflowOrchestrator.start = originalStart;
+    workflowOrchestrator.approvePlan = originalApprovePlan;
+  }
 });
 
 test('dispatchSessionUserMessage gates high-risk referenced files for edit requests', async () => {

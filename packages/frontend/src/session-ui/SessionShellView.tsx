@@ -51,6 +51,7 @@ import type {
   SessionPlanItem,
   SessionRun,
   SessionToolRow,
+  SessionTodoStats,
   SessionWorkspacePayload,
   StatusSnapshot,
   WorkspaceFilePreview,
@@ -163,6 +164,7 @@ export function SessionShellView({
   onToggleSessionPin,
   onSaveKnowledge,
   savingKnowledgeKey,
+  todoStats,
 }: {
   payload: SessionWorkspacePayload;
   onSendMessage: (message: SessionComposerSubmit) => void;
@@ -179,6 +181,7 @@ export function SessionShellView({
   onToggleSessionPin?: (session: ActiveSessionSummary) => void;
   onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
   savingKnowledgeKey?: SessionKnowledgeActionKey | null;
+  todoStats?: SessionTodoStats | null;
 }): JSX.Element {
   const activeRun = getActiveRun(payload.activeSession);
   const forkTarget = payload.historyRecords[0]?.id;
@@ -216,6 +219,7 @@ export function SessionShellView({
               onRetryRun={onRetryRun}
               onSaveKnowledge={onSaveKnowledge}
               savingKnowledgeKey={savingKnowledgeKey}
+              todoStats={todoStats}
             />
           )}
         />
@@ -243,6 +247,43 @@ export function isSessionInspectorVisibleForWorkspacePane(pane: SessionCenterWor
   return pane === 'transcript';
 }
 
+export function buildSessionTodoStatsFromPlanItems(sessionId: string, planItems: SessionPlanItem[]): SessionTodoStats {
+  const stats: SessionTodoStats = {
+    sessionId,
+    total: planItems.length,
+    open: 0,
+    pending: 0,
+    inProgress: 0,
+    blocked: 0,
+    failed: 0,
+    completed: 0,
+    skipped: 0,
+  };
+  for (const item of planItems) {
+    if (item.status === 'pending') stats.pending += 1;
+    else if (item.status === 'in_progress') stats.inProgress += 1;
+    else if (item.status === 'blocked') stats.blocked += 1;
+    else if (item.status === 'failed') stats.failed += 1;
+    else if (item.status === 'completed') stats.completed += 1;
+    else if (item.status === 'skipped') stats.skipped += 1;
+  }
+  stats.open = stats.pending + stats.inProgress + stats.blocked + stats.failed;
+  return stats;
+}
+
+type BottomGitState = 'clean' | 'changed' | 'conflicts';
+
+function formatBottomGitBranch(branchName: string | null): string {
+  const normalized = branchName?.trim();
+  return normalized ? normalized : 'detached';
+}
+
+function formatBottomGitState(git: StatusSnapshot['git']): { label: string; state: BottomGitState } {
+  if (git.conflictRisk === 'high') return { label: 'conflicts', state: 'conflicts' };
+  if (git.changedFileCount > 0) return { label: `${git.changedFileCount} changed`, state: 'changed' };
+  return { label: 'clean', state: 'clean' };
+}
+
 function BottomStatusBar({
   payload,
   onCommand,
@@ -253,6 +294,9 @@ function BottomStatusBar({
   forkTarget?: string;
 }): JSX.Element {
   const status = payload.bottomStatus;
+  const gitBranch = formatBottomGitBranch(payload.status.git.branchName);
+  const gitState = formatBottomGitState(payload.status.git);
+  const gitTitle = `Git: ${gitBranch}, ${gitState.label}`;
   const pressure = contextPressurePercent(payload.status.context.pressure);
 
   return (
@@ -263,8 +307,17 @@ function BottomStatusBar({
         <span>/</span>
         <strong>{payload.project.name}</strong>
         <span>/</span>
-        <span title={payload.activeSession.session.title}>
+        <span className="deepsea-bottom-status__session-title" title={payload.activeSession.session.title}>
           {formatCompactSessionTitle(payload.activeSession.session.title, 28)}
+        </span>
+        <span className="deepsea-bottom-status__path-separator" aria-hidden="true">·</span>
+        <span
+          className="deepsea-bottom-status__git"
+          data-git-state={gitState.state}
+          title={gitTitle}
+        >
+          <span className="deepsea-bottom-status__git-branch">{gitBranch}</span>
+          <span className="deepsea-bottom-status__git-state">{gitState.label}</span>
         </span>
       </div>
       <span className="deepsea-bottom-status__divider" />
@@ -1200,6 +1253,37 @@ function filterProjectSessionTree(
   });
 }
 
+function SessionTitleBar({
+  detail,
+  todoStats,
+}: {
+  detail: SessionDetail;
+  todoStats?: SessionTodoStats | null;
+}): JSX.Element {
+  const stats = todoStats?.sessionId === detail.session.id
+    ? todoStats
+    : buildSessionTodoStatsFromPlanItems(detail.session.id, detail.planItems);
+  return (
+    <header className="deepsea-session-titlebar" aria-label="当前会话标题">
+      <div className="deepsea-session-titlebar__identity">
+        <MessageSquare aria-hidden="true" />
+        <div>
+          <h2 title={detail.session.title}>{formatCompactSessionTitle(detail.session.title)}</h2>
+          {detail.session.current_goal ? <p title={detail.session.current_goal}>{detail.session.current_goal}</p> : null}
+        </div>
+      </div>
+      <span
+        className="deepsea-session-titlebar__todo"
+        data-session-todo-count="true"
+        aria-label={`当前会话待办数量：${stats.open}`}
+        title={`当前会话待办数量：${stats.open} / ${stats.total}`}
+      >
+        待办 <strong>{stats.open}</strong>
+      </span>
+    </header>
+  );
+}
+
 function TranscriptCanvas({
   detail,
   evidence,
@@ -1208,6 +1292,7 @@ function TranscriptCanvas({
   onRetryRun,
   onSaveKnowledge,
   savingKnowledgeKey,
+  todoStats,
 }: {
   detail: SessionDetail;
   evidence: SessionEvidenceEvent[];
@@ -1216,6 +1301,7 @@ function TranscriptCanvas({
   onRetryRun?: (runId: string) => void;
   onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
   savingKnowledgeKey?: SessionKnowledgeActionKey | null;
+  todoStats?: SessionTodoStats | null;
 }): JSX.Element {
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement | null>(null);
@@ -1323,6 +1409,7 @@ function TranscriptCanvas({
 
   return (
     <section className="deepsea-transcript" aria-label="Active Session">
+      <SessionTitleBar detail={detail} todoStats={todoStats} />
       <div className="deepsea-transcript__scroll" data-transcript-scroll="true" ref={transcriptRef}>
         {timeline.length === 0 ? (
           <div className="deepsea-empty deepsea-empty--center">发送第一条消息开始当前会话。</div>

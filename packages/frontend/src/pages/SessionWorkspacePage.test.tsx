@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../lib/i18n';
-import type { SessionMode, SessionWorkspacePayload } from '../lib/types';
+import type { SessionMessage, SessionMode, SessionWorkspacePayload } from '../lib/types';
 import type { WsServerEvent } from '../lib/ws';
 import {
   applyProjectSwitcherProjectPatch,
@@ -18,6 +18,7 @@ import {
   removeProjectFromWorkspacePayload,
   runSessionCommand,
   SessionWorkspacePage,
+  shouldRefreshSessionTodoStats,
   shouldRefreshSessionWorkspace,
   updateActiveSessionPinnedAt,
 } from './SessionWorkspacePage';
@@ -485,6 +486,40 @@ test('isCompactPreviewForActiveSession ignores previews from inactive sessions',
   assert.equal(otherSession, false);
 });
 
+test('shouldRefreshSessionTodoStats refreshes after message and inspector changes only for active sessions', () => {
+  const messageEvent: WsServerEvent = {
+    type: 'session_message:new',
+    sessionId: 'session-1',
+    message: createTestMessage({ id: 'message-2', session_id: 'session-1' }),
+  };
+  const inspectorEvent: WsServerEvent = {
+    type: 'session_inspector:snapshot',
+    sessionId: 'session-1',
+    planItems: [],
+    toolRows: [],
+    diffRows: [],
+  };
+  const inactiveMessageEvent: WsServerEvent = {
+    ...messageEvent,
+    sessionId: 'session-2',
+  };
+  const streamEvent: WsServerEvent = {
+    type: 'session_run:stream',
+    sessionId: 'session-1',
+    agentId: 'planner',
+    runId: 'run-1',
+    seq: 1,
+    chunk: 'hello',
+    channel: 'answer',
+    done: false,
+  };
+
+  assert.equal(shouldRefreshSessionTodoStats('session-1', messageEvent), true);
+  assert.equal(shouldRefreshSessionTodoStats('session-1', inspectorEvent), true);
+  assert.equal(shouldRefreshSessionTodoStats('session-1', inactiveMessageEvent), false);
+  assert.equal(shouldRefreshSessionTodoStats('session-1', streamEvent), false);
+});
+
 function createCommandPayload(): SessionWorkspacePayload {
   const project = {
     id: 'project-1',
@@ -675,6 +710,21 @@ function createTestSession(input: {
     created_at: 100,
     updated_at: 100,
   } as const;
+}
+
+function createTestMessage(input: Partial<SessionMessage> & Pick<SessionMessage, 'id' | 'session_id'>): SessionMessage {
+  return {
+    id: input.id,
+    session_id: input.session_id,
+    role: input.role ?? 'user',
+    sender_id: input.sender_id ?? 'user',
+    sender_name: input.sender_name ?? null,
+    content: input.content ?? '继续执行',
+    message_type: input.message_type ?? 'text',
+    status: input.status ?? 'completed',
+    metadata: input.metadata ?? null,
+    created_at: input.created_at ?? 100,
+  };
 }
 
 function renderSessionWorkspace(

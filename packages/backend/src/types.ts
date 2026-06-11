@@ -55,6 +55,7 @@ export type {
   SessionTokenUsageRecord,
   SessionTokenUsageSummary,
   SessionToolRow,
+  SessionTodoStats,
   SessionWorkspacePayload,
   StatusSnapshot,
 } from './session-types.js';

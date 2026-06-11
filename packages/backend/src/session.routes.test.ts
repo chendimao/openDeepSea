@@ -11,6 +11,7 @@ const { roomRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { fileRepo } = await import('./repos/files.js');
 const { sessionRepo, sessionMessageRepo, sessionRunRepo } = await import('./repos/sessions.js');
+const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
 const { historyRecordRepo } = await import('./repos/history-records.js');
 const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
 const { router } = await import('./routes.js');
@@ -167,6 +168,61 @@ test('session PATCH updates pinned_at for active session ordering', async () => 
   const unpinned = await unpinRes.json() as { pinned_at: number | null };
   assert.equal(unpinned.pinned_at, null);
   assert.equal(sessionRepo.get(session.id)?.pinned_at, null);
+});
+
+test('session todo stats endpoint returns open plan item counts from inspector plan updates', async () => {
+  const project = projectRepo.create({
+    name: 'todo stats project',
+    path: mkdtempSync(join(tmpdir(), 'session-todo-stats-project-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Todo Stats',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  sessionEvidenceRepo.create({
+    session_id: session.id,
+    event_type: 'status',
+    title: '计划更新',
+    payload: {
+      event: {
+        type: 'plan_update',
+        payload: {
+          entries: [
+            { id: 'read-context', title: '读取上下文', status: 'completed' },
+            { id: 'wire-api', title: '接入统计 API', status: 'in_progress' },
+            { id: 'render-badge', title: '渲染标题徽标', status: 'pending' },
+            { id: 'blocked-review', title: '等待评审', status: 'blocked' },
+            { id: 'retry-style', title: '修复样式回归', status: 'failed' },
+            { id: 'skip-extra', title: '跳过扩展筛选', status: 'skipped' },
+          ],
+        },
+      },
+    },
+  });
+
+  const res = await request(`/api/sessions/${session.id}/todo-stats`);
+
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), {
+    sessionId: session.id,
+    total: 6,
+    open: 4,
+    pending: 1,
+    inProgress: 1,
+    blocked: 1,
+    failed: 1,
+    completed: 1,
+    skipped: 1,
+  });
+});
+
+test('session todo stats endpoint returns 404 for missing sessions', async () => {
+  const res = await request('/api/sessions/missing-session/todo-stats');
+
+  assert.equal(res.status, 404);
 });
 
 test('session workspace payload backfills attachments from legacy library file refs', () => {

@@ -40,6 +40,8 @@ import type {
   SessionDetail,
   SessionMessage,
   SessionMode,
+  SessionPlanItem,
+  SessionTodoStats,
   SessionWorkspacePayload,
   StatusSnapshot,
 } from './types.js';
@@ -53,6 +55,7 @@ sessionRouter.get('/projects/:projectId/sessions', listProjectSessions);
 sessionRouter.post('/projects/:projectId/sessions', createProjectSession);
 sessionRouter.get('/sessions/:sessionId', getSessionDetail);
 sessionRouter.patch('/sessions/:sessionId', updateSession);
+sessionRouter.get('/sessions/:sessionId/todo-stats', getSessionTodoStats);
 sessionRouter.get('/history-records/:historyRecordId', getHistoryRecord);
 sessionRouter.post('/history-records/:historyRecordId/resume-brief/regenerate', regenerateResumeBrief);
 sessionRouter.get('/history-records/:historyRecordId/export', exportHistoryRecord);
@@ -146,6 +149,19 @@ function updateSession(req: { params: { sessionId: string }; body: unknown }, re
     else broadcastActiveSessionUpsert(updated);
   }
   res.json(updated);
+}
+
+function getSessionTodoStats(req: { params: { sessionId: string } }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  const runs = sessionRunRepo.listBySession(session.id);
+  const evidence = sessionEvidenceRepo.listBySession(session.id);
+  const agentEvents = runs.flatMap((run) => sessionAgentEventRepo.listByRun(run.id));
+  const inspector = buildSessionInspectorSnapshot(session.id, evidence, agentEvents);
+  res.json(buildSessionTodoStats(session.id, inspector.planItems));
 }
 
 function getHistoryRecord(req: { params: { historyRecordId: string } }, res: Response): void {
@@ -305,6 +321,31 @@ export function buildSessionStatus(session: Session): StatusSnapshot {
     conflictRisk: git.conflictRisk,
     permissionMode: null,
   });
+}
+
+export function buildSessionTodoStats(sessionId: string, planItems: SessionPlanItem[]): SessionTodoStats {
+  const stats: SessionTodoStats = {
+    sessionId,
+    total: planItems.length,
+    open: 0,
+    pending: 0,
+    inProgress: 0,
+    blocked: 0,
+    failed: 0,
+    completed: 0,
+    skipped: 0,
+  };
+
+  for (const item of planItems) {
+    if (item.status === 'pending') stats.pending += 1;
+    else if (item.status === 'in_progress') stats.inProgress += 1;
+    else if (item.status === 'blocked') stats.blocked += 1;
+    else if (item.status === 'failed') stats.failed += 1;
+    else if (item.status === 'completed') stats.completed += 1;
+    else if (item.status === 'skipped') stats.skipped += 1;
+  }
+  stats.open = stats.pending + stats.inProgress + stats.blocked + stats.failed;
+  return stats;
 }
 
 export function createContextManifest(session: Session): SessionContextManifest {

@@ -731,6 +731,18 @@ export interface SessionPlanItem {
   completed_at: number | null;
 }
 
+export interface SessionTodoStats {
+  sessionId: string;
+  total: number;
+  open: number;
+  pending: number;
+  inProgress: number;
+  blocked: number;
+  failed: number;
+  completed: number;
+  skipped: number;
+}
+
 export interface SessionContextManifest {
   id: string;
   session_id: string;

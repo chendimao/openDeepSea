@@ -522,6 +522,25 @@ test('updateSession sends pinned_at patch payload', async () => {
   assert.equal(requestedBody, JSON.stringify({ pinned_at: 123 }));
 });
 
+test('getSessionTodoStats requests the session todo stats endpoint', async () => {
+  const requestedUrl = await captureApiRequest(
+    () => api.getSessionTodoStats('session-1'),
+    {
+      sessionId: 'session-1',
+      total: 3,
+      open: 2,
+      pending: 1,
+      inProgress: 1,
+      blocked: 0,
+      failed: 0,
+      completed: 1,
+      skipped: 0,
+    },
+  );
+
+  assert.equal(requestedUrl, '/api/sessions/session-1/todo-stats');
+});
+
 test('listRoomTaskEvents requests replay projection when enabled', async () => {
   const originalFetch = globalThis.fetch;
   let requestedUrl = '';

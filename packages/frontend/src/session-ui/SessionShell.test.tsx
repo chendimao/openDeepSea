@@ -90,7 +90,7 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.doesNotMatch(html, /接口联调/);
   assert.match(html, /AnotherProject/);
   assert.doesNotMatch(html, /会话历史/);
-  assert.match(html, /3. 对话记录/);
+  assert.match(html, /对话记录/);
   assert.match(html, /会话中间工作区/);
   assert.match(html, /文件浏览器/);
   assert.doesNotMatch(html, /prompt-area-container/);
@@ -127,6 +127,128 @@ test('SessionShell renders current session token usage in the bottom status bar'
   assert.match(html, /Token 消耗/);
   assert.match(html, /12,345 tokens/);
   assert.doesNotMatch(html, /API 消耗/);
+});
+
+test('SessionShell renders current session todo count beside the session title', () => {
+  const payload = createPayload();
+  payload.activeSession.planItems = [
+    {
+      id: 'plan-1',
+      session_id: 'session-1',
+      parent_id: null,
+      title: '接入待办统计 API',
+      description: null,
+      status: 'pending',
+      priority: 1,
+      source: 'plan',
+      evidence_event_id: null,
+      created_at: Date.now() - 30_000,
+      updated_at: Date.now() - 20_000,
+      completed_at: null,
+    },
+    {
+      id: 'plan-2',
+      session_id: 'session-1',
+      parent_id: null,
+      title: '渲染标题徽标',
+      description: null,
+      status: 'in_progress',
+      priority: 2,
+      source: 'plan',
+      evidence_event_id: null,
+      created_at: Date.now() - 20_000,
+      updated_at: Date.now() - 10_000,
+      completed_at: null,
+    },
+    {
+      id: 'plan-3',
+      session_id: 'session-1',
+      parent_id: null,
+      title: '完成旧计划',
+      description: null,
+      status: 'completed',
+      priority: 3,
+      source: 'plan',
+      evidence_event_id: null,
+      created_at: Date.now() - 10_000,
+      updated_at: Date.now() - 5_000,
+      completed_at: Date.now() - 5_000,
+    },
+  ];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /SessionOS 迁移/);
+  assert.match(html, /data-session-todo-count="true"/);
+  assert.match(html, /aria-label="当前会话待办数量：2"/);
+  assert.match(html, /待办 <strong>2<\/strong>/);
+});
+
+test('SessionShell renders local git state in the bottom path area', () => {
+  const payload = createPayload();
+  payload.status.git = {
+    branchName: 'feat/bottom-git',
+    changedFileCount: 4,
+    hasUncommittedDiff: true,
+    conflictRisk: 'low',
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /Git: feat\/bottom-git, 4 changed/);
+  assert.match(html, /feat\/bottom-git/);
+  assert.match(html, /4 changed/);
+  assert.match(html, /data-git-state="changed"/);
+});
+
+test('SessionShell renders clean git state when there are no local changes', () => {
+  const payload = createPayload();
+  payload.status.git = {
+    branchName: 'main',
+    changedFileCount: 0,
+    hasUncommittedDiff: false,
+    conflictRisk: 'none',
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /Git: main, clean/);
+  assert.match(html, /main/);
+  assert.match(html, /clean/);
+  assert.match(html, /data-git-state="clean"/);
+});
+
+test('SessionShell prioritizes git conflicts over changed file count', () => {
+  const payload = createPayload();
+  payload.status.git = {
+    branchName: 'merge/recovery',
+    changedFileCount: 7,
+    hasUncommittedDiff: true,
+    conflictRisk: 'high',
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /Git: merge\/recovery, conflicts/);
+  assert.match(html, /merge\/recovery/);
+  assert.match(html, /conflicts/);
+  assert.match(html, /data-git-state="conflicts"/);
+});
+
+test('SessionShell renders detached when git branch is missing', () => {
+  const payload = createPayload();
+  payload.status.git = {
+    branchName: null,
+    changedFileCount: 0,
+    hasUncommittedDiff: false,
+    conflictRisk: 'none',
+  };
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /Git: detached, clean/);
+  assert.match(html, /detached/);
+  assert.match(html, /clean/);
 });
 
 test('SessionShell only shows the right inspector on the transcript pane', () => {

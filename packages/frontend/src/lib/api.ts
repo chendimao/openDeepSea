@@ -71,6 +71,7 @@ import type {
   SessionDetail,
   SessionKnowledgeNoteResponse,
   SessionMode,
+  SessionTodoStats,
   SessionPlannerPlatformSkillsResponse,
   SuperpowersBootstrapOwner,
   Task,
@@ -691,6 +692,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(input),
     }),
+  getSessionTodoStats: (sessionId: string) =>
+    request<SessionTodoStats>(`/sessions/${sessionId}/todo-stats`),
   getHistoryRecord: (historyRecordId: string) =>
     request<HistoryRecord>(`/history-records/${historyRecordId}`),
   regenerateResumeBrief: (historyRecordId: string) =>

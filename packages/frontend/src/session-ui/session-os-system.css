@@ -43,7 +43,7 @@
   height: 13px;
 }
 .deepsea-bottom-status__path strong,
-.deepsea-bottom-status__path span {
+.deepsea-bottom-status__path > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -54,8 +54,45 @@
   font-size: 10px;
   font-weight: 900;
 }
-.deepsea-bottom-status__path span:last-child {
+.deepsea-bottom-status__session-title {
   flex: 1 1 auto;
+}
+.deepsea-bottom-status__path-separator {
+  flex: 0 0 auto;
+  color: rgba(100, 116, 139, 0.5);
+}
+.deepsea-bottom-status__git {
+  display: inline-flex;
+  flex: 0 1 220px;
+  align-items: center;
+  gap: 5px;
+  min-width: 70px;
+  max-width: 220px;
+  color: rgba(67, 70, 84, 0.82);
+  font-family: var(--deepsea-mono);
+}
+.deepsea-bottom-status__git-branch,
+.deepsea-bottom-status__git-state {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deepsea-bottom-status__git-branch {
+  flex: 1 1 auto;
+}
+.deepsea-bottom-status__git-state {
+  flex: 0 0 auto;
+  font-weight: 900;
+}
+.deepsea-bottom-status__git[data-git-state="clean"] .deepsea-bottom-status__git-state {
+  color: rgba(100, 116, 139, 0.68);
+}
+.deepsea-bottom-status__git[data-git-state="changed"] .deepsea-bottom-status__git-state {
+  color: var(--deepsea-text);
+}
+.deepsea-bottom-status__git[data-git-state="conflicts"] .deepsea-bottom-status__git-state {
+  color: var(--deepsea-danger);
 }
 .deepsea-bottom-status__commands {
   flex: 0 0 auto;

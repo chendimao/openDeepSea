@@ -1,5 +1,5 @@
 import React from 'react';
-import type { ActiveSessionSummary, SessionWorkspacePayload } from '../lib/types';
+import type { ActiveSessionSummary, SessionTodoStats, SessionWorkspacePayload } from '../lib/types';
 import { SessionShellView, type SessionKnowledgeActionKey, type SessionKnowledgeSaveInput } from './SessionShellView';
 import type { SessionComposerSubmit } from './session-file-composer-model';
 
@@ -21,6 +21,7 @@ export function SessionShell({
   onToggleSessionPin,
   onSaveKnowledge,
   savingKnowledgeKey,
+  todoStats,
 }: {
   payload: SessionWorkspacePayload;
   onSendMessage: (message: SessionComposerSubmit) => void;
@@ -37,6 +38,7 @@ export function SessionShell({
   onToggleSessionPin?: (session: ActiveSessionSummary) => void;
   onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
   savingKnowledgeKey?: SessionKnowledgeActionKey | null;
+  todoStats?: SessionTodoStats | null;
 }): JSX.Element {
   return (
     <SessionShellView
@@ -55,6 +57,7 @@ export function SessionShell({
       onToggleSessionPin={onToggleSessionPin}
       onSaveKnowledge={onSaveKnowledge}
       savingKnowledgeKey={savingKnowledgeKey}
+      todoStats={todoStats}
     />
   );
 }

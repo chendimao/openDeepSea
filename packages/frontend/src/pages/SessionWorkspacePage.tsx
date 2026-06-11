@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FolderPlus, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -18,6 +18,8 @@ import type {
   Session,
   SessionCompaction,
   SessionMode,
+  SessionPlanItem,
+  SessionTodoStats,
   SessionWorkspacePayload,
 } from '../lib/types';
 import { sessionSocket, type WsServerEvent } from '../lib/ws';
@@ -191,6 +193,7 @@ export function SessionWorkspacePage({
   const [compactPreview, setCompactPreview] = useState<SessionCompaction | null>(null);
   const [workspacePayload, setWorkspacePayload] = useState<SessionWorkspacePayload | null>(null);
   const [activeSessions, setActiveSessions] = useState<ActiveSessionSummary[] | null>(null);
+  const [sessionTodoStats, setSessionTodoStats] = useState<SessionTodoStats | null>(null);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [renameProject, setRenameProject] = useState<SessionSwitcherProject | null>(null);
   const [removeProject, setRemoveProject] = useState<SessionSwitcherProject | null>(null);
@@ -199,6 +202,15 @@ export function SessionWorkspacePage({
   const activeSessionIdRef = useRef<string | null>(null);
   const { data: projects = [], isLoading: projectsLoading } = useQuery({ queryKey: ['projects'], queryFn: api.listProjects });
   const activeProjectId = projectId || projects[0]?.id || '';
+
+  const refreshSessionTodoStats = useCallback(async (targetSessionId: string) => {
+    try {
+      const stats = await api.getSessionTodoStats(targetSessionId);
+      if (activeSessionIdRef.current === targetSessionId) setSessionTodoStats(stats);
+    } catch {
+      if (activeSessionIdRef.current === targetSessionId) setSessionTodoStats(null);
+    }
+  }, []);
 
   useEffect(() => {
     if (!navigationEnabled) return;
@@ -237,6 +249,10 @@ export function SessionWorkspacePage({
         if (event.projectId !== activeProjectId) return;
         setActiveSessions(event.payload.activeSessions);
         setWorkspacePayload(event.payload);
+        setSessionTodoStats(buildSessionTodoStatsFromPlanItems(
+          event.payload.activeSession.session.id,
+          event.payload.activeSession.planItems,
+        ));
         const nextNavigation = getSnapshotNavigation(
           event.projectId,
           event.payload.activeSession.session.id,
@@ -304,9 +320,25 @@ export function SessionWorkspacePage({
         return;
       }
       if (!isSessionWorkspaceEvent(event)) return;
+      if (shouldRefreshSessionTodoStats(activeSessionIdRef.current, event)) {
+        if (event.type === 'session_inspector:snapshot') {
+          setSessionTodoStats(buildSessionTodoStatsFromPlanItems(event.sessionId, event.planItems));
+        }
+        void refreshSessionTodoStats(event.sessionId);
+      }
       setWorkspacePayload((current) => current ? applySessionWorkspaceEvent(current, event) : current);
     });
-  }, [activeProjectId, navigate, navigationEnabled, sessionId]);
+  }, [activeProjectId, navigate, navigationEnabled, refreshSessionTodoStats, sessionId]);
+
+  useEffect(() => {
+    const activeSessionId = workspacePayload?.activeSession.session.id;
+    if (!activeSessionId) {
+      setSessionTodoStats(null);
+      return;
+    }
+    setSessionTodoStats(buildSessionTodoStatsFromPlanItems(activeSessionId, workspacePayload.activeSession.planItems));
+    void refreshSessionTodoStats(activeSessionId);
+  }, [refreshSessionTodoStats, workspacePayload?.activeSession.planItems, workspacePayload?.activeSession.session.id]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -547,6 +579,7 @@ export function SessionWorkspacePage({
       onToggleSessionPin={(session) => toggleSessionPinMutation.mutate(session)}
       onSaveKnowledge={(input) => saveKnowledgeMutation.mutate(input)}
       savingKnowledgeKey={saveKnowledgeMutation.isPending ? saveKnowledgeMutation.variables?.key ?? null : null}
+      todoStats={sessionTodoStats}
     />
     <CreateProjectDialog open={createProjectOpen} onOpenChange={setCreateProjectOpen} />
     <Dialog
@@ -668,6 +701,38 @@ export function SessionWorkspacePage({
 export function shouldRefreshSessionWorkspace(event: WsServerEvent): boolean {
   if (!isSessionWorkspaceEvent(event)) return false;
   return false;
+}
+
+export function shouldRefreshSessionTodoStats(
+  activeSessionId: string | null | undefined,
+  event: WsServerEvent,
+): event is Extract<WsServerEvent, { type: 'session_message:new' | 'session_inspector:snapshot' }> {
+  if (!activeSessionId || !('sessionId' in event) || event.sessionId !== activeSessionId) return false;
+  return event.type === 'session_message:new' || event.type === 'session_inspector:snapshot';
+}
+
+export function buildSessionTodoStatsFromPlanItems(sessionId: string, planItems: SessionPlanItem[]): SessionTodoStats {
+  const stats: SessionTodoStats = {
+    sessionId,
+    total: planItems.length,
+    open: 0,
+    pending: 0,
+    inProgress: 0,
+    blocked: 0,
+    failed: 0,
+    completed: 0,
+    skipped: 0,
+  };
+  for (const item of planItems) {
+    if (item.status === 'pending') stats.pending += 1;
+    else if (item.status === 'in_progress') stats.inProgress += 1;
+    else if (item.status === 'blocked') stats.blocked += 1;
+    else if (item.status === 'failed') stats.failed += 1;
+    else if (item.status === 'completed') stats.completed += 1;
+    else if (item.status === 'skipped') stats.skipped += 1;
+  }
+  stats.open = stats.pending + stats.inProgress + stats.blocked + stats.failed;
+  return stats;
 }
 
 export function getSnapshotNavigation(
