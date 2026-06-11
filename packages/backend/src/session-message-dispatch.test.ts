@@ -500,6 +500,29 @@ test('dispatchSessionUserMessage auto-starts graph workflow for low-risk fronten
   assert.equal(metadata.session_execution?.trigger, 'low_risk_auto');
   assert.equal(metadata.session_execution?.workflowTaskId, workflowTasks[0]?.id);
   assert.equal(metadata.session_execution?.workflowRunId, workflowRuns[0]?.id);
+
+  const sessionMessages = sessionMessageRepo.listBySession(session.id);
+  assert.ok(sessionMessages.some((item) =>
+    item.sender_id === 'workflow' && /SessionOS 已创建开发任务/.test(item.content)
+  ));
+  assert.ok(sessionMessages.some((item) =>
+    item.sender_id === 'workflow' && /创建 1 个子任务/.test(item.content)
+  ));
+  const executionMessage = sessionMessages.find((item) =>
+    item.sender_id === 'frontend-executor' && /implementation completed/.test(item.content)
+  );
+  assert.ok(executionMessage);
+  const executionMetadata = JSON.parse(executionMessage.metadata ?? '{}') as {
+    session_workflow_bridge?: {
+      sourceRoomMessageId?: string;
+      workflowRunId?: string;
+      workflowStepId?: string;
+      taskId?: string;
+      rootTaskId?: string;
+    };
+  };
+  assert.equal(executionMetadata.session_workflow_bridge?.workflowRunId, workflowRuns[0]?.id);
+  assert.equal(executionMetadata.session_workflow_bridge?.rootTaskId, workflowTasks[0]?.id);
 });
 
 test('dispatchSessionUserMessage routes contextual fix follow-ups through workflow', async () => {
@@ -715,7 +738,9 @@ test('dispatchSessionUserMessage records low-risk workflow run before background
   assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
 
   const messages = sessionMessageRepo.listBySession(session.id);
-  const workflowMessage = messages.find((item) => item.sender_id === 'workflow');
+  const workflowMessage = messages.find((item) =>
+    item.sender_id === 'workflow' && /已进入自动工作流/.test(item.content)
+  );
   assert.ok(workflowMessage);
   assert.equal(workflowMessage.message_type, 'system');
   assert.match(workflowMessage.content, /已进入自动工作流/);

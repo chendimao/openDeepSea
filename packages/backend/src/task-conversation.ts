@@ -5,6 +5,7 @@ import { roomRepo } from './repos/rooms.js';
 import { settingsRepo } from './repos/settings.js';
 import { taskEventRepo } from './repos/task-events.js';
 import { taskRepo } from './repos/tasks.js';
+import { mirrorWorkflowRoomMessageToSession } from './session-workflow-bridge.js';
 import type {
   Message,
   MessageLayer,
@@ -315,6 +316,11 @@ export function recordTaskEvent(input: RecordTaskEventInput, options?: { broadca
   if (options?.broadcast !== false) {
     broadcastTaskEventCreated(input.roomId, taskEventResult.event);
     broadcastMessageCreated(input.roomId, taskEventResult.message);
+    mirrorWorkflowRoomMessageToSession({
+      roomId: input.roomId,
+      message: taskEventResult.message,
+      eventType: input.eventType,
+    });
   }
   return taskEventResult;
 }

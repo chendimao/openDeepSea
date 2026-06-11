@@ -12,6 +12,7 @@ import { settingsRepo } from '../../repos/settings.js';
 import { taskRepo } from '../../repos/tasks.js';
 import { formatWorkflowContextEntries, workflowContextRepo } from '../../repos/workflow-context.js';
 import { workflowRepo } from '../../repos/workflows.js';
+import { mirrorWorkflowRoomMessageToSession } from '../../session-workflow-bridge.js';
 import { recordTaskCreatedEvent, recordTaskEvent, recordTaskStatusChanged } from '../../task-conversation.js';
 import type {
   AgentRun,
@@ -135,7 +136,7 @@ export interface GraphTools {
 export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
   const planner = deps.planner ?? ((input: LangChainPlannerInput, options?: LangChainPlannerOptions) =>
     generateLangChainPlan(input, undefined, options));
-  const runAcpAgent = deps.runAcpAgent ?? ((input: RespondAsAgentInput) =>
+  const baseRunAcpAgent = deps.runAcpAgent ?? ((input: RespondAsAgentInput) =>
     runAgentOnce({
       ...input,
       onRunCreated: async (run) => {
@@ -146,6 +147,19 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
         if (input.onRunCreated) await input.onRunCreated(run);
       },
     }));
+  const runAcpAgent: GraphRuntimeDeps['runAcpAgent'] = async (input) => {
+    const result = await baseRunAcpAgent(input);
+    mirrorWorkflowRoomMessageToSession({
+      roomId: input.roomId,
+      message: result.message,
+      taskId: input.taskId,
+      workflowRunId: input.workflowRunId,
+      workflowStepId: input.workflowStepId,
+      agentRunId: result.run.id,
+      force: true,
+    });
+    return result;
+  };
   return {
     readWorkflowContext(workflowRunId: string) {
       const run = workflowRepo.getRun(workflowRunId);
