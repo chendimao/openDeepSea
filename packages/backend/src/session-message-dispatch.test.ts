@@ -799,6 +799,99 @@ test('dispatchSessionUserMessage keeps bare fix without context on planner path'
   assert.equal(metadata.session_execution, undefined);
 });
 
+test('dispatchSessionUserMessage keeps analysis-only implementation questions on planner path', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Analysis Only Implementation Question',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-analysis-only-implementation-question-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Analysis Only Implementation Question',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const plannerPrompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      plannerPrompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-analysis-only-implementation-question', stderr: '' };
+    },
+  });
+
+  const message = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '分析一下状态栏的网络延迟是怎么实现的',
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.equal(plannerPrompts.length, 1);
+  assert.match(plannerPrompts[0] ?? '', /## User Request\s+分析一下状态栏的网络延迟是怎么实现的/);
+  assert.equal(taskRepo.listByProject(project.id).filter((task) => task.source_message_id === message.id).length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 1);
+
+  const metadata = JSON.parse(sessionMessageRepo.get(message.id)?.metadata ?? '{}') as {
+    risk_assessment?: unknown;
+    session_execution?: unknown;
+  };
+  assert.equal(metadata.risk_assessment, undefined);
+  assert.equal(metadata.session_execution, undefined);
+});
+
+test('dispatchSessionUserMessage gates analysis-framed follow-up implementation actions', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Analysis Framed Action',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-analysis-framed-action-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Analysis Framed Action',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const plannerPrompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      plannerPrompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-analysis-framed-action', stderr: '' };
+    },
+  });
+
+  const content = '分析一下状态栏的网络延迟是怎么实现的并修复前后端延迟展示问题，后端需要提供接口，前端需要展示。';
+  const message = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.equal(plannerPrompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+
+  const messages = sessionMessageRepo.listBySession(session.id);
+  const gateMessage = messages.find((item) => item.sender_id === 'risk-gate');
+  assert.ok(gateMessage);
+  assert.match(gateMessage.content, /风险确认/);
+
+  const metadata = JSON.parse(sessionMessageRepo.get(message.id)?.metadata ?? '{}') as {
+    risk_assessment?: { riskLevel?: string; requiresApproval?: boolean };
+    approval_card?: { taskKind?: string; agents?: string[] };
+    session_approval?: { status?: string; originalContent?: string };
+  };
+  assert.equal(metadata.risk_assessment?.riskLevel, 'medium');
+  assert.equal(metadata.risk_assessment?.requiresApproval, true);
+  assert.ok(['bug_fix', 'fullstack_change'].includes(metadata.approval_card?.taskKind ?? ''));
+  const agents = metadata.approval_card?.agents ?? [];
+  assert.ok(agents.includes('planner'));
+  assert.ok(agents.includes('backend-executor') || agents.includes('frontend-executor'));
+  assert.ok(agents.includes('reviewer'));
+  assert.ok(agents.includes('acceptor'));
+  assert.equal(metadata.session_approval?.status, 'pending');
+  assert.equal(metadata.session_approval?.originalContent, content);
+});
+
 test('dispatchSessionUserMessage records low-risk workflow run before background graph planning completes', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Session Low Risk Background Run',
@@ -949,10 +1042,10 @@ test('dispatchSessionUserMessage does not auto-approve escalated graph workflow 
     content: GIT_STATUS_BAR_TASK,
   });
 
-  const originalStart = workflowOrchestrator.start;
+  const originalStartInBackground = workflowOrchestrator.startInBackground;
   const originalApprovePlan = workflowOrchestrator.approvePlan;
   let approveCalls = 0;
-  workflowOrchestrator.start = async (taskId) => {
+  workflowOrchestrator.startInBackground = async (taskId) => {
     const task = taskRepo.get(taskId);
     assert.ok(task);
     const run = workflowRepo.createRun({
@@ -1009,7 +1102,7 @@ test('dispatchSessionUserMessage does not auto-approve escalated graph workflow 
     assert.equal(workflowRuns[0]?.status, 'awaiting_approval');
     assert.equal(workflowRuns[0]?.approved_by, null);
   } finally {
-    workflowOrchestrator.start = originalStart;
+    workflowOrchestrator.startInBackground = originalStartInBackground;
     workflowOrchestrator.approvePlan = originalApprovePlan;
   }
 });
@@ -1036,8 +1129,8 @@ test('dispatchSessionUserMessage keeps workflow room and task metadata when work
     content: GIT_STATUS_BAR_TASK,
   });
 
-  const originalStart = workflowOrchestrator.start;
-  workflowOrchestrator.start = async () => {
+  const originalStartInBackground = workflowOrchestrator.startInBackground;
+  workflowOrchestrator.startInBackground = () => {
     throw new Error('workflow start failed after task creation');
   };
 
@@ -1077,7 +1170,7 @@ test('dispatchSessionUserMessage keeps workflow room and task metadata when work
     assert.equal(metadata.session_approval?.workflowTaskId, workflowTasks[0]?.id);
     assert.equal(metadata.session_approval?.workflowRunId, undefined);
   } finally {
-    workflowOrchestrator.start = originalStart;
+    workflowOrchestrator.startInBackground = originalStartInBackground;
   }
 });
 
@@ -1103,12 +1196,12 @@ test('dispatchSessionUserMessage records workflow run id before auto-approval fi
     content: GIT_STATUS_BAR_TASK,
   });
 
-  const originalStart = workflowOrchestrator.start;
+  const originalStartInBackground = workflowOrchestrator.startInBackground;
   const originalApprovePlan = workflowOrchestrator.approvePlan;
   let workflowRunId: string | undefined;
   let approveStarted = false;
   let releaseApprove: (() => void) | undefined;
-  workflowOrchestrator.start = async (taskId) => {
+  workflowOrchestrator.startInBackground = async (taskId) => {
     const task = taskRepo.get(taskId);
     assert.ok(task);
     const run = workflowRepo.createRun({
@@ -1168,8 +1261,76 @@ test('dispatchSessionUserMessage records workflow run id before auto-approval fi
     await waitFor(() => workflowRepo.getRun(workflowRunId ?? '')?.approved_by === 'session-risk-gate');
   } finally {
     releaseApprove?.();
-    workflowOrchestrator.start = originalStart;
+    workflowOrchestrator.startInBackground = originalStartInBackground;
     workflowOrchestrator.approvePlan = originalApprovePlan;
+  }
+});
+
+test('dispatchSessionUserMessage records approved workflow run id without waiting for workflow execution', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Approved Workflow Background Start',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-approved-background-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Approved Workflow Background Start',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async () => ({ exitCode: 0, sessionId: 'codex-risk-background', stderr: '' }),
+  });
+
+  const taskMessage = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: GIT_STATUS_BAR_TASK,
+  });
+
+  const originalStart = workflowOrchestrator.start;
+  const originalStartInBackground = workflowOrchestrator.startInBackground;
+  let backgroundRunId: string | undefined;
+  workflowOrchestrator.start = async () => new Promise<never>(() => undefined);
+  workflowOrchestrator.startInBackground = async (taskId) => {
+    const task = taskRepo.get(taskId);
+    assert.ok(task);
+    const run = workflowRepo.createRun({
+      room_id: task.room_id,
+      project_id: task.project_id,
+      task_id: task.id,
+      status: 'running',
+      current_stage: 'planning',
+      approval_required: true,
+      graph_version: 'phase-b-v1',
+      graph_state: JSON.stringify({ status: 'running' }),
+    });
+    backgroundRunId = run.id;
+    return run;
+  };
+
+  try {
+    await dispatchSessionUserMessage({
+      sessionId: session.id,
+      content: '确认',
+    });
+    await waitFor(
+      () => {
+        const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
+        const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
+          session_approval?: { workflowRunId?: string };
+        };
+        return Boolean(backgroundRunId && metadata.session_approval?.workflowRunId === backgroundRunId);
+      },
+      1000,
+      () => {
+        const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
+        return `metadata=${updatedTaskMessage?.metadata ?? '{}'}`;
+      },
+    );
+  } finally {
+    workflowOrchestrator.start = originalStart;
+    workflowOrchestrator.startInBackground = originalStartInBackground;
   }
 });
 

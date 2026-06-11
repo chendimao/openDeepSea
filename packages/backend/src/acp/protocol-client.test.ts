@@ -101,6 +101,52 @@ test('invokeProtocolSession streams ACP session updates as raw protocol events a
   ]);
 });
 
+test('invokeProtocolSession can drive workflow stages with structured fake ACP output', async () => {
+  const runPrompt = async (prompt: string): Promise<string> => {
+    const chunks: Array<{ channel?: string; text: string }> = [];
+    const result = await invokeProtocolSession({
+      backend: 'codex',
+      server: {
+        backend: 'codex',
+        mode: 'protocol',
+        command: process.execPath,
+        args: ['--import', tsxLoaderPath, join(currentDir, 'fake-acp-server.ts')],
+        transport: 'stdio',
+        enabled: true,
+        env: {
+          OPENCLAW_FAKE_ACP_WORKFLOW_STAGE_OUTPUTS: '1',
+        },
+      },
+      projectPath: process.cwd(),
+      sessionId: null,
+      prompt,
+      onChunk: (chunk) => chunks.push(chunk),
+    });
+
+    assert.equal(result.exitCode, 0);
+    return chunks.filter((chunk) => chunk.channel === 'answer').map((chunk) => chunk.text).join('');
+  };
+
+  const implementation = await runPrompt('你是开发闭环的执行智能体。请按任务要求修改代码。');
+  assert.match(implementation, /"tddEvidence"/);
+  assert.match(implementation, /"stage":"RED"/);
+  assert.match(implementation, /"stage":"GREEN"/);
+
+  const review = JSON.parse(await runPrompt('你是开发闭环的代码审查智能体。必须输出 JSON 代码块。')) as {
+    verdict?: string;
+    riskLevel?: string;
+  };
+  assert.equal(review.verdict, 'pass');
+  assert.equal(review.riskLevel, 'low');
+
+  const acceptance = JSON.parse(await runPrompt('你是开发闭环的功能验收智能体。必须输出 JSON 代码块。')) as {
+    verdict?: string;
+    notes?: string;
+  };
+  assert.equal(acceptance.verdict, 'pass');
+  assert.match(acceptance.notes ?? '', /fake ACP/);
+});
+
 test('invokeProtocolSession returns fallback-safe result when agent cannot resume saved session id', async () => {
   const chunks: Array<{ channel?: string; text: string; rawType?: string }> = [];
   const sessions: string[] = [];

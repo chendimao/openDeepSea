@@ -10,6 +10,7 @@ import {
   sessionRepo,
 } from './repos/sessions.js';
 import { taskRepo } from './repos/tasks.js';
+import { workflowRepo } from './repos/workflows.js';
 import { createContextManifest } from './session.routes.js';
 import { buildKnowledgeAgentToolPrompt } from './knowledge-rag.js';
 import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
@@ -42,6 +43,8 @@ const DEFAULT_SESSION_TITLE = 'New Session';
 const AUTO_SESSION_TITLE_LIMIT = 25;
 const MAX_SESSION_FILE_REFS = 12;
 const MAX_PLATFORM_SKILL_REFS = 8;
+const SESSION_WORKFLOW_AUTO_APPROVAL_TIMEOUT_MS = 10_000;
+const SESSION_WORKFLOW_AUTO_APPROVAL_POLL_MS = 25;
 
 type ResolvedPlatformSkillRef = PlatformSkillRef & {
   description: string | null;
@@ -788,7 +791,7 @@ async function runApprovedSessionWorkflow(input: {
     },
   });
 
-  const started = await workflowOrchestrator.start(task.id);
+  const started = await workflowOrchestrator.startInBackground(task.id);
   mergeSessionApprovalMetadata({
     sessionId: input.session.id,
     sourceMessageId: input.sourceMessageId,
@@ -799,19 +802,11 @@ async function runApprovedSessionWorkflow(input: {
       workflowRunId: started.id,
     },
   });
-  const run = shouldAutoApproveWorkflowRun(started, input.approval)
-    ? await workflowOrchestrator.approvePlan(started.id, 'session-risk-gate')
-    : started;
-  const approvalPatch: Partial<SessionApprovalMetadata> = {
-    executionPath: 'workflow_graph',
-    workflowRoomId: room.id,
-    workflowTaskId: task.id,
-    workflowRunId: run.id,
-  };
-  mergeSessionApprovalMetadata({
-    sessionId: input.session.id,
+  scheduleSessionWorkflowAutoApproval({
+    session: input.session,
     sourceMessageId: input.sourceMessageId,
-    patch: approvalPatch,
+    approval: input.approval,
+    workflowRunId: started.id,
   });
   const event = sessionEvidenceRepo.create({
     session_id: input.session.id,
@@ -823,13 +818,74 @@ async function runApprovedSessionWorkflow(input: {
       execution_path: 'workflow_graph',
       room_id: room.id,
       task_id: task.id,
-      workflow_run_id: run.id,
-      workflow_status: run.status,
-      workflow_stage: run.current_stage,
+      workflow_run_id: started.id,
+      workflow_status: started.status,
+      workflow_stage: started.current_stage,
     },
   });
   wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
   broadcastActiveSessionUpsert(input.session.id);
+}
+
+function scheduleSessionWorkflowAutoApproval(input: {
+  session: Session;
+  sourceMessageId: string;
+  approval: SessionApprovalMetadata;
+  workflowRunId: string;
+}): void {
+  void autoApproveSessionWorkflowWhenReady(input).catch((error) => {
+    const event = sessionEvidenceRepo.create({
+      session_id: input.session.id,
+      event_type: 'blocker',
+      severity: 'error',
+      source_message_id: input.sourceMessageId,
+      title: 'Session workflow approval failed',
+      summary: (error as Error).message,
+      payload: {
+        source_message_id: input.sourceMessageId,
+        workflow_run_id: input.workflowRunId,
+      },
+    });
+    wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
+    broadcastActiveSessionUpsert(input.session.id);
+  });
+}
+
+async function autoApproveSessionWorkflowWhenReady(input: {
+  session: Session;
+  sourceMessageId: string;
+  approval: SessionApprovalMetadata;
+  workflowRunId: string;
+}): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt <= SESSION_WORKFLOW_AUTO_APPROVAL_TIMEOUT_MS) {
+    const run = workflowRepo.getRun(input.workflowRunId);
+    if (!run) return;
+    if (shouldAutoApproveWorkflowRun(run, input.approval)) {
+      const approved = await workflowOrchestrator.approvePlan(run.id, 'session-risk-gate');
+      mergeSessionApprovalMetadata({
+        sessionId: input.session.id,
+        sourceMessageId: input.sourceMessageId,
+        patch: {
+          executionPath: 'workflow_graph',
+          workflowRunId: approved.id,
+        },
+      });
+      if (approved.status !== 'awaiting_approval') return;
+      await delay(SESSION_WORKFLOW_AUTO_APPROVAL_POLL_MS);
+      continue;
+    }
+    if (
+      run.status === 'awaiting_approval' ||
+      run.status === 'awaiting_decision' ||
+      run.status === 'completed' ||
+      run.status === 'failed' ||
+      run.status === 'cancelled'
+    ) {
+      return;
+    }
+    await delay(SESSION_WORKFLOW_AUTO_APPROVAL_POLL_MS);
+  }
 }
 
 function buildApprovedSessionWorkflowRequest(approval: SessionApprovalMetadata): SessionWorkflowRequest {
@@ -963,10 +1019,14 @@ function shouldStartWorkflowForApproval(approval: SessionApprovalMetadata): bool
   ].includes(approval.riskAssessment.taskKind);
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function shouldAutoApproveWorkflowRun(run: WorkflowRun, approval: SessionApprovalMetadata): boolean {
   if (run.status !== 'awaiting_approval') return false;
   const workflowRiskLevel = getWorkflowRunHighestRiskLevel(run);
-  if (!workflowRiskLevel) return false;
+  if (!workflowRiskLevel) return approval.riskAssessment.riskLevel !== 'high';
   if (workflowRiskLevel === 'high') return false;
   return compareRiskLevel(workflowRiskLevel, approval.riskAssessment.riskLevel) <= 0;
 }
@@ -1288,7 +1348,8 @@ function buildRecentSessionTaskContext(sessionId: string, sourceMessageId: strin
 function isAnalysisOnlySessionRequest(content: string): boolean {
   const normalized = content.trim().toLowerCase();
   if (!containsAny(normalized, SESSION_ANALYSIS_SIGNALS)) return false;
-  return !containsAny(normalized, SESSION_IMPLEMENTATION_ACTION_SIGNALS);
+  const actionText = stripAnalysisFramedImplementationPhrases(normalized);
+  return !containsAny(actionText, SESSION_IMPLEMENTATION_ACTION_SIGNALS);
 }
 
 function isContextualFixRequest(content: string): boolean {
@@ -1298,6 +1359,12 @@ function isContextualFixRequest(content: string): boolean {
     /^继续(修复|处理|实现|开发)$/.test(normalized) ||
     /^按(上面|刚才|前面).*(修复|处理|实现|开发)$/.test(normalized) ||
     /^(fix|fix it|fix this|fix this issue|continue fixing|continue implementation)$/i.test(normalized);
+}
+
+function stripAnalysisFramedImplementationPhrases(content: string): string {
+  return content
+    .replace(/(?:怎么|如何|怎样)[^。！？!?，,；;\n]*(?:实现|开发|修改|更新|接入|刷新|工作)/g, '')
+    .replace(/how\s+(?:is|are|does|do|to)[^.!?;\n]*(?:implement|implemented|work|works|built|build)/g, '');
 }
 
 function containsAny(text: string, signals: string[]): boolean {

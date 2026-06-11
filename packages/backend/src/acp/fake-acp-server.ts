@@ -127,6 +127,25 @@ class FakeAgent implements Agent {
       });
     }
 
+    if (process.env.OPENCLAW_FAKE_ACP_WORKFLOW_STAGE_OUTPUTS === '1') {
+      const workflowOutput = fakeWorkflowStageOutput(params);
+      if (workflowOutput) {
+        await this.connection.sessionUpdate({
+          sessionId: params.sessionId,
+          update: {
+            sessionUpdate: 'agent_message_chunk',
+            content: {
+              type: 'text',
+              text: workflowOutput,
+            },
+          },
+        });
+        return {
+          stopReason: 'end_turn' as const,
+        };
+      }
+    }
+
     if (process.env.OPENCLAW_FAKE_ACP_ECHO_PROMPT === '1') {
       const firstText = params.prompt.find((block) => block.type === 'text');
       await this.connection.sessionUpdate({
@@ -246,4 +265,78 @@ function ReadableStreamFromNode(stream: NodeJS.ReadableStream): ReadableStream<U
 
 function WritableStreamFromNode(stream: NodeJS.WritableStream): WritableStream<Uint8Array> {
   return Writable.toWeb(stream as unknown as Writable) as WritableStream<Uint8Array>;
+}
+
+function fakeWorkflowStageOutput(params: PromptRequest): string | null {
+  const prompt = params.prompt
+    .flatMap((block) => block.type === 'text' && typeof block.text === 'string' ? [block.text] : [])
+    .join('\n');
+  if (!prompt) return null;
+
+  if (prompt.includes('代码审查智能体') || prompt.includes('spec_compliance_review') || prompt.includes('code_quality_review')) {
+    return JSON.stringify({
+      verdict: 'pass',
+      findings: [],
+      requiredFixes: [],
+      riskLevel: 'low',
+    });
+  }
+
+  if (prompt.includes('功能验收智能体') || prompt.includes('方案/文档验收智能体')) {
+    return JSON.stringify({
+      verdict: 'pass',
+      acceptedCriteria: ['fake ACP workflow stage completed'],
+      failedCriteria: [],
+      notes: 'Accepted by fake ACP workflow stage output.',
+    });
+  }
+
+  if (prompt.includes('执行智能体') || prompt.includes('tdd_execute')) {
+    return [
+      'implementation completed',
+      '',
+      '```json',
+      JSON.stringify({
+        superpowers: {
+          tddEvidence: [
+            { stage: 'RED', command: 'node --test fake-workflow', passed: false, summary: 'failed as expected' },
+            { stage: 'GREEN', command: 'node --test fake-workflow', passed: true, summary: 'passed' },
+          ],
+        },
+      }),
+      '```',
+    ].join('\n');
+  }
+
+  if (prompt.includes('brainstorming 阶段智能体')) {
+    return JSON.stringify({
+      superpowers: {
+        designDocPath: 'docs/superpowers/specs/fake-workflow-design.md',
+        designReviewVerdict: 'approved',
+      },
+    });
+  }
+
+  if (prompt.includes('writing_plans 阶段智能体')) {
+    return JSON.stringify({
+      superpowers: {
+        implementationPlanPath: 'docs/superpowers/plans/fake-workflow-plan.md',
+        planReviewVerdict: 'approved',
+      },
+    });
+  }
+
+  if (prompt.includes('worktree 阶段智能体')) {
+    return JSON.stringify({
+      superpowers: {
+        worktree: {
+          path: process.cwd(),
+          branchName: 'fake-workflow',
+          baseRef: 'fake',
+        },
+      },
+    });
+  }
+
+  return null;
 }
