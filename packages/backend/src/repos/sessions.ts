@@ -222,6 +222,17 @@ export const sessionMessageRepo = {
       ) ORDER BY created_at ASC
     `).all(sessionId, limit) as SessionMessage[];
   },
+
+  hasCreatedAfter(sessionId: string, timestamp: number): boolean {
+    const row = db.prepare(`
+      SELECT 1 AS found
+      FROM session_messages
+      WHERE session_id = ?
+        AND created_at > ?
+      LIMIT 1
+    `).get(sessionId, timestamp) as { found: number } | undefined;
+    return Boolean(row);
+  },
 };
 
 export const sessionRunRepo = {

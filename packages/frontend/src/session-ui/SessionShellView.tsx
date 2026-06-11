@@ -184,6 +184,7 @@ export function SessionShellView({
   todoStats?: SessionTodoStats | null;
 }): JSX.Element {
   const activeRun = getActiveRun(payload.activeSession);
+  const latestTranscriptRunId = getLatestTranscriptRunId(payload.activeSession);
   const forkTarget = payload.historyRecords[0]?.id;
   const [activeWorkspacePane, setActiveWorkspacePane] = useState<SessionCenterWorkspacePane>('transcript');
   const showInspector = isSessionInspectorVisibleForWorkspacePane(activeWorkspacePane);
@@ -227,6 +228,7 @@ export function SessionShellView({
           <IntegratedInspector
             payload={payload}
             activeRun={activeRun}
+            latestTranscriptRunId={latestTranscriptRunId}
             onCommand={onCommand}
             onCancelRun={onCancelRun}
             onRetryRun={onRetryRun}
@@ -1313,7 +1315,9 @@ function TranscriptCanvas({
     queryFn: () => api.getProjectUsedAgents(projectId),
     staleTime: 20_000,
   });
-  const timeline = buildTranscriptTimeline(detail).slice(-36);
+  const transcriptTimeline = buildTranscriptTimeline(detail);
+  const timeline = transcriptTimeline.slice(-36);
+  const latestTranscriptRunId = getLatestTimelineRunId(transcriptTimeline);
   const persistedApprovalStatusBySourceMessageId = useMemo(
     () => buildSessionApprovalStatusLookup(detail.messages),
     [detail.messages],
@@ -1368,7 +1372,6 @@ function TranscriptCanvas({
     }
   };
   const agentNamesById = buildAgentNamesById(detail.messages, projectAgents);
-  const latestRunId = getLatestRun(detail.runs)?.id;
 
   useEffect(() => {
     if (!hasLiveRun) return undefined;
@@ -1467,7 +1470,7 @@ function TranscriptCanvas({
                   <RunStatusBadge
                     run={item.run}
                     agentEvents={runAgentEvents}
-                    onRetryRun={latestRunId === item.run.id ? onRetryRun : undefined}
+                    onRetryRun={latestTranscriptRunId === item.run.id ? onRetryRun : undefined}
                   />
                   <div className="deepsea-message-tools deepsea-message-tools--run">
                     <button
@@ -1583,6 +1586,15 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
       run,
     })),
   ].sort((left, right) => left.timestamp - right.timestamp || left.key.localeCompare(right.key));
+}
+
+function getLatestTimelineRunId(timeline: TranscriptTimelineItem[]): string | null {
+  const latest = timeline.at(-1);
+  return latest?.kind === 'run' ? latest.run.id : null;
+}
+
+function getLatestTranscriptRunId(detail: SessionDetail): string | null {
+  return getLatestTimelineRunId(buildTranscriptTimeline(detail));
 }
 
 interface SessionApprovalStatusSnapshot {
@@ -2536,6 +2548,7 @@ function DeepseaComposer({
 function IntegratedInspector({
   payload,
   activeRun,
+  latestTranscriptRunId,
   onCommand,
   onCancelRun,
   onRetryRun,
@@ -2543,6 +2556,7 @@ function IntegratedInspector({
 }: {
   payload: SessionWorkspacePayload;
   activeRun: SessionRun | null;
+  latestTranscriptRunId: string | null;
   onCommand: (command: string) => void;
   onCancelRun?: (runId: string) => void;
   onRetryRun?: (runId: string) => void;
@@ -2562,7 +2576,7 @@ function IntegratedInspector({
         <PlanModule items={payload.activeSession.planItems} />
         <RunModule
           run={activeRun}
-          latestRun={getLatestRun(payload.activeSession.runs)}
+          latestTranscriptRunId={latestTranscriptRunId}
           agentEvents={activeRun ? payload.activeSession.agentEvents.filter((event) => event.run_id === activeRun.id) : []}
           onCancelRun={onCancelRun}
           onRetryRun={onRetryRun}
@@ -2647,13 +2661,13 @@ function ContractModule({
 
 function RunModule({
   run,
-  latestRun,
+  latestTranscriptRunId,
   agentEvents,
   onCancelRun,
   onRetryRun,
 }: {
   run: SessionRun | null;
-  latestRun: SessionRun | null;
+  latestTranscriptRunId: string | null;
   agentEvents?: SessionAgentEvent[];
   onCancelRun?: (runId: string) => void;
   onRetryRun?: (runId: string) => void;
@@ -2675,7 +2689,7 @@ function RunModule({
   const status = sessionRunStatusView(run, agentEvents ?? []);
   const cancellable = run.status === 'queued' || run.status === 'running' || run.status === 'retrying';
   const failureText = runFailureText(run, agentEvents);
-  const retryLabel = latestRun?.id === run.id ? runStatusRetryLabel(run, status) : null;
+  const retryLabel = latestTranscriptRunId === run.id ? runStatusRetryLabel(run, status) : null;
   return (
     <section className="deepsea-inspector-section deepsea-run-section">
       <div className="deepsea-module-title">
@@ -2700,12 +2714,12 @@ function RunModule({
             >
               <StopCircle aria-hidden="true" />
             </button>
-            {retryLabel && (
+            {retryLabel && onRetryRun && (
               <button
                 type="button"
                 className="deepsea-run-row-retry-action"
                 aria-label={retryLabel}
-                onClick={() => onRetryRun?.(run.id)}
+                onClick={() => onRetryRun(run.id)}
               >
                 <Repeat2 aria-hidden="true" />
                 <span>{retryLabel}</span>

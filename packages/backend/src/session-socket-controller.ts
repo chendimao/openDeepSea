@@ -629,6 +629,9 @@ function retryRun(input: RunControlInput): boolean {
   if (latestRun?.id !== run.id) {
     throw new Error('only the latest failed or interrupted session run can be retried');
   }
+  if (sessionMessageRepo.hasCreatedAfter(run.session_id, run.started_at)) {
+    throw new Error('only the latest failed or interrupted session run can be retried');
+  }
   retrySessionAgentRun(run.id);
   const event = sessionEvidenceRepo.create({
     session_id: run.session_id,

@@ -18,6 +18,7 @@ const { sessionCompactionRepo } = await import('./repos/session-compactions.js')
 const { sessionContextRepo } = await import('./repos/session-context.js');
 const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
 const { sessionRepo, sessionMessageRepo, sessionRunRepo } = await import('./repos/sessions.js');
+const { db } = await import('./db.js');
 const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
 const { handleSessionSocketEvent } = await import('./session-socket-controller.js');
 
@@ -161,6 +162,54 @@ test('websocket session retry rejects non-latest failed session runs', async () 
   await new Promise((resolve) => setTimeout(resolve, 30));
 
   assert.equal(sessionRunRepo.listBySession(session.id).length, 2);
+  const errors = sent.map((payload) => JSON.parse(payload)).filter((event) => event.type === 'session_error');
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].error, /only the latest failed or interrupted session run can be retried/);
+});
+
+test('websocket session retry rejects failed runs when a newer message exists', async () => {
+  const project = projectRepo.create({
+    name: 'socket retry stale message project',
+    path: mkdtempSync(join(tmpdir(), 'socket-retry-stale-message-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Socket Retry Stale Message',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const run = sessionRunRepo.create({
+    session_id: session.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    mode: 'code',
+    status: 'failed',
+    prompt: '分析旧问题',
+    acp_session_id: 'socket-retry-stale-message-acp',
+  });
+  sessionRunRepo.updateStatus(run.id, 'failed', { error: '旧问题失败' });
+  db.prepare('UPDATE session_runs SET started_at = ?, updated_at = ?, completed_at = ? WHERE id = ?')
+    .run(1000, 1500, 1500, run.id);
+  const newerMessage = sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: '大哥',
+    content: '分析最新问题',
+  });
+  db.prepare('UPDATE session_messages SET created_at = ? WHERE id = ?').run(2000, newerMessage.id);
+  const { socket, sent } = createSocket();
+
+  handleSessionSocketEvent(socket, {
+    type: 'agent.run.retry',
+    sessionId: session.id,
+    agentId: 'planner',
+    runId: run.id,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 1);
   const errors = sent.map((payload) => JSON.parse(payload)).filter((event) => event.type === 'session_error');
   assert.equal(errors.length, 1);
   assert.match(errors[0].error, /only the latest failed or interrupted session run can be retried/);

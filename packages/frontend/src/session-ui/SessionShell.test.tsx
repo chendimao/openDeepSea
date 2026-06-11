@@ -580,7 +580,7 @@ test('SessionShell renders failed run output with collapsed error details and a 
     error: 'Error: listen EPERM: operation not permitted 127.0.0.1:55063',
   };
 
-  const html = renderSessionShell(payload);
+  const html = renderSessionShell(payload, { onRetryRun: () => undefined });
   const thoughtIndex = html.indexOf('class="deepsea-agent-thought"');
   const errorDetailsIndex = html.indexOf('class="deepsea-run-error-details"');
   const runBodyIndex = html.indexOf('class="deepsea-run-log-body"');
@@ -1609,6 +1609,25 @@ test('SessionShell only renders retry action on the latest failed transcript run
   assert.doesNotMatch(html, /aria-label="重试失败运行"/);
 });
 
+test('SessionShell hides retry action when a newer transcript message follows a failed run', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'failed';
+  run.error = '执行失败';
+  payload.activeSession.messages.push({
+    ...payload.activeSession.messages[0]!,
+    id: 'message-after-failed-run',
+    content: '分析最新问题',
+    created_at: run.started_at + 1_000,
+  });
+
+  const html = renderSessionShell(payload, { onRetryRun: () => undefined });
+
+  assert.match(html, /class="deepsea-run-status" data-tone="danger">失败<\/span>/);
+  assert.doesNotMatch(html, /aria-label="继续失败回复"/);
+  assert.doesNotMatch(html, /aria-label="重试失败运行"/);
+});
+
 test('SessionShell renders retry action for the latest interrupted run', () => {
   const payload = createPayload();
   const run = payload.activeSession.runs[0]!;
@@ -1633,6 +1652,7 @@ test('SessionShell marks completed runs with provider wrap-up errors as interrup
   run.started_at = 1_000;
   run.updated_at = 20_000;
   run.completed_at = 19_000;
+  payload.activeSession.messages[0]!.created_at = 500;
   payload.activeSession.agentEvents = [
     createAgentEvent({
       id: 'run-completed',
