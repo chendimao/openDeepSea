@@ -713,6 +713,36 @@ test('dispatchSessionUserMessage records low-risk workflow run before background
   });
 
   assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+
+  const messages = sessionMessageRepo.listBySession(session.id);
+  const workflowMessage = messages.find((item) => item.sender_id === 'workflow');
+  assert.ok(workflowMessage);
+  assert.equal(workflowMessage.message_type, 'system');
+  assert.match(workflowMessage.content, /已进入自动工作流/);
+  assert.match(workflowMessage.content, /当前阶段：planning/);
+
+  const workflowMessageMetadata = JSON.parse(workflowMessage.metadata ?? '{}') as {
+    session_workflow?: {
+      executionPath?: string;
+      trigger?: string;
+      workflowRoomId?: string;
+      workflowTaskId?: string;
+      workflowRunId?: string;
+      workflowStatus?: string;
+      workflowStage?: string | null;
+      sourceMessageId?: string;
+    };
+  };
+  const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
+  const workflowRuns = workflowTasks.flatMap((task) => workflowRepo.listByTask(task.id));
+  assert.equal(workflowMessageMetadata.session_workflow?.executionPath, 'workflow_graph');
+  assert.equal(workflowMessageMetadata.session_workflow?.trigger, 'low_risk_auto');
+  assert.equal(workflowMessageMetadata.session_workflow?.workflowRoomId, workflowTasks[0]?.room_id);
+  assert.equal(workflowMessageMetadata.session_workflow?.workflowTaskId, workflowTasks[0]?.id);
+  assert.equal(workflowMessageMetadata.session_workflow?.workflowRunId, workflowRuns[0]?.id);
+  assert.equal(workflowMessageMetadata.session_workflow?.workflowStatus, workflowRuns[0]?.status);
+  assert.equal(workflowMessageMetadata.session_workflow?.workflowStage, workflowRuns[0]?.current_stage);
+  assert.equal(workflowMessageMetadata.session_workflow?.sourceMessageId, taskMessage.id);
 });
 
 test('dispatchSessionUserMessage does not auto-approve escalated graph workflow risk', async () => {

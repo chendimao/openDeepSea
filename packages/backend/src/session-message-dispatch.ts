@@ -30,9 +30,11 @@ import type {
   PlatformSkillRef,
   Project,
   ProjectFile,
+  Room,
   Session,
   SessionMessage,
   SessionMode,
+  Task,
   WorkflowRun,
 } from './types.js';
 
@@ -345,8 +347,60 @@ async function runAutomaticSessionWorkflow(input: {
       workflow_stage: run.current_stage,
     },
   });
+  recordAutomaticWorkflowStartedMessage({
+    session: input.session,
+    sourceMessage: input.sourceMessage,
+    assessment: input.assessment,
+    room,
+    task,
+    run,
+  });
   wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
   broadcastActiveSessionUpsert(input.session.id);
+}
+
+function recordAutomaticWorkflowStartedMessage(input: {
+  session: Session;
+  sourceMessage: SessionMessage;
+  assessment: TaskRiskAssessment;
+  room: Room;
+  task: Task;
+  run: WorkflowRun;
+}): void {
+  const sessionWorkflow = {
+    executionPath: 'workflow_graph',
+    trigger: 'low_risk_auto',
+    riskAssessment: input.assessment,
+    workflowRoomId: input.room.id,
+    workflowTaskId: input.task.id,
+    workflowRunId: input.run.id,
+    workflowStatus: input.run.status,
+    workflowStage: input.run.current_stage,
+    sourceMessageId: input.sourceMessage.id,
+    createdAt: Date.now(),
+  };
+  const message = sessionMessageRepo.create({
+    session_id: input.session.id,
+    role: 'system',
+    sender_id: 'workflow',
+    sender_name: '自动工作流',
+    content: [
+      `已进入自动工作流：${input.task.title}`,
+      `当前阶段：${input.run.current_stage ?? '启动中'}`,
+      '执行方式：workflow_graph',
+    ].join('\n'),
+    message_type: 'system',
+    metadata: {
+      risk_assessment: input.assessment,
+      session_workflow: sessionWorkflow,
+      source_message_id: input.sourceMessage.id,
+    },
+  });
+  wsHub.broadcastSession(input.session.id, {
+    type: 'session_message:new',
+    sessionId: input.session.id,
+    message,
+  });
 }
 
 function buildAutomaticSessionWorkflowRequest(input: {
