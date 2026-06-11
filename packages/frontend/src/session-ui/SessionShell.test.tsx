@@ -541,9 +541,16 @@ test('SessionShell renders active run as compact list row', () => {
   assert.match(html, /gpt-5\.5/);
   assert.match(html, /aria-label="运行状态：完成"/);
   assert.match(html, /aria-label="停止运行"/);
-  assert.match(html, /aria-label="重新执行"/);
   assert.doesNotMatch(html, /deepsea-run-card/);
   assert.doesNotMatch(html, /运行耗时/);
+});
+
+test('SessionShell does not render retry action for completed active run', () => {
+  const html = renderSessionShell(createPayload(), { onRetryRun: () => undefined });
+
+  assert.match(html, /deepsea-run-table/);
+  assert.match(html, /aria-label="运行状态：完成"/);
+  assert.doesNotMatch(html, /aria-label="重新执行"/);
 });
 
 test('SessionShell renders active run danger state without success semantics', () => {
@@ -1569,6 +1576,51 @@ test('SessionShell renders a retry icon next to the failed transcript status chi
   assert.match(html, /class="deepsea-run-status-group"/);
   assert.match(html, /class="deepsea-run-status" data-tone="danger">失败<\/span><button[^>]+aria-label="继续失败回复"/);
   assert.match(html, /lucide-repeat2/);
+});
+
+test('SessionShell only renders retry action on the latest failed transcript run', () => {
+  const payload = createPayload();
+  const staleRun = {
+    ...payload.activeSession.runs[0]!,
+    id: 'run-stale-failed',
+    status: 'failed' as const,
+    error: '旧运行失败',
+    started_at: 1_000,
+    updated_at: 2_000,
+    completed_at: 2_000,
+  };
+  const latestRun = {
+    ...payload.activeSession.runs[0]!,
+    id: 'run-latest-completed',
+    status: 'completed' as const,
+    stdout: '最新回复完成',
+    error: null,
+    started_at: 3_000,
+    updated_at: 4_000,
+    completed_at: 4_000,
+  };
+  payload.activeSession.runs = [staleRun, latestRun];
+
+  const html = renderSessionShell(payload, { onRetryRun: () => undefined });
+
+  assert.match(html, /class="deepsea-run-status" data-tone="danger">失败<\/span>/);
+  assert.match(html, /class="deepsea-run-status" data-tone="ok">完成<\/span>/);
+  assert.doesNotMatch(html, /aria-label="继续失败回复"/);
+  assert.doesNotMatch(html, /aria-label="重试失败运行"/);
+});
+
+test('SessionShell renders retry action for the latest interrupted run', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  run.status = 'interrupted';
+  run.stdout = '';
+  run.error = '运行中断';
+
+  const html = renderSessionShell(payload, { onRetryRun: () => undefined });
+
+  assert.match(html, /class="deepsea-run-status" data-tone="danger">失败<\/span><button[^>]+aria-label="重试失败运行"/);
+  assert.match(html, /aria-label="运行状态：失败"/);
+  assert.match(html, /aria-label="重试失败运行"/);
 });
 
 test('SessionShell marks completed runs with provider wrap-up errors as interrupted and retryable', () => {

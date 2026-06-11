@@ -622,6 +622,13 @@ function cancelRun(input: RunControlInput): boolean {
 
 function retryRun(input: RunControlInput): boolean {
   const run = requireOwnedRun(input);
+  if (run.status !== 'failed' && run.status !== 'interrupted') {
+    throw new Error('only failed or interrupted session runs can be retried');
+  }
+  const latestRun = sessionRunRepo.getLatestBySession(run.session_id);
+  if (latestRun?.id !== run.id) {
+    throw new Error('only the latest failed or interrupted session run can be retried');
+  }
   retrySessionAgentRun(run.id);
   const event = sessionEvidenceRepo.create({
     session_id: run.session_id,

@@ -1368,6 +1368,7 @@ function TranscriptCanvas({
     }
   };
   const agentNamesById = buildAgentNamesById(detail.messages, projectAgents);
+  const latestRunId = getLatestRun(detail.runs)?.id;
 
   useEffect(() => {
     if (!hasLiveRun) return undefined;
@@ -1463,7 +1464,11 @@ function TranscriptCanvas({
                   </span>
                   <time className="deepsea-mono">{formatClock(item.run.started_at)}</time>
                   <ThinkingDurationBadge run={item.run} agentEvents={runAgentEvents} now={nowTick} />
-                  <RunStatusBadge run={item.run} agentEvents={runAgentEvents} onRetryRun={onRetryRun} />
+                  <RunStatusBadge
+                    run={item.run}
+                    agentEvents={runAgentEvents}
+                    onRetryRun={latestRunId === item.run.id ? onRetryRun : undefined}
+                  />
                   <div className="deepsea-message-tools deepsea-message-tools--run">
                     <button
                       type="button"
@@ -2419,7 +2424,7 @@ function failedRunRetryLabel(run: SessionRun): string {
 
 function runStatusRetryLabel(run: SessionRun, view: RunStatusViewModel): string | null {
   if (view.retryLabel) return view.retryLabel;
-  if (run.status === 'failed') return failedRunRetryLabel(run);
+  if (run.status === 'failed' || run.status === 'interrupted') return failedRunRetryLabel(run);
   return null;
 }
 
@@ -2557,6 +2562,7 @@ function IntegratedInspector({
         <PlanModule items={payload.activeSession.planItems} />
         <RunModule
           run={activeRun}
+          latestRun={getLatestRun(payload.activeSession.runs)}
           agentEvents={activeRun ? payload.activeSession.agentEvents.filter((event) => event.run_id === activeRun.id) : []}
           onCancelRun={onCancelRun}
           onRetryRun={onRetryRun}
@@ -2641,11 +2647,13 @@ function ContractModule({
 
 function RunModule({
   run,
+  latestRun,
   agentEvents,
   onCancelRun,
   onRetryRun,
 }: {
   run: SessionRun | null;
+  latestRun: SessionRun | null;
   agentEvents?: SessionAgentEvent[];
   onCancelRun?: (runId: string) => void;
   onRetryRun?: (runId: string) => void;
@@ -2667,7 +2675,7 @@ function RunModule({
   const status = sessionRunStatusView(run, agentEvents ?? []);
   const cancellable = run.status === 'queued' || run.status === 'running' || run.status === 'retrying';
   const failureText = runFailureText(run, agentEvents);
-  const retryLabel = runStatusRetryLabel(run, status) ?? '重新执行';
+  const retryLabel = latestRun?.id === run.id ? runStatusRetryLabel(run, status) : null;
   return (
     <section className="deepsea-inspector-section deepsea-run-section">
       <div className="deepsea-module-title">
@@ -2692,15 +2700,17 @@ function RunModule({
             >
               <StopCircle aria-hidden="true" />
             </button>
-            <button
-              type="button"
-              className={retryLabel !== '重新执行' ? 'deepsea-run-row-retry-action' : undefined}
-              aria-label={retryLabel}
-              onClick={() => onRetryRun?.(run.id)}
-            >
-              <Repeat2 aria-hidden="true" />
-              {retryLabel !== '重新执行' && <span>{retryLabel}</span>}
-            </button>
+            {retryLabel && (
+              <button
+                type="button"
+                className="deepsea-run-row-retry-action"
+                aria-label={retryLabel}
+                onClick={() => onRetryRun?.(run.id)}
+              >
+                <Repeat2 aria-hidden="true" />
+                <span>{retryLabel}</span>
+              </button>
+            )}
           </div>
           {failureText && <p className="deepsea-run-row-error" title={failureText}>{failureText}</p>}
         </div>
@@ -3140,7 +3150,11 @@ function DiffModule({
 function getActiveRun(detail: SessionDetail): SessionRun | null {
   return [...detail.runs].reverse().find((run) =>
     run.status === 'queued' || run.status === 'running' || run.status === 'retrying'
-  ) ?? detail.runs[detail.runs.length - 1] ?? null;
+  ) ?? getLatestRun(detail.runs);
+}
+
+function getLatestRun(runs: SessionRun[]): SessionRun | null {
+  return runs.at(-1) ?? null;
 }
 
 function contextPressurePercent(pressure: StatusSnapshot['context']['pressure']): number {

@@ -289,13 +289,25 @@ export const sessionRunRepo = {
   listBySession(sessionId: string, input: { limit?: number } = {}): SessionRun[] {
     const limit = input.limit ?? 100;
     return db.prepare(`
-      SELECT * FROM (
-        SELECT * FROM session_runs
+      SELECT * FROM session_runs
+      WHERE id IN (
+        SELECT id FROM session_runs
         WHERE session_id = ?
-        ORDER BY started_at DESC
+        ORDER BY started_at DESC, rowid DESC
         LIMIT ?
-      ) ORDER BY started_at ASC
+      )
+      ORDER BY started_at ASC, rowid ASC
     `).all(sessionId, limit) as SessionRun[];
+  },
+
+  getLatestBySession(sessionId: string): SessionRun | undefined {
+    return db.prepare(`
+      SELECT *
+      FROM session_runs
+      WHERE session_id = ?
+      ORDER BY started_at DESC, rowid DESC
+      LIMIT 1
+    `).get(sessionId) as SessionRun | undefined;
   },
 
   appendStdout(id: string, chunk: string): SessionRun | undefined {

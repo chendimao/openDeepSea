@@ -80,6 +80,92 @@ test('websocket message send starts planner run and sends no HTTP response objec
   assert.equal(sent.some((payload) => JSON.parse(payload).type === 'session_error'), false);
 });
 
+test('websocket session retry rejects completed session runs', async () => {
+  const project = projectRepo.create({
+    name: 'socket retry completed run project',
+    path: mkdtempSync(join(tmpdir(), 'socket-retry-completed-run-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Socket Retry Completed Run',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const run = sessionRunRepo.create({
+    session_id: session.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    mode: 'code',
+    status: 'completed',
+    prompt: '分析旧问题',
+    acp_session_id: 'socket-retry-completed-acp',
+  });
+  sessionRunRepo.updateStatus(run.id, 'completed', { stdout: '旧问题已回答' });
+  const { socket, sent } = createSocket();
+
+  handleSessionSocketEvent(socket, {
+    type: 'agent.run.retry',
+    sessionId: session.id,
+    agentId: 'planner',
+    runId: run.id,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 1);
+  const errors = sent.map((payload) => JSON.parse(payload)).filter((event) => event.type === 'session_error');
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].error, /only failed or interrupted session runs can be retried/);
+});
+
+test('websocket session retry rejects non-latest failed session runs', async () => {
+  const project = projectRepo.create({
+    name: 'socket retry stale failed run project',
+    path: mkdtempSync(join(tmpdir(), 'socket-retry-stale-failed-run-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Socket Retry Stale Failed Run',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const staleFailedRun = sessionRunRepo.create({
+    session_id: session.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    mode: 'code',
+    status: 'failed',
+    prompt: '分析旧问题',
+    acp_session_id: 'socket-retry-stale-failed-acp',
+  });
+  sessionRunRepo.updateStatus(staleFailedRun.id, 'failed', { error: '旧问题失败' });
+  const latestCompletedRun = sessionRunRepo.create({
+    session_id: session.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    mode: 'code',
+    status: 'completed',
+    prompt: '分析最新问题',
+    acp_session_id: 'socket-retry-latest-completed-acp',
+  });
+  sessionRunRepo.updateStatus(latestCompletedRun.id, 'completed', { stdout: '最新问题已回答' });
+  const { socket, sent } = createSocket();
+
+  handleSessionSocketEvent(socket, {
+    type: 'agent.run.retry',
+    sessionId: session.id,
+    agentId: 'planner',
+    runId: staleFailedRun.id,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 2);
+  const errors = sent.map((payload) => JSON.parse(payload)).filter((event) => event.type === 'session_error');
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].error, /only the latest failed or interrupted session run can be retried/);
+});
+
 test('websocket message send accepts platform skill refs without text content', async () => {
   const project = projectRepo.create({
     name: 'socket skill only project',
