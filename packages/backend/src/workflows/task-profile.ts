@@ -157,6 +157,8 @@ const FRONTEND_SIGNALS = [
   '侧边栏',
   '页面',
   '组件',
+  '状态栏',
+  '底部栏',
   '跳转',
 ];
 
@@ -170,6 +172,8 @@ const UI_SIGNALS = [
   'i18n',
   '文案',
   '侧边栏',
+  '状态栏',
+  '底部栏',
 ];
 
 const BACKEND_SIGNALS = [

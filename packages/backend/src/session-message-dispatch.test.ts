@@ -285,6 +285,205 @@ test('dispatchSessionUserMessage starts graph workflow for approved fullstack se
   assert.ok(messages.some((item) => item.sender_id === 'risk-gate' && /启动 workflow/.test(item.content)));
 });
 
+test('dispatchSessionUserMessage auto-starts graph workflow for low-risk frontend implementation', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Low Risk Frontend Workflow',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-low-risk-frontend-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Low Risk Frontend Workflow',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const workflowAgentCalls: Array<{ agentId: string; stage: string | null | undefined }> = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async () => ({ exitCode: 0, sessionId: 'codex-low-risk-frontend', stderr: '' }),
+  });
+  setVerificationCommandRunnerForTests(async (command) => ({
+    command,
+    status: 'passed',
+    exitCode: 0,
+    stdout: 'low-risk frontend workflow verification passed',
+    stderr: '',
+  }));
+  setWorkflowOrchestratorGraphDeps({
+    planner: async () => {
+      throw new Error('planner should not be called for low-risk session workflow handoff');
+    },
+    runAcpAgent: async (input) => {
+      workflowAgentCalls.push({ agentId: input.agent.agent_id, stage: input.workflowStage });
+      const output = outputForWorkflowStage(input.workflowStage);
+      const run = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      const message = messageRepo.create({
+        room_id: input.roomId,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: output,
+        message_type: 'text',
+      });
+      return {
+        run: { ...run, stdout: output },
+        message,
+        status: 'completed',
+      };
+    },
+  });
+
+  const taskMessage = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: LOW_RISK_FRONTEND_TASK,
+  });
+  await waitFor(
+    () => workflowAgentCalls.some((call) => call.stage === 'acceptance'),
+    1000,
+    () => `calls=${JSON.stringify(workflowAgentCalls)}`,
+  );
+
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  assert.deepEqual(
+    workflowAgentCalls
+      .filter((call) => call.stage !== 'planning')
+      .map((call) => `${call.stage}:${call.agentId}`),
+    [
+      'implementation:frontend-executor',
+      'code_review:reviewer',
+      'code_review:reviewer',
+      'acceptance:acceptor',
+    ],
+  );
+
+  const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
+  assert.equal(workflowTasks.length, 1);
+  const workflowRuns = workflowRepo.listByTask(workflowTasks[0]!.id);
+  assert.equal(workflowRuns.length, 1);
+  assert.equal(workflowRuns[0]?.approved_by, null);
+
+  const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
+  const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
+    session_execution?: {
+      executionPath?: string;
+      trigger?: string;
+      workflowTaskId?: string;
+      workflowRunId?: string;
+    };
+  };
+  assert.equal(metadata.session_execution?.executionPath, 'workflow_graph');
+  assert.equal(metadata.session_execution?.trigger, 'low_risk_auto');
+  assert.equal(metadata.session_execution?.workflowTaskId, workflowTasks[0]?.id);
+  assert.equal(metadata.session_execution?.workflowRunId, workflowRuns[0]?.id);
+});
+
+test('dispatchSessionUserMessage records low-risk workflow run before background graph planning completes', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Low Risk Background Run',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-low-risk-background-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Low Risk Background Run',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async () => ({ exitCode: 0, sessionId: 'codex-low-risk-background', stderr: '' }),
+  });
+  setVerificationCommandRunnerForTests(async (command) => ({
+    command,
+    status: 'passed',
+    exitCode: 0,
+    stdout: 'background workflow verification passed',
+    stderr: '',
+  }));
+  setWorkflowOrchestratorGraphDeps({
+    supervisor: async () => new Promise(() => {}),
+    planner: async () => {
+      return {
+        goal: 'Remove project path from footer status bar',
+        summary: 'Update the footer status bar display.',
+        assumptions: [],
+        tasks: [{
+          title: 'Update footer status bar',
+          description: 'Hide the project path from the session footer status bar.',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Footer no longer shows the project path'],
+          scopeRead: [],
+          scopeWrite: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
+          dependsOn: [],
+        }],
+        reviewFocus: [],
+        verification: ['npm run build'],
+        verificationCommands: [{ command: 'npm run build', reason: 'build verifies frontend types', required: true }],
+        risks: [],
+        needsApproval: true,
+      };
+    },
+    runAcpAgent: async (input) => {
+      const output = outputForWorkflowStage(input.workflowStage);
+      const run = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      const message = messageRepo.create({
+        room_id: input.roomId,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: output,
+        message_type: 'text',
+      });
+      return {
+        run: { ...run, stdout: output },
+        message,
+        status: 'completed',
+      };
+    },
+  });
+
+  const taskMessage = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: LOW_RISK_FRONTEND_TASK,
+  });
+  await waitFor(() => {
+    const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
+    if (workflowTasks.length !== 1) return false;
+    const workflowRuns = workflowRepo.listByTask(workflowTasks[0]!.id);
+    if (workflowRuns.length !== 1) return false;
+    const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
+    const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
+      session_execution?: { workflowRunId?: string };
+    };
+    return metadata.session_execution?.workflowRunId === workflowRuns[0]?.id;
+  });
+
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+});
+
 test('dispatchSessionUserMessage does not auto-approve escalated graph workflow risk', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Session Workflow Escalated Risk',
@@ -1244,6 +1443,7 @@ function createPlatformSkill(provider: 'codex' | 'claudecode' | 'opencode', name
 }
 
 const GIT_STATUS_BAR_TASK = '请实现一个开发任务：在会话页面底部状态栏显示当前项目的 Git 分支、未提交改动数量和最后一次提交摘要。后端需要提供读取 Git 状态的接口，前端需要展示并在状态变化后刷新。';
+const LOW_RISK_FRONTEND_TASK = '去掉底部状态栏的项目路径';
 
 async function waitFor(predicate: () => boolean, timeoutMs = 1000, describe?: () => string): Promise<void> {
   const start = Date.now();

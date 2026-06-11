@@ -155,6 +155,13 @@ export async function startGraphWorkflow(taskId: string, deps: GraphRuntimeDeps 
   return continueGraphWorkflow(run.id, deps);
 }
 
+export function startGraphWorkflowInBackground(taskId: string, deps: GraphRuntimeDeps = {}): WorkflowRun {
+  const run = createGraphWorkflowRun(taskId);
+  recordWorkflowStartedEvent(run);
+  enqueueGraphWorkflow(run.id, deps);
+  return run;
+}
+
 export function createGraphWorkflowRun(taskId: string, selection?: WorkflowRunSelection): WorkflowRun {
   const { task, room, project } = requireTaskContext(taskId);
   const existing = workflowRepo.getActiveByTask(task.id);

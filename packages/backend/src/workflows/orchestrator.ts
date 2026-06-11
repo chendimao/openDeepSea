@@ -35,6 +35,7 @@ import {
   recoverGraphWorkflow,
   retryGraphWorkflow,
   startGraphWorkflow,
+  startGraphWorkflowInBackground,
 } from './graph/runtime.js';
 import type { GraphRuntimeDeps } from './graph/tools.js';
 import { resolveWorkflowExecutor, selectWorkflowAgentForPlanTask, selectWorkflowAgentForRole } from './role-resolver.js';
@@ -91,6 +92,13 @@ export const workflowOrchestrator = {
     });
     startAgentStage(run, task, 'analysis');
     return latestRun(run.id);
+  },
+
+  async startInBackground(taskId: string): Promise<WorkflowRun> {
+    if (getLangGraphWorkflowConfig().enabled) {
+      return startGraphWorkflowInBackground(taskId, workflowOrchestratorGraphDeps);
+    }
+    return this.start(taskId);
   },
 
   detail(id: string) {
