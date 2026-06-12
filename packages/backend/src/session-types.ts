@@ -1,4 +1,4 @@
-import type { AcpBackend, AcpPermissionMode, Project } from './types.js';
+import type { AcpBackend, AcpPermissionMode, Project, WorkflowArtifactVersionStatus, WorkflowArtifactVersionType } from './types.js';
 
 export type SessionMode = 'ask' | 'plan' | 'code' | 'debug' | 'review';
 export type SessionPhase =
@@ -308,6 +308,30 @@ export interface HistoryRecord {
   updated_at: number;
 }
 
+export interface WorkflowArtifactVersionView {
+  id: string;
+  workflow_run_id: string;
+  artifact_type: WorkflowArtifactVersionType;
+  version: number;
+  status: WorkflowArtifactVersionStatus;
+  title: string;
+  content: string;
+  structured_data: unknown;
+  created_by_agent_id: string;
+  change_request_message_id: string | null;
+  approved_by: string | null;
+  approved_at: number | null;
+  created_at: number;
+}
+
+export interface WorkflowGateView {
+  kind: 'spec_confirm' | 'plan_confirm' | 'finish_branch';
+  workflow_run_id: string;
+  artifact_version_id: string | null;
+  status: 'pending' | 'approved' | 'blocked';
+  reason: string;
+}
+
 export interface SessionDetail {
   session: Session;
   messages: SessionMessage[];
@@ -317,6 +341,8 @@ export interface SessionDetail {
   compactions: SessionCompaction[];
   checkpoints: SessionCheckpoint[];
   evidence: SessionEvidenceEvent[];
+  workflowArtifacts?: WorkflowArtifactVersionView[];
+  workflowGates?: WorkflowGateView[];
 }
 
 export interface StatusSnapshot {

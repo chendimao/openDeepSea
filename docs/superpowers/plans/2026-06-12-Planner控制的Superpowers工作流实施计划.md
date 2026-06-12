@@ -1094,7 +1094,7 @@ git commit -m "feat(workflow): 接入Superpowers阶段调用证据门禁"
 - Modify: `packages/frontend/src/lib/types.ts`
 - Modify: `packages/frontend/src/lib/api.ts`
 
-- [ ] **Step 1: Write failing backend workspace payload test**
+- [x] **Step 1: Write failing backend workspace payload test**
 
 In `packages/backend/src/session.routes.test.ts`, import `workflowRepo`, `workflowArtifactVersionRepo`, and `serializeGraphState`, then add a test that creates a workflow run plus a draft artifact version and expects the workspace payload to include it:
 
@@ -1160,7 +1160,7 @@ test('session workspace payload exposes workflow artifact versions and approval 
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --import tsx --test packages/backend/src/session.routes.test.ts --test-name-pattern "workflow artifact versions"
@@ -1168,7 +1168,7 @@ node --import tsx --test packages/backend/src/session.routes.test.ts --test-name
 
 Expected: FAIL because `SessionDetail` and `buildWorkspacePayload` do not expose `workflowArtifacts` or `workflowGates`.
 
-- [ ] **Step 3: Extend types**
+- [x] **Step 3: Extend types**
 
 In backend and frontend types, add:
 
@@ -1205,7 +1205,7 @@ workflowArtifacts?: WorkflowArtifactVersionView[];
 workflowGates?: WorkflowGateView[];
 ```
 
-- [ ] **Step 4: Implement workspace payload exposure**
+- [x] **Step 4: Implement workspace payload exposure**
 
 In `packages/backend/src/session.routes.ts`, update `buildSessionDetail(session)`:
 
@@ -1217,7 +1217,7 @@ In `packages/backend/src/session.routes.ts`, update `buildSessionDetail(session)
    - draft plan without approved plan -> `plan_confirm` pending after review.
 5. Return arrays in session detail.
 
-- [ ] **Step 5: Add API confirm endpoints**
+- [x] **Step 5: Add API confirm endpoints**
 
 In `packages/backend/src/session.routes.ts`, add routes:
 
@@ -1239,7 +1239,7 @@ approveWorkflowArtifactVersion: (sessionId: string, artifactVersionId: string) =
   request<WorkflowArtifactVersionView>(`/sessions/${sessionId}/workflow-artifacts/${artifactVersionId}/approve`, { method: 'POST' }),
 ```
 
-- [ ] **Step 6: Run targeted tests**
+- [x] **Step 6: Run targeted tests**
 
 ```bash
 node --import tsx --test packages/backend/src/session.routes.test.ts
@@ -1248,7 +1248,7 @@ node --import tsx --test packages/backend/src/session-types.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 6**
+- [x] **Step 7: Commit Task 6**
 
 ```bash
 git add packages/backend/src/session.routes.ts packages/backend/src/session.routes.test.ts packages/backend/src/types.ts packages/frontend/src/lib/types.ts packages/frontend/src/lib/api.ts

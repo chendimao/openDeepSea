@@ -88,6 +88,7 @@ import type {
   WorkflowDefinitionGraph,
   WorkflowDefinitionScope,
   WorkflowDefinitionStatus,
+  WorkflowArtifactVersionView,
   WorkflowRole,
   WorkflowRun,
   WorkspaceDirectoryResponse,
@@ -694,6 +695,10 @@ export const api = {
     }),
   getSessionTodoStats: (sessionId: string) =>
     request<SessionTodoStats>(`/sessions/${sessionId}/todo-stats`),
+  approveWorkflowArtifactVersion: (sessionId: string, artifactVersionId: string) =>
+    request<WorkflowArtifactVersionView>(`/sessions/${sessionId}/workflow-artifacts/${artifactVersionId}/approve`, {
+      method: 'POST',
+    }),
   getHistoryRecord: (historyRecordId: string) =>
     request<HistoryRecord>(`/history-records/${historyRecordId}`),
   regenerateResumeBrief: (historyRecordId: string) =>

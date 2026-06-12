@@ -46,6 +46,11 @@ const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
   openai_base_url: null,
   openai_api_key_set: false,
   openai_api_key_preview: null,
+  knowledge_embedding_provider: 'local-hash',
+  knowledge_embedding_model: null,
+  knowledge_embedding_dimensions: null,
+  knowledge_embedding_base_url: null,
+  knowledge_embedding_api_key_env_var: null,
   global_session_prompt: null,
 };
 

@@ -9,11 +9,13 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-se
 const { projectRepo } = await import('./repos/projects.js');
 const { roomRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
+const { workflowArtifactVersionRepo, workflowRepo } = await import('./repos/workflows.js');
 const { fileRepo } = await import('./repos/files.js');
 const { sessionRepo, sessionMessageRepo, sessionRunRepo } = await import('./repos/sessions.js');
 const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
 const { historyRecordRepo } = await import('./repos/history-records.js');
 const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
+const { emptyAgentWorkflowState, parseGraphState, serializeGraphState } = await import('./workflows/graph/state.js');
 const { router } = await import('./routes.js');
 const { buildWorkspacePayload } = await import('./session.routes.js');
 const express = (await import('express')).default;
@@ -279,6 +281,156 @@ test('session workspace payload backfills attachments from legacy library file r
   const storedMessage = sessionMessageRepo.get(message.id);
   assert.ok(storedMessage?.metadata);
   assert.deepEqual(JSON.parse(storedMessage.metadata).attachments, metadata.attachments);
+});
+
+test('session workspace payload exposes workflow artifact versions and approval gate', () => {
+  const project = projectRepo.create({
+    name: 'artifact project',
+    path: mkdtempSync(join(tmpdir(), 'session-artifacts-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Artifact Room' });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Artifact Session',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const sourceMessage = sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: null,
+    content: '实现 workflow-first',
+    metadata: {},
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Artifact workflow',
+    source_message_id: sourceMessage.id,
+    created_from: 'chat_plan',
+  });
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: sourceMessage.content,
+    projectPath: project.path,
+  });
+  const workflow = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'awaiting_approval',
+    current_stage: 'planning',
+    approval_required: true,
+    graph_version: 'superpowers-v2',
+    graph_state: serializeGraphState({
+      ...state,
+      status: 'awaiting_approval',
+      activeSuperpowersStage: 'writing_plans',
+    }),
+  });
+  workflowRepo.updateGraphState(workflow.id, serializeGraphState({
+    ...state,
+    workflowRunId: workflow.id,
+    status: 'awaiting_approval',
+    activeSuperpowersStage: 'writing_plans',
+  }));
+  const draft = workflowArtifactVersionRepo.createDraft({
+    workflow_run_id: workflow.id,
+    artifact_type: 'plan',
+    title: 'Plan',
+    content: '# Plan',
+    structured_data: { tasks: [] },
+    created_by_agent_id: 'planner',
+  });
+
+  const payload = buildWorkspacePayload(project, session);
+
+  assert.equal(payload.activeSession.workflowArtifacts?.[0]?.id, draft.id);
+  assert.deepEqual(payload.activeSession.workflowArtifacts?.[0]?.structured_data, { tasks: [] });
+  assert.equal(payload.activeSession.workflowGates?.some((gate) => gate.kind === 'plan_confirm'), true);
+});
+
+test('session workflow artifact approve endpoint approves linked artifact and updates graph state', async () => {
+  const project = projectRepo.create({
+    name: 'artifact approve project',
+    path: mkdtempSync(join(tmpdir(), 'session-artifact-approve-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Artifact Approve Room' });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Artifact Approve Session',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const sourceMessage = sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: null,
+    content: '确认 plan',
+    metadata: {},
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Artifact approve workflow',
+    source_message_id: sourceMessage.id,
+    created_from: 'chat_plan',
+  });
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: sourceMessage.content,
+    projectPath: project.path,
+  });
+  const workflow = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'awaiting_approval',
+    current_stage: 'planning',
+    approval_required: true,
+    graph_version: 'superpowers-v2',
+    graph_state: serializeGraphState(state),
+  });
+  const draft = workflowArtifactVersionRepo.createDraft({
+    workflow_run_id: workflow.id,
+    artifact_type: 'plan',
+    title: 'Plan',
+    content: '# Plan',
+    structured_data: { tasks: [] },
+    created_by_agent_id: 'planner',
+  });
+  workflowRepo.updateGraphState(workflow.id, serializeGraphState({
+    ...state,
+    workflowRunId: workflow.id,
+    draftPlanArtifactVersionId: draft.id,
+    activeSuperpowersStage: 'writing_plans',
+  }));
+
+  const res = await request(`/api/sessions/${session.id}/workflow-artifacts/${draft.id}/approve`, {
+    method: 'POST',
+  });
+
+  assert.equal(res.status, 200);
+  const approved = await res.json() as { id: string; status: string; structured_data: unknown };
+  assert.equal(approved.id, draft.id);
+  assert.equal(approved.status, 'approved');
+  assert.deepEqual(approved.structured_data, { tasks: [] });
+  const graphState = parseGraphState(workflowRepo.getRun(workflow.id)?.graph_state ?? null);
+  assert.equal(graphState?.approvedPlanArtifactVersionId, draft.id);
+  assert.equal(graphState?.draftPlanArtifactVersionId, null);
+  const payload = buildWorkspacePayload(project, session);
+  assert.equal(payload.activeSession.workflowArtifacts?.find((item) => item.id === draft.id)?.status, 'approved');
+  assert.equal(payload.activeSession.workflowGates?.some((gate) => gate.kind === 'plan_confirm'), false);
 });
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {

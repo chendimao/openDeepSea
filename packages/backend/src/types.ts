@@ -58,6 +58,8 @@ export type {
   SessionTodoStats,
   SessionWorkspacePayload,
   StatusSnapshot,
+  WorkflowArtifactVersionView,
+  WorkflowGateView,
 } from './session-types.js';
 
 export interface Room {

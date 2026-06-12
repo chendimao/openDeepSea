@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { fileRepo } from './repos/files.js';
 import { projectRepo } from './repos/projects.js';
+import { taskRepo } from './repos/tasks.js';
+import { workflowArtifactVersionRepo, workflowRepo } from './repos/workflows.js';
 import {
   sessionAgentEventRepo,
   sessionMessageRepo,
@@ -30,6 +32,7 @@ import {
   buildSessionInspectorSnapshot,
   buildSessionProjectSwitcher,
 } from './session-workspace-view-model.js';
+import { wsHub } from './ws-hub.js';
 import type {
   HistoryRecord,
   Project,
@@ -44,7 +47,13 @@ import type {
   SessionTodoStats,
   SessionWorkspacePayload,
   StatusSnapshot,
+  WorkflowArtifactVersion,
+  WorkflowArtifactVersionType,
+  WorkflowArtifactVersionView,
+  WorkflowGateView,
+  WorkflowRun,
 } from './types.js';
+import { parseGraphState, serializeGraphState, type AgentWorkflowState } from './workflows/graph/state.js';
 
 export const sessionRouter = Router();
 
@@ -56,6 +65,7 @@ sessionRouter.post('/projects/:projectId/sessions', createProjectSession);
 sessionRouter.get('/sessions/:sessionId', getSessionDetail);
 sessionRouter.patch('/sessions/:sessionId', updateSession);
 sessionRouter.get('/sessions/:sessionId/todo-stats', getSessionTodoStats);
+sessionRouter.post('/sessions/:sessionId/workflow-artifacts/:artifactVersionId/approve', approveSessionWorkflowArtifact);
 sessionRouter.get('/history-records/:historyRecordId', getHistoryRecord);
 sessionRouter.post('/history-records/:historyRecordId/resume-brief/regenerate', regenerateResumeBrief);
 sessionRouter.get('/history-records/:historyRecordId/export', exportHistoryRecord);
@@ -164,6 +174,36 @@ function getSessionTodoStats(req: { params: { sessionId: string } }, res: Respon
   res.json(buildSessionTodoStats(session.id, inspector.planItems));
 }
 
+function approveSessionWorkflowArtifact(req: { params: { sessionId: string; artifactVersionId: string } }, res: Response): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  const artifact = workflowArtifactVersionRepo.get(req.params.artifactVersionId);
+  if (!artifact) {
+    res.status(404).json({ error: 'workflow artifact version not found' });
+    return;
+  }
+  const linked = findSessionWorkflowRunForArtifact(session, artifact);
+  if (!linked) {
+    res.status(404).json({ error: 'workflow artifact version not found for session' });
+    return;
+  }
+  const approved = workflowArtifactVersionRepo.approve(artifact.id, {
+    approved_by: 'user',
+    approval_message_id: null,
+  });
+  if (!approved) {
+    res.status(409).json({ error: 'workflow artifact version cannot be approved' });
+    return;
+  }
+  updateApprovedArtifactGraphState(linked.run, approved);
+  broadcastSessionWorkspaceSnapshot(session);
+  const view = toWorkflowArtifactVersionView(approved);
+  res.json(view);
+}
+
 function getHistoryRecord(req: { params: { historyRecordId: string } }, res: Response): void {
   const record = historyRecordRepo.get(req.params.historyRecordId);
   if (!record) {
@@ -231,6 +271,10 @@ export function buildWorkspacePayload(project: Project, activeSession: Session):
 
 function buildSessionDetail(session: Session): SessionDetail {
   const runs = sessionRunRepo.listBySession(session.id);
+  const workflowRuns = listSessionWorkflowRuns(session);
+  const workflowArtifacts = workflowRuns.flatMap((run) =>
+    workflowArtifactVersionRepo.listByRun(run.id).map(toWorkflowArtifactVersionView)
+  );
   return {
     session,
     messages: sessionMessageRepo.listBySession(session.id).map((message) =>
@@ -242,7 +286,123 @@ function buildSessionDetail(session: Session): SessionDetail {
     compactions: sessionCompactionRepo.listBySession(session.id),
     checkpoints: sessionCheckpointRepo.listBySession(session.id),
     evidence: sessionEvidenceRepo.listBySession(session.id),
+    workflowArtifacts,
+    workflowGates: buildWorkflowGates(workflowRuns, workflowArtifacts),
   };
+}
+
+function broadcastSessionWorkspaceSnapshot(session: Session): void {
+  const project = projectRepo.get(session.project_id);
+  if (!project) return;
+  wsHub.broadcastSession(session.id, {
+    type: 'session_workspace:snapshot',
+    projectId: project.id,
+    sessionId: session.id,
+    payload: buildWorkspacePayload(project, session),
+  });
+}
+
+function listSessionWorkflowRuns(session: Session): WorkflowRun[] {
+  const messageIds = new Set(sessionMessageRepo.listBySession(session.id).map((message) => message.id));
+  if (messageIds.size === 0) return [];
+  const tasks = taskRepo
+    .listByProject(session.project_id)
+    .filter((task) => task.source_message_id !== null && messageIds.has(task.source_message_id));
+  return tasks.flatMap((task) => workflowRepo.listByTask(task.id));
+}
+
+function findSessionWorkflowRunForArtifact(
+  session: Session,
+  artifact: WorkflowArtifactVersion,
+): { run: WorkflowRun } | null {
+  const run = listSessionWorkflowRuns(session).find((item) => item.id === artifact.workflow_run_id);
+  return run ? { run } : null;
+}
+
+function toWorkflowArtifactVersionView(artifact: WorkflowArtifactVersion): WorkflowArtifactVersionView {
+  return {
+    id: artifact.id,
+    workflow_run_id: artifact.workflow_run_id,
+    artifact_type: artifact.artifact_type,
+    version: artifact.version,
+    status: artifact.status,
+    title: artifact.title,
+    content: artifact.content,
+    structured_data: parseStructuredData(artifact.structured_data),
+    created_by_agent_id: artifact.created_by_agent_id,
+    change_request_message_id: artifact.change_request_message_id,
+    approved_by: artifact.approved_by,
+    approved_at: artifact.approved_at,
+    created_at: artifact.created_at,
+  };
+}
+
+function buildWorkflowGates(
+  runs: WorkflowRun[],
+  artifacts: WorkflowArtifactVersionView[],
+): WorkflowGateView[] {
+  const gates: WorkflowGateView[] = [];
+  for (const run of runs) {
+    const runArtifacts = artifacts.filter((artifact) => artifact.workflow_run_id === run.id);
+    for (const artifactType of ['spec', 'plan'] as const) {
+      const latestDraft = latestArtifactByStatus(runArtifacts, artifactType, ['draft', 'reviewing']);
+      const approved = latestArtifactByStatus(runArtifacts, artifactType, ['approved']);
+      if (!latestDraft || approved) continue;
+      gates.push({
+        kind: artifactType === 'spec' ? 'spec_confirm' : 'plan_confirm',
+        workflow_run_id: run.id,
+        artifact_version_id: latestDraft.id,
+        status: 'pending',
+        reason: artifactType === 'spec'
+          ? '等待用户确认 planner 生成的需求/设计规格。'
+          : '等待用户确认 planner 生成的执行计划。',
+      });
+    }
+  }
+  return gates;
+}
+
+function latestArtifactByStatus(
+  artifacts: WorkflowArtifactVersionView[],
+  artifactType: WorkflowArtifactVersionType,
+  statuses: WorkflowArtifactVersionView['status'][],
+): WorkflowArtifactVersionView | null {
+  return artifacts
+    .filter((artifact) => artifact.artifact_type === artifactType && statuses.includes(artifact.status))
+    .sort((a, b) => b.version - a.version)[0] ?? null;
+}
+
+function updateApprovedArtifactGraphState(run: WorkflowRun, artifact: WorkflowArtifactVersion): void {
+  const state = parseGraphState(run.graph_state);
+  if (!state) return;
+  const nextState: AgentWorkflowState = {
+    ...state,
+    ...(artifact.artifact_type === 'spec'
+      ? {
+        approvedSpecArtifactVersionId: artifact.id,
+        draftSpecArtifactVersionId: state.draftSpecArtifactVersionId === artifact.id
+          ? null
+          : state.draftSpecArtifactVersionId,
+      }
+      : {}),
+    ...(artifact.artifact_type === 'plan'
+      ? {
+        approvedPlanArtifactVersionId: artifact.id,
+        draftPlanArtifactVersionId: state.draftPlanArtifactVersionId === artifact.id
+          ? null
+          : state.draftPlanArtifactVersionId,
+      }
+      : {}),
+  };
+  workflowRepo.updateGraphState(run.id, serializeGraphState(nextState));
+}
+
+function parseStructuredData(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return {};
+  }
 }
 
 function backfillSessionMessageAttachments(projectId: string, message: SessionMessage): SessionMessage {
