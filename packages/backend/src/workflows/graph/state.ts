@@ -105,6 +105,22 @@ export const superpowersFinishBranchDecisionSchema = z.object({
 
 export const workflowExecutionModeSchema = z.enum(['serial', 'parallel', 'hybrid']);
 
+export const superpowersAgentAssignmentSchema = z.object({
+  taskId: z.string(),
+  assignedAgentId: z.string().nullable(),
+  fallbackAgentIds: z.array(z.string()).default([]),
+  fallbackReason: z.string().nullable().default(null),
+  executionMode: workflowExecutionModeSchema.default('serial'),
+  scopeRead: z.array(z.string()).default([]),
+  scopeWrite: z.array(z.string()).default([]),
+});
+
+export const superpowersRecoveryStateSchema = z.object({
+  reason: z.string(),
+  failedStage: z.string().nullable().default(null),
+  retryable: z.boolean().default(true),
+});
+
 export const taskRiskAssessmentSchema = z.object({
   taskKind: taskKindSchema,
   riskLevel: taskRiskLevelSchema,
@@ -231,6 +247,15 @@ export const agentWorkflowStateSchema = z.object({
   supervisorAssignments: z.array(supervisorAssignmentHintSchema).default([]),
   runtimeProfile: z.literal('superpowers').default('superpowers'),
   superpowersPhase: z.string().nullable().default(null),
+  activeSuperpowersStage: z.string().nullable().default(null),
+  draftSpecArtifactVersionId: z.string().nullable().default(null),
+  approvedSpecArtifactVersionId: z.string().nullable().default(null),
+  draftPlanArtifactVersionId: z.string().nullable().default(null),
+  approvedPlanArtifactVersionId: z.string().nullable().default(null),
+  lightweightPlanArtifactVersionId: z.string().nullable().default(null),
+  artifactChangeRequestMessageId: z.string().nullable().default(null),
+  agentAssignments: z.array(superpowersAgentAssignmentSchema).default([]),
+  recoveryState: superpowersRecoveryStateSchema.nullable().default(null),
   designDocPath: z.string().nullable().default(null),
   designReviewVerdict: superpowersReviewVerdictSchema.nullable().default(null),
   implementationPlanPath: z.string().nullable().default(null),
@@ -263,6 +288,8 @@ export type SuperpowersReview = z.infer<typeof superpowersReviewSchema>;
 export type SuperpowersVerificationEvidence = z.infer<typeof superpowersVerificationEvidenceSchema>;
 export type SuperpowersFinishBranchDecision = z.infer<typeof superpowersFinishBranchDecisionSchema>;
 export type StructuredAgentEvent = z.infer<typeof structuredAgentEventSchema>;
+export type SuperpowersAgentAssignment = z.infer<typeof superpowersAgentAssignmentSchema>;
+export type SuperpowersRecoveryState = z.infer<typeof superpowersRecoveryStateSchema>;
 export interface SupervisorAssignmentHint {
   stage: WorkflowStage;
   role: WorkflowRole;
@@ -279,6 +306,15 @@ export type AgentWorkflowState = Omit<
   | 'childTaskPlanIndexes'
   | 'runtimeProfile'
   | 'superpowersPhase'
+  | 'activeSuperpowersStage'
+  | 'draftSpecArtifactVersionId'
+  | 'approvedSpecArtifactVersionId'
+  | 'draftPlanArtifactVersionId'
+  | 'approvedPlanArtifactVersionId'
+  | 'lightweightPlanArtifactVersionId'
+  | 'artifactChangeRequestMessageId'
+  | 'agentAssignments'
+  | 'recoveryState'
   | 'designDocPath'
   | 'designReviewVerdict'
   | 'implementationPlanPath'
@@ -302,6 +338,15 @@ export type AgentWorkflowState = Omit<
   childTaskPlanIndexes?: Record<string, number>;
   runtimeProfile?: 'superpowers';
   superpowersPhase?: string | null;
+  activeSuperpowersStage?: string | null;
+  draftSpecArtifactVersionId?: string | null;
+  approvedSpecArtifactVersionId?: string | null;
+  draftPlanArtifactVersionId?: string | null;
+  approvedPlanArtifactVersionId?: string | null;
+  lightweightPlanArtifactVersionId?: string | null;
+  artifactChangeRequestMessageId?: string | null;
+  agentAssignments?: SuperpowersAgentAssignment[];
+  recoveryState?: SuperpowersRecoveryState | null;
   designDocPath?: string | null;
   designReviewVerdict?: SuperpowersReviewVerdict | null;
   implementationPlanPath?: string | null;
@@ -338,6 +383,15 @@ export function emptyAgentWorkflowState(input: {
     supervisorAssignments: [],
     runtimeProfile: 'superpowers',
     superpowersPhase: null,
+    activeSuperpowersStage: null,
+    draftSpecArtifactVersionId: null,
+    approvedSpecArtifactVersionId: null,
+    draftPlanArtifactVersionId: null,
+    approvedPlanArtifactVersionId: null,
+    lightweightPlanArtifactVersionId: null,
+    artifactChangeRequestMessageId: null,
+    agentAssignments: [],
+    recoveryState: null,
     designDocPath: null,
     designReviewVerdict: null,
     implementationPlanPath: null,

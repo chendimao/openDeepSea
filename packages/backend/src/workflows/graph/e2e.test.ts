@@ -26,6 +26,7 @@ const {
   startGraphWorkflow,
 } = await import('./runtime.js');
 const { setVerificationCommandRunnerForTests } = await import('./verification.js');
+const { SUPERPOWERS_V2_GRAPH_VERSION } = await import('../superpowers-stage-registry.js');
 
 const originalLangGraphWorkflowEnabled = process.env.LANGGRAPH_WORKFLOW_ENABLED;
 const projectPathsToCleanup: string[] = [];
@@ -164,7 +165,7 @@ test('graph runtime completes ACP-only development loop', async () => {
   } : null;
 
   assert.equal(run.status, 'completed');
-  assert.equal(run.graph_version, 'superpowers-v1');
+  assert.equal(run.graph_version, SUPERPOWERS_V2_GRAPH_VERSION);
   assert.equal(taskRepo.get(task.id)?.status, 'done');
   assertOrderedSubsequence(nodeNames, [
     'context',

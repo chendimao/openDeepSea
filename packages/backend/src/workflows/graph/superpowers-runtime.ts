@@ -9,10 +9,11 @@ import {
 import { canLeaveTddExecute, canLeaveVerify } from './superpowers-gates.js';
 import type { AgentWorkflowState } from './state.js';
 import { createGraphTools, type GraphRuntimeDeps } from './tools.js';
+import { SUPERPOWERS_V2_GRAPH_VERSION } from '../superpowers-stage-registry.js';
 
 export const SUPERPOWERS_WORKFLOW_DEFINITION_KEY = 'superpowers-development';
 export const SUPERPOWERS_RUNTIME_PROFILE = 'superpowers';
-export const SUPERPOWERS_GRAPH_VERSION = 'superpowers-v1';
+export const SUPERPOWERS_GRAPH_VERSION = SUPERPOWERS_V2_GRAPH_VERSION;
 
 export const SUPERPOWERS_PLACEHOLDER_NODE_TYPES = [
   'brainstorming',

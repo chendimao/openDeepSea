@@ -107,6 +107,60 @@ test('parseGraphState preserves Superpowers workflow state fields', () => {
   assert.equal(parsed?.implementationPlanPath, null);
 });
 
+test('parseGraphState preserves Superpowers v2 artifact and assignment fields', () => {
+  const state = {
+    ...emptyAgentWorkflowState({
+      workflowRunId: 'run-superpowers-v2',
+      projectId: 'project-superpowers-v2',
+      roomId: 'room-superpowers-v2',
+      taskId: 'task-superpowers-v2',
+      userGoal: 'Superpowers v2 state',
+      projectPath: tempDir,
+    }),
+    activeSuperpowersStage: 'writing_plans',
+    draftSpecArtifactVersionId: 'spec-draft-1',
+    approvedSpecArtifactVersionId: 'spec-approved-1',
+    draftPlanArtifactVersionId: 'plan-draft-1',
+    approvedPlanArtifactVersionId: 'plan-approved-1',
+    lightweightPlanArtifactVersionId: 'lightweight-plan-1',
+    artifactChangeRequestMessageId: 'message-change-1',
+    agentAssignments: [{
+      taskId: 'plan-task-1',
+      assignedAgentId: 'frontend-executor',
+      fallbackAgentIds: ['fullstack-engineer'],
+      fallbackReason: null,
+      executionMode: 'parallel' as const,
+      scopeRead: ['packages/frontend/src/pages/Home.tsx'],
+      scopeWrite: ['packages/frontend/src/pages/Home.tsx'],
+    }],
+    recoveryState: {
+      reason: 'planner timed out',
+      failedStage: 'writing_plans',
+      retryable: true,
+    },
+  };
+
+  const parsed = parseGraphState(serializeGraphState(state));
+
+  assert.equal(parsed?.activeSuperpowersStage, 'writing_plans');
+  assert.equal(parsed?.draftSpecArtifactVersionId, 'spec-draft-1');
+  assert.equal(parsed?.approvedPlanArtifactVersionId, 'plan-approved-1');
+  assert.deepEqual(parsed?.agentAssignments, [{
+    taskId: 'plan-task-1',
+    assignedAgentId: 'frontend-executor',
+    fallbackAgentIds: ['fullstack-engineer'],
+    fallbackReason: null,
+    executionMode: 'parallel',
+    scopeRead: ['packages/frontend/src/pages/Home.tsx'],
+    scopeWrite: ['packages/frontend/src/pages/Home.tsx'],
+  }]);
+  assert.deepEqual(parsed?.recoveryState, {
+    reason: 'planner timed out',
+    failedStage: 'writing_plans',
+    retryable: true,
+  });
+});
+
 test('parseGraphState preserves Superpowers TDD exemption fields', () => {
   const state = {
     ...emptyAgentWorkflowState({

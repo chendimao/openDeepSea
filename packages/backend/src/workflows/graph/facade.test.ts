@@ -19,6 +19,7 @@ const { runRegistry } = await import('../../run-registry.js');
 const { parseGraphState, serializeGraphState } = await import('./state.js');
 const { setWorkflowOrchestratorGraphDeps, workflowOrchestrator } = await import('../orchestrator.js');
 const { setVerificationCommandRunnerForTests } = await import('./verification.js');
+const { SUPERPOWERS_V2_GRAPH_VERSION } = await import('../superpowers-stage-registry.js');
 
 test.beforeEach(() => {
   setVerificationCommandRunnerForTests(async (command) => ({
@@ -84,7 +85,7 @@ test('workflowOrchestrator.start delegates to graph runtime when enabled', async
 
   const run = await workflowOrchestrator.start(task.id);
 
-  assert.equal(run.graph_version, 'superpowers-v1');
+  assert.equal(run.graph_version, SUPERPOWERS_V2_GRAPH_VERSION);
   assert.equal(run.status, 'awaiting_approval');
   assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'writing_plans'));
 });
