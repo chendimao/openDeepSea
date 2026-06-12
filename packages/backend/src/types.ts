@@ -1343,6 +1343,28 @@ export interface TaskArtifact {
   created_at: number;
 }
 
+export type WorkflowArtifactVersionType = 'spec' | 'plan' | 'lightweight_plan' | 'review' | 'verification';
+export type WorkflowArtifactVersionStatus = 'draft' | 'reviewing' | 'approved' | 'superseded' | 'rejected';
+
+export interface WorkflowArtifactVersion {
+  id: string;
+  workflow_run_id: string;
+  artifact_type: WorkflowArtifactVersionType;
+  version: number;
+  status: WorkflowArtifactVersionStatus;
+  title: string;
+  content: string;
+  structured_data: string;
+  created_by_agent_id: string;
+  change_request_message_id: string | null;
+  supersedes_artifact_version_id: string | null;
+  approved_by: string | null;
+  approval_message_id: string | null;
+  approved_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export type WorkflowContextSourceType = 'agent_run' | 'workflow_step' | 'artifact' | 'verification' | 'system';
 export type WorkflowContextEntryType =
   | 'summary'

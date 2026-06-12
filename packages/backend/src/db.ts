@@ -992,6 +992,34 @@ CREATE TABLE IF NOT EXISTS task_artifacts (
 CREATE INDEX IF NOT EXISTS idx_task_artifacts_workflow ON task_artifacts(workflow_run_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_task_artifacts_task ON task_artifacts(task_id, created_at);
 
+CREATE TABLE IF NOT EXISTS workflow_artifact_versions (
+  id TEXT PRIMARY KEY,
+  workflow_run_id TEXT NOT NULL,
+  artifact_type TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('draft', 'reviewing', 'approved', 'superseded', 'rejected')),
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  structured_data TEXT NOT NULL DEFAULT '{}',
+  created_by_agent_id TEXT NOT NULL,
+  change_request_message_id TEXT,
+  supersedes_artifact_version_id TEXT,
+  approved_by TEXT,
+  approval_message_id TEXT,
+  approved_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (workflow_run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE,
+  FOREIGN KEY (supersedes_artifact_version_id) REFERENCES workflow_artifact_versions(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_artifact_versions_run_type
+  ON workflow_artifact_versions(workflow_run_id, artifact_type, version);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_artifact_versions_version
+  ON workflow_artifact_versions(workflow_run_id, artifact_type, version);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_artifact_versions_approved
+  ON workflow_artifact_versions(workflow_run_id, artifact_type)
+  WHERE status = 'approved';
+
 CREATE TABLE IF NOT EXISTS workflow_context_entries (
   id TEXT PRIMARY KEY,
   workflow_run_id TEXT NOT NULL,

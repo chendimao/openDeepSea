@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
+export { workflowArtifactVersionRepo } from '../workflows/artifact-versions.js';
 import type {
   GraphNodeName,
   TaskArtifact,
