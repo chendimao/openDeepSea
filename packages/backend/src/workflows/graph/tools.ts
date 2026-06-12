@@ -12,6 +12,8 @@ import { settingsRepo } from '../../repos/settings.js';
 import { taskRepo } from '../../repos/tasks.js';
 import { formatWorkflowContextEntries, workflowContextRepo } from '../../repos/workflow-context.js';
 import { workflowRepo } from '../../repos/workflows.js';
+import { sessionMessageRepo } from '../../repos/sessions.js';
+import { workflowArtifactVersionRepo } from '../../repos/workflows.js';
 import { mirrorWorkflowRoomMessageToSession } from '../../session-workflow-bridge.js';
 import { recordTaskCreatedEvent, recordTaskEvent, recordTaskStatusChanged } from '../../task-conversation.js';
 import type {
@@ -29,6 +31,9 @@ import type {
   WorkflowRun,
   WorkflowStep,
   SettingsResolution,
+  WorkflowArtifactVersion,
+  WorkflowArtifactVersionType,
+  SessionMessage,
 } from '../../types.js';
 import type { WorkflowPromptKind } from '../prompts.js';
 import { wsHub } from '../../ws-hub.js';
@@ -82,6 +87,18 @@ export interface GraphTools {
   createGraphStep: typeof workflowRepo.createStep;
   updateGraphStep: typeof workflowRepo.updateStep;
   createArtifact: typeof workflowRepo.createArtifact;
+  createArtifactVersionDraft: (input: {
+    workflow_run_id: string;
+    artifact_type: WorkflowArtifactVersionType;
+    title: string;
+    content: string;
+    structured_data: Record<string, unknown>;
+    created_by_agent_id: string;
+  }) => WorkflowArtifactVersion;
+  createWorkflowSessionMessage: (input: {
+    workflowRunId: string;
+    content: string;
+  }) => SessionMessage;
   createChildTask: (input: CreateChildTaskInput) => Task;
   updateTaskStatus: (taskId: string, status: TaskStatus) => Task | undefined;
   listChildTasks: typeof taskRepo.listChildren;
@@ -199,6 +216,35 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     createGraphStep: workflowRepo.createStep.bind(workflowRepo),
     updateGraphStep: workflowRepo.updateStep.bind(workflowRepo),
     createArtifact: workflowRepo.createArtifact.bind(workflowRepo),
+    createArtifactVersionDraft(input) {
+      return workflowArtifactVersionRepo.createDraft(input);
+    },
+    createWorkflowSessionMessage(input) {
+      const run = workflowRepo.getRun(input.workflowRunId);
+      if (!run) throw new Error('workflow not found');
+      const task = taskRepo.get(run.task_id);
+      if (!task?.source_message_id) throw new Error('workflow source session message not found');
+      const sourceMessage = sessionMessageRepo.get(task.source_message_id);
+      if (!sourceMessage) throw new Error('workflow source session message not found');
+      const message = sessionMessageRepo.create({
+        session_id: sourceMessage.session_id,
+        role: 'assistant',
+        sender_id: 'planner',
+        sender_name: 'Planner',
+        content: input.content,
+        metadata: {
+          workflow_run_id: input.workflowRunId,
+          source_message_id: sourceMessage.id,
+          event_type: 'workflow_answer',
+        },
+      });
+      wsHub.broadcastSession(sourceMessage.session_id, {
+        type: 'session_message:new',
+        sessionId: sourceMessage.session_id,
+        message,
+      });
+      return message;
+    },
     createChildTask(input: CreateChildTaskInput) {
       return db.transaction(() => {
         const task = taskRepo.create(input);

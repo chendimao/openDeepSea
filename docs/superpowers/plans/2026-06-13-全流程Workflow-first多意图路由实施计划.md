@@ -621,12 +621,13 @@ git commit -m "feat(workflow): 编译Superpowers多意图路由图"
 
 **Files:**
 - Create: `packages/backend/src/workflows/graph/superpowers-routing-nodes.ts`
+- Modify: `packages/backend/src/workflows/graph/superpowers-route-compiler.ts`
 - Modify: `packages/backend/src/workflows/graph/runtime.ts`
 - Modify: `packages/backend/src/workflows/graph/tools.ts`
 - Test: `packages/backend/src/workflows/graph/superpowers-routing-nodes.test.ts`
 - Test: `packages/backend/src/workflows/graph/runtime.test.ts`
 
-- [ ] **Step 1: Write failing routing node tests**
+- [x] **Step 1: Write failing routing node tests**
 
 Create `packages/backend/src/workflows/graph/superpowers-routing-nodes.test.ts`:
 
@@ -671,7 +672,7 @@ test('routeSkills records answer route and completes through answer node', async
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -681,7 +682,7 @@ node --import tsx --test packages/backend/src/workflows/graph/superpowers-routin
 
 Expected: FAIL because `superpowers-routing-nodes.ts` does not exist.
 
-- [ ] **Step 3: Create routing node module**
+- [x] **Step 3: Create routing node module**
 
 Create `packages/backend/src/workflows/graph/superpowers-routing-nodes.ts`:
 
@@ -819,7 +820,7 @@ function formatJson(value: unknown): string {
 }
 ```
 
-- [ ] **Step 4: Wire runtime route node names**
+- [x] **Step 4: Wire runtime route node names**
 
 In `packages/backend/src/workflows/graph/runtime.ts`:
 
@@ -880,7 +881,7 @@ function isSuperpowersRoutingRouteNode(node: WorkflowRouteNode): node is Superpo
 }
 ```
 
-- [ ] **Step 5: Route by selectedIntent**
+- [x] **Step 5: Route by selectedIntent**
 
 In `matchesRouteCondition()`, before generic defaults, add:
 
@@ -894,7 +895,7 @@ if (node === 'agent_assignment') {
 }
 ```
 
-- [ ] **Step 6: Add runtime execution dispatch for routing nodes**
+- [x] **Step 6: Add runtime execution dispatch for routing nodes**
 
 In `resumeGraphWorkflowFromState()`, before planning node handling:
 
@@ -947,7 +948,7 @@ async function runSuperpowersRoutingNode(
 
 If `GraphTools` lacks `createWorkflowMessage`, add it in `packages/backend/src/workflows/graph/tools.ts` with existing message repo and broadcast patterns.
 
-- [ ] **Step 7: Run routing tests**
+- [x] **Step 7: Run routing tests**
 
 Run:
 
@@ -957,10 +958,10 @@ node --import tsx --test packages/backend/src/workflows/graph/superpowers-routin
 
 Expected: PASS after updating any existing runtime graph expectations to include `intake` and `route_skills`.
 
-- [ ] **Step 8: Commit Task 3**
+- [x] **Step 8: Commit Task 3**
 
 ```bash
-git add packages/backend/src/workflows/graph/superpowers-routing-nodes.ts packages/backend/src/workflows/graph/superpowers-routing-nodes.test.ts packages/backend/src/workflows/graph/runtime.ts packages/backend/src/workflows/graph/runtime.test.ts packages/backend/src/workflows/graph/tools.ts
+git add packages/backend/src/workflows/graph/superpowers-routing-nodes.ts packages/backend/src/workflows/graph/superpowers-routing-nodes.test.ts packages/backend/src/workflows/graph/superpowers-route-compiler.ts packages/backend/src/workflows/graph/runtime.ts packages/backend/src/workflows/graph/runtime.test.ts packages/backend/src/workflows/graph/tools.ts
 git commit -m "feat(workflow): 执行Superpowers路由节点"
 ```
 

@@ -36,6 +36,7 @@ import {
   type SuperpowersRuntimeGraph,
 } from './superpowers-runtime.js';
 import type { SuperpowersExecutionNodeName, SuperpowersPlanningNodeName } from './superpowers-nodes.js';
+import { createSuperpowersRoutingNodes } from './superpowers-routing-nodes.js';
 import { createGraphTools, type GraphRuntimeDeps } from './tools.js';
 import { mapVerificationResultsToEvidence } from './verification.js';
 import { applySuperpowersEvidencePatch, parseSuperpowersEvidence } from './superpowers-evidence.js';
@@ -66,6 +67,14 @@ const GraphState = Annotation.Root({
   artifactChangeRequestMessageId: Annotation<AgentWorkflowState['artifactChangeRequestMessageId']>(),
   artifactChangeRequestArtifactVersionId: Annotation<AgentWorkflowState['artifactChangeRequestArtifactVersionId']>(),
   agentAssignments: Annotation<AgentWorkflowState['agentAssignments']>(),
+  selectedIntent: Annotation<AgentWorkflowState['selectedIntent']>(),
+  selectedPath: Annotation<AgentWorkflowState['selectedPath']>(),
+  routingArtifactVersionId: Annotation<AgentWorkflowState['routingArtifactVersionId']>(),
+  analysisArtifactVersionId: Annotation<AgentWorkflowState['analysisArtifactVersionId']>(),
+  agentAssignmentArtifactVersionId: Annotation<AgentWorkflowState['agentAssignmentArtifactVersionId']>(),
+  approvedAgentAssignmentArtifactVersionId: Annotation<AgentWorkflowState['approvedAgentAssignmentArtifactVersionId']>(),
+  activeChangeRequestId: Annotation<AgentWorkflowState['activeChangeRequestId']>(),
+  worktreeDecision: Annotation<AgentWorkflowState['worktreeDecision']>(),
   recoveryState: Annotation<AgentWorkflowState['recoveryState']>(),
   designDocPath: Annotation<AgentWorkflowState['designDocPath']>(),
   designReviewVerdict: Annotation<AgentWorkflowState['designReviewVerdict']>(),
@@ -926,7 +935,9 @@ async function resumeGraphWorkflowFromState(
       return blockSuperpowersDispatch(nextState);
     }
 
-    if (runtimeGraph && isSuperpowersPlanningRouteNode(nodeToRun)) {
+    if (runtimeGraph && isSuperpowersRoutingRouteNode(nodeToRun)) {
+      nextState = await runSuperpowersRoutingNode(nodeToRun, nextState, tools);
+    } else if (runtimeGraph && isSuperpowersPlanningRouteNode(nodeToRun)) {
       nextState = await runSuperpowersPlanningNode(nodeToRun, nextState, tools, nodes, runtimeGraph);
     } else if (runtimeGraph && isSuperpowersExecutionRouteNode(nodeToRun)) {
       nextState = await runSuperpowersExecutionNode(nodeToRun, nextState, tools, runtimeGraph);
@@ -979,6 +990,46 @@ function inferWorkflowPromptKind(snapshot: WorkflowDefinitionSnapshot | null): '
     return 'analysis_document';
   }
   return 'development';
+}
+
+async function runSuperpowersRoutingNode(
+  nodeToRun: SuperpowersRoutingNodeName,
+  state: AgentWorkflowState,
+  tools: ReturnType<typeof createGraphTools>,
+): Promise<AgentWorkflowState> {
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft(input) {
+      return tools.createArtifactVersionDraft(input);
+    },
+    createAssistantMessage(input) {
+      return tools.createWorkflowSessionMessage(input);
+    },
+  });
+
+  let nextState: AgentWorkflowState;
+  if (nodeToRun === 'intake') nextState = await nodes.intake(state);
+  else if (nodeToRun === 'route_skills') nextState = await nodes.routeSkills(state);
+  else if (nodeToRun === 'answer') nextState = await nodes.answer(state);
+  else if (nodeToRun === 'analysis_plan') nextState = await nodes.analysisPlan(state);
+  else nextState = await nodes.passthrough(state, nodeToRun);
+
+  const context = tools.readWorkflowContext(state.workflowRunId);
+  const updatedRun = tools.updateRun(context.run.id, {
+    status: nextState.status,
+    current_stage: inferStageForRoutingNode(nodeToRun),
+    error: nextState.error,
+  });
+  if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+  tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+  return nextState;
+}
+
+function inferStageForRoutingNode(node: SuperpowersRoutingNodeName): WorkflowStage {
+  if (node === 'intake' || node === 'route_skills' || node === 'analysis_plan') return 'analysis';
+  if (node === 'agent_assignment' || node === 'reviewer_assignment') return 'assignment';
+  if (node === 'systematic_debugging') return 'implementation';
+  if (node === 'answer') return 'acceptance';
+  return 'planning';
 }
 
 async function runSuperpowersPlanningNode(
@@ -1732,7 +1783,24 @@ function hasRunnableChildTask(state: AgentWorkflowState): boolean {
     .some((task) => task?.status === 'todo' || task?.status === 'in_progress');
 }
 
-type WorkflowRouteNode = NonNullable<AgentWorkflowState['currentNode']> | SuperpowersPlanningNodeName | SuperpowersExecutionNodeName;
+type SuperpowersRoutingNodeName =
+  | 'intake'
+  | 'route_skills'
+  | 'answer'
+  | 'analysis_plan'
+  | 'lightweight_plan'
+  | 'debug_plan'
+  | 'debug_plan_confirm'
+  | 'systematic_debugging'
+  | 'review_plan'
+  | 'reviewer_assignment'
+  | 'agent_assignment';
+
+type WorkflowRouteNode =
+  | NonNullable<AgentWorkflowState['currentNode']>
+  | SuperpowersRoutingNodeName
+  | SuperpowersPlanningNodeName
+  | SuperpowersExecutionNodeName;
 type WorkflowRoutePlan = {
   start: WorkflowRouteNode;
   next: Map<WorkflowRouteNode, Array<{ to: WorkflowRouteNode; condition: string | null }>>;
@@ -1740,6 +1808,17 @@ type WorkflowRoutePlan = {
 
 const LEGACY_NODE_TYPE_TO_STATE_NODE: Record<WorkflowDefinitionNodeType, WorkflowRouteNode | null> = {
   context: 'context',
+  intake: null,
+  route_skills: null,
+  answer: null,
+  analysis_plan: null,
+  lightweight_plan: null,
+  debug_plan: null,
+  debug_plan_confirm: null,
+  systematic_debugging: null,
+  review_plan: null,
+  reviewer_assignment: null,
+  agent_assignment: null,
   planning: 'planning',
   brainstorming: null,
   spec_review: null,
@@ -1762,6 +1841,17 @@ const LEGACY_NODE_TYPE_TO_STATE_NODE: Record<WorkflowDefinitionNodeType, Workflo
 
 const SUPERPOWERS_NODE_TYPE_TO_STATE_NODE: Record<WorkflowDefinitionNodeType, WorkflowRouteNode | null> = {
   ...LEGACY_NODE_TYPE_TO_STATE_NODE,
+  intake: 'intake',
+  route_skills: 'route_skills',
+  answer: 'answer',
+  analysis_plan: 'analysis_plan',
+  lightweight_plan: 'lightweight_plan',
+  debug_plan: 'debug_plan',
+  debug_plan_confirm: 'debug_plan_confirm',
+  systematic_debugging: 'systematic_debugging',
+  review_plan: 'review_plan',
+  reviewer_assignment: 'reviewer_assignment',
+  agent_assignment: 'agent_assignment',
   brainstorming: 'brainstorming',
   spec_review: 'spec_review',
   worktree: 'worktree',
@@ -1832,6 +1922,22 @@ function isSuperpowersExecutionRouteNode(node: WorkflowRouteNode): node is Super
   );
 }
 
+function isSuperpowersRoutingRouteNode(node: WorkflowRouteNode): node is SuperpowersRoutingNodeName {
+  return (
+    node === 'intake'
+    || node === 'route_skills'
+    || node === 'answer'
+    || node === 'analysis_plan'
+    || node === 'lightweight_plan'
+    || node === 'debug_plan'
+    || node === 'debug_plan_confirm'
+    || node === 'systematic_debugging'
+    || node === 'review_plan'
+    || node === 'reviewer_assignment'
+    || node === 'agent_assignment'
+  );
+}
+
 function nextNodeFromDefinition(
   nodeJustRun: WorkflowRouteNode | null,
   state: AgentWorkflowState,
@@ -1847,7 +1953,7 @@ function nextNodeFromDefinition(
   if (routed) {
     const matching = outgoing.find((edge) => edge.to === routed);
     if (matching) return matching.to;
-    return null;
+    if (node !== 'approval') return null;
   }
   for (const edge of outgoing) {
     if (matchesRouteCondition(node, edge.condition, state)) return edge.to;
@@ -1927,6 +2033,13 @@ function matchesRouteCondition(
   state: AgentWorkflowState,
 ): boolean {
   if (!condition || condition === 'default' || condition === 'done') return true;
+  if (node === 'route_skills') {
+    return condition === state.selectedIntent;
+  }
+  if (node === 'agent_assignment') {
+    if (condition === 'debug') return state.selectedIntent === 'debug';
+    return state.selectedIntent !== 'debug';
+  }
   if (isSuperpowersPlanningRouteNode(node)) return false;
   if (isSuperpowersExecutionRouteNode(node)) {
     if (node === 'tdd_execute' && condition === 'has_runnable_child') return hasRunnableChildTask(state);
