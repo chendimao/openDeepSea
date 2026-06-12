@@ -43,29 +43,26 @@ test('buildSuperpowersRuntimeGraph exposes ordered Superpowers planning phase st
   );
 });
 
-test('buildSuperpowersRuntimeGraph executable definition runs Superpowers planning gates before dispatch', () => {
+test('buildSuperpowersRuntimeGraph executable definition starts with planner route gates', () => {
   const graph = buildSuperpowersRuntimeGraph();
+  const edgeIds = new Set(graph.executableDefinition.edges.map((edge) => `${edge.from}->${edge.to}:${edge.condition ?? ''}`));
 
   assert.deepEqual(
     graph.executableDefinition.nodes.slice(0, 8).map((node) => node.id),
-    ['context', 'brainstorming', 'spec_review', 'worktree', 'writing_plans', 'plan_review', 'approval', 'dispatch'],
+    ['context', 'intake', 'route_skills', 'answer', 'analysis_plan', 'lightweight_plan', 'brainstorming', 'spec_review'],
   );
-  assert.deepEqual(
-    graph.executableDefinition.edges.slice(0, 7).map((edge) => `${edge.from}->${edge.to}`),
-    [
-      'context->brainstorming',
-      'brainstorming->spec_review',
-      'spec_review->worktree',
-      'worktree->writing_plans',
-      'writing_plans->plan_review',
-      'plan_review->approval',
-      'approval->dispatch',
-    ],
-  );
+  assert.equal(edgeIds.has('context->intake:'), true);
+  assert.equal(edgeIds.has('intake->route_skills:'), true);
+  assert.equal(edgeIds.has('route_skills->answer:answer'), true);
+  assert.equal(edgeIds.has('route_skills->analysis_plan:analysis'), true);
+  assert.equal(edgeIds.has('route_skills->lightweight_plan:lightweight_task'), true);
+  assert.equal(edgeIds.has('route_skills->brainstorming:standard_development'), true);
 });
 
 test('buildSuperpowersRuntimeGraph executable definition routes TDD execution, reviews, verify, and finish branch before acceptance', () => {
   const graph = buildSuperpowersRuntimeGraph();
+  const nodeIds = new Set(graph.executableDefinition.nodes.map((node) => node.id));
+  const edgeIds = new Set(graph.executableDefinition.edges.map((edge) => `${edge.from}->${edge.to}:${edge.condition ?? ''}`));
 
   assert.deepEqual(Object.keys(graph.nodes).filter((name) => [
     'tddExecute',
@@ -78,19 +75,15 @@ test('buildSuperpowersRuntimeGraph executable definition routes TDD execution, r
     'codeQualityReview',
     'finishBranch',
   ]);
-  assert.deepEqual(
-    graph.executableDefinition.nodes.slice(-8).map((node) => node.id),
-    ['dispatch', 'tdd_execute', 'spec_compliance_review', 'code_quality_review', 'verify', 'finish_branch', 'acceptance', 'memory'],
-  );
-  assert.ok(graph.executableDefinition.edges.some((edge) =>
-    edge.from === 'code_quality_review' && edge.to === 'verify' && edge.condition === 'pass',
-  ));
-  assert.ok(graph.executableDefinition.edges.some((edge) =>
-    edge.from === 'verify' && edge.to === 'finish_branch',
-  ));
-  assert.ok(graph.executableDefinition.edges.some((edge) =>
-    edge.from === 'finish_branch' && edge.to === 'acceptance',
-  ));
+  for (const id of ['dispatch', 'execute', 'spec_compliance_review', 'code_quality_review', 'verification', 'finish_branch', 'acceptance', 'memory']) {
+    assert.equal(nodeIds.has(id), true, `missing node ${id}`);
+  }
+  assert.equal(edgeIds.has('dispatch->execute:'), true);
+  assert.equal(edgeIds.has('execute->execute:has_runnable_child'), true);
+  assert.equal(edgeIds.has('execute->spec_compliance_review:done'), true);
+  assert.equal(edgeIds.has('code_quality_review->verification:pass'), true);
+  assert.equal(edgeIds.has('verification->finish_branch:'), true);
+  assert.equal(edgeIds.has('finish_branch->acceptance:completed'), true);
 });
 
 test('Superpowers TDD execute node blocks without RED/GREEN evidence and proceeds with evidence or exemption', async () => {

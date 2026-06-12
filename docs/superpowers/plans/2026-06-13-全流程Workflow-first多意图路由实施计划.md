@@ -329,7 +329,7 @@ git commit -m "feat(workflow): 扩展多意图路由状态"
 - Test: `packages/backend/src/workflows/graph/superpowers-route-compiler.test.ts`
 - Test: `packages/backend/src/workflows/graph/superpowers-runtime.test.ts`
 
-- [ ] **Step 1: Write failing route compiler test**
+- [x] **Step 1: Write failing route compiler test**
 
 Create `packages/backend/src/workflows/graph/superpowers-route-compiler.test.ts`:
 
@@ -375,7 +375,7 @@ test('buildSuperpowersRouteDefinition exposes all intent branches', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -385,7 +385,7 @@ node --import tsx --test packages/backend/src/workflows/graph/superpowers-route-
 
 Expected: FAIL because `superpowers-route-compiler.ts` does not exist.
 
-- [ ] **Step 3: Add route compiler**
+- [x] **Step 3: Add route compiler**
 
 Create `packages/backend/src/workflows/graph/superpowers-route-compiler.ts`:
 
@@ -562,7 +562,7 @@ function controllerToRole(controller: SuperpowersStageDefinition['controller'] |
 }
 ```
 
-- [ ] **Step 4: Extend stage registry ids**
+- [x] **Step 4: Extend stage registry ids**
 
 In `packages/backend/src/workflows/superpowers-stage-registry.ts`, add missing stage ids to `SuperpowersStageId`:
 
@@ -586,7 +586,7 @@ Add definitions to `STAGES`:
 { id: 'reviewer_assignment', controller: 'planner', requiredSkills: ['requesting-code-review'], requiredInputs: ['review_plan'], expectedArtifacts: ['agent_assignment'], gates: ['agent_available'], next: ['spec_compliance_review'] },
 ```
 
-- [ ] **Step 5: Wire runtime graph to compiler**
+- [x] **Step 5: Wire runtime graph to compiler**
 
 In `packages/backend/src/workflows/graph/superpowers-runtime.ts`, import `buildSuperpowersRouteDefinition` and replace `SUPERPOWERS_EXECUTABLE_DEFINITION` usage:
 
@@ -598,7 +598,7 @@ const SUPERPOWERS_EXECUTABLE_DEFINITION: WorkflowDefinitionGraph = buildSuperpow
 
 If this creates a circular import with constants, move `SUPERPOWERS_RUNTIME_PROFILE` and `SUPERPOWERS_WORKFLOW_DEFINITION_KEY` to `packages/backend/src/workflows/graph/superpowers-runtime-constants.ts`, then import them from both files.
 
-- [ ] **Step 6: Run route compiler and runtime tests**
+- [x] **Step 6: Run route compiler and runtime tests**
 
 Run:
 
@@ -608,7 +608,7 @@ node --import tsx --test packages/backend/src/workflows/graph/superpowers-route-
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 2**
+- [x] **Step 7: Commit Task 2**
 
 ```bash
 git add packages/backend/src/workflows/superpowers-stage-registry.ts packages/backend/src/workflows/superpowers-stage-registry.test.ts packages/backend/src/workflows/graph/superpowers-route-compiler.ts packages/backend/src/workflows/graph/superpowers-route-compiler.test.ts packages/backend/src/workflows/graph/superpowers-runtime.ts packages/backend/src/workflows/graph/superpowers-runtime.test.ts
