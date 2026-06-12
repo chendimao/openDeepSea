@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type { RoomAgent, Task, WorkflowRole } from '../types.js';
+import { FULLSTACK_ENGINEER_AGENT_ID } from './fullstack-engineer.js';
 
 interface WorkflowAgentSelectionContext {
   task?: Pick<Task, 'title' | 'description' | 'assigned_agent_id'> | null;
@@ -15,7 +16,64 @@ export interface WorkflowPlanTaskSelectionContext {
   scopeWrite: string[];
 }
 
-type DomainHint = 'frontend' | 'backend' | null;
+type DomainHint = 'frontend' | 'backend' | 'documentation' | 'fullstack' | null;
+
+const FRONTEND_SIGNALS = [
+  'frontend',
+  'front-end',
+  'react',
+  'tsx',
+  'jsx',
+  'vite',
+  'tailwind',
+  'packages/frontend',
+  'src/pages',
+  'src/components',
+  'ui',
+  'ux',
+  '前端',
+  '详情页',
+  '详情弹窗',
+  '搜索框',
+  '界面',
+  '页面',
+  '组件',
+  '交互',
+];
+
+const BACKEND_SIGNALS = [
+  'backend',
+  'back-end',
+  'express',
+  'sqlite',
+  'api',
+  'route',
+  'routes',
+  'repo',
+  'repos',
+  'database',
+  'packages/backend',
+  '后端',
+  '接口',
+  '数据库',
+  '路由',
+  '仓储',
+];
+
+const DOCUMENTATION_SIGNALS = [
+  'documentation',
+  'document',
+  'docs/',
+  'docs\\',
+  '.md',
+  'markdown',
+  'readme',
+  '技术文档',
+  '文档',
+  '说明',
+  '交付总结',
+  '验证文档',
+];
 
 export function selectWorkflowAgentForRole(
   role: WorkflowRole,
@@ -79,6 +137,51 @@ function rankCandidates(
     agents = writableMatches;
   }
   const domain = inferDomainHint(context);
+  if (role === 'executor') {
+    const fallbackAgents = agents.filter(isFullstackFallbackAgent);
+    if (fallbackAgents.length > 0) {
+      const specialistAgents = agents.filter((agent) => !isFullstackFallbackAgent(agent));
+      const coverage = inferDomainCoverage(context);
+      if (coverage.frontend && coverage.backend) {
+        return [
+          ...sortByScore(fallbackAgents, role, context, domain),
+          ...sortByScore(specialistAgents, role, context, domain),
+        ];
+      }
+      if (domain) {
+        const domainSpecialists = specialistAgents.filter((agent) =>
+          scoreCapability(agent, domain) > 0 || scoreDomain(agent, domain) > 0,
+        );
+        if (domainSpecialists.length > 0) {
+          const domainSpecialistIds = new Set(domainSpecialists.map((agent) => agent.id));
+          return [
+            ...sortByScore(domainSpecialists, role, context, domain),
+            ...sortByScore(
+              specialistAgents.filter((agent) => !domainSpecialistIds.has(agent.id)),
+              role,
+              context,
+              domain,
+            ),
+            ...sortByScore(fallbackAgents, role, context, domain),
+          ];
+        }
+      } else {
+        return [
+          ...sortByScore(fallbackAgents, role, context, domain),
+          ...sortByScore(specialistAgents, role, context, domain),
+        ];
+      }
+    }
+  }
+  return sortByScore(agents, role, context, domain);
+}
+
+function sortByScore(
+  agents: RoomAgent[],
+  role: WorkflowRole,
+  context: WorkflowAgentSelectionContext,
+  domain: DomainHint,
+): RoomAgent[] {
   return [...agents].sort((a, b) => scoreAgent(b, role, context, domain) - scoreAgent(a, role, context, domain));
 }
 
@@ -103,6 +206,9 @@ function scoreAgent(
 
 function scoreCapability(agent: RoomAgent, domain: DomainHint): number {
   if (!domain) return 0;
+  if (domain === 'fullstack') {
+    return scoreCapability(agent, 'frontend') > 0 && scoreCapability(agent, 'backend') > 0 ? 1 : 0;
+  }
   return agent.capabilities.some((capability) => capability.toLowerCase().includes(domain)) ? 1 : 0;
 }
 
@@ -132,6 +238,9 @@ function pathMatchesScope(scope: string, writable: string): boolean {
 }
 
 function scoreDomain(agent: RoomAgent, domain: Exclude<DomainHint, null>): number {
+  if (domain === 'fullstack') {
+    return scoreDomain(agent, 'frontend') > 0 && scoreDomain(agent, 'backend') > 0 ? 1 : 0;
+  }
   const haystack = [
     agent.agent_id,
     agent.agent_name,
@@ -142,7 +251,37 @@ function scoreDomain(agent: RoomAgent, domain: Exclude<DomainHint, null>): numbe
   return haystack.includes(domain) ? 1 : 0;
 }
 
+function isFullstackFallbackAgent(agent: RoomAgent): boolean {
+  return agent.agent_id === FULLSTACK_ENGINEER_AGENT_ID || agent.global_agent_id === FULLSTACK_ENGINEER_AGENT_ID;
+}
+
 function inferDomainHint(context: WorkflowAgentSelectionContext): DomainHint {
+  const { frontendScore, backendScore, documentationScore } = inferDomainScores(context);
+
+  if (
+    documentationScore > 0 &&
+    (documentationScore > frontendScore && documentationScore > backendScore || (frontendScore === 0 && backendScore === 0))
+  ) {
+    return 'documentation';
+  }
+  if (frontendScore > 0 && backendScore > 0) return 'fullstack';
+  if (frontendScore === 0 && backendScore === 0) return null;
+  return frontendScore > backendScore ? 'frontend' : 'backend';
+}
+
+function inferDomainCoverage(context: WorkflowAgentSelectionContext): { frontend: boolean; backend: boolean } {
+  const { frontendScore, backendScore } = inferDomainScores(context);
+  return {
+    frontend: frontendScore > 0,
+    backend: backendScore > 0,
+  };
+}
+
+function inferDomainScores(context: WorkflowAgentSelectionContext): {
+  frontendScore: number;
+  backendScore: number;
+  documentationScore: number;
+} {
   const text = [
     context.task?.title ?? '',
     context.task?.description ?? '',
@@ -150,49 +289,11 @@ function inferDomainHint(context: WorkflowAgentSelectionContext): DomainHint {
     ...(context.scopeWrite ?? []),
   ].join('\n').toLowerCase();
 
-  const frontendScore = countSignals(text, [
-    'frontend',
-    'front-end',
-    'react',
-    'tsx',
-    'jsx',
-    'vite',
-    'tailwind',
-    'packages/frontend',
-    'src/pages',
-    'src/components',
-    'ui',
-    'ux',
-    '前端',
-    '详情页',
-    '详情弹窗',
-    '搜索框',
-    '界面',
-    '页面',
-    '组件',
-    '交互',
-  ]);
-  const backendScore = countSignals(text, [
-    'backend',
-    'back-end',
-    'express',
-    'sqlite',
-    'api',
-    'route',
-    'routes',
-    'repo',
-    'repos',
-    'database',
-    'packages/backend',
-    '后端',
-    '接口',
-    '数据库',
-    '路由',
-    '仓储',
-  ]);
-
-  if (frontendScore === 0 && backendScore === 0) return null;
-  return frontendScore > backendScore ? 'frontend' : 'backend';
+  return {
+    frontendScore: countSignals(text, FRONTEND_SIGNALS),
+    backendScore: countSignals(text, BACKEND_SIGNALS),
+    documentationScore: countSignals(text, DOCUMENTATION_SIGNALS),
+  };
 }
 
 function countSignals(text: string, signals: string[]): number {

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type { RoomAgent, WorkflowRole } from '../../types.js';
+import { FULLSTACK_ENGINEER_AGENT_ID } from '../fullstack-engineer.js';
 
 export type CoordinatorTaskRole = Extract<WorkflowRole, 'executor' | 'reviewer' | 'acceptor'>;
 
@@ -40,7 +41,7 @@ export interface SuperpowersAgentSelection extends CoordinatorAgentSelection {
   };
 }
 
-type TaskDomain = 'frontend' | 'backend' | 'documentation' | null;
+type TaskDomain = 'frontend' | 'backend' | 'documentation' | 'fullstack' | null;
 
 export function selectCoordinatorAgentForTask(input: SelectCoordinatorAgentInput): CoordinatorAgentSelection {
   const candidates = input.agents.filter((agent) => agentCanExecuteWorkflowTask(agent, input.task));
@@ -68,8 +69,9 @@ export function requiredTemplateIdForTask(task: CoordinatorWorkflowTask): string
   if (task.role === 'acceptor') return 'acceptor';
   const domain = inferTaskDomain(task);
   if (domain === 'frontend') return 'frontend-executor';
+  if (domain === 'backend') return 'backend-executor';
   if (domain === 'documentation') return 'technical-writer';
-  return 'backend-executor';
+  return FULLSTACK_ENGINEER_AGENT_ID;
 }
 
 export function selectSuperpowersAgentForRole(input: SuperpowersAgentSelectionInput): SuperpowersAgentSelection {
@@ -241,6 +243,7 @@ function inferTaskDomain(task: CoordinatorWorkflowTask): TaskDomain {
   if (documentation > 0 && (documentation > frontend && documentation > backend || (frontend === 0 && backend === 0))) {
     return 'documentation';
   }
+  if (frontend > 0 && backend > 0) return 'fullstack';
   if (frontend === 0 && backend === 0) return null;
   return frontend > backend ? 'frontend' : 'backend';
 }
@@ -250,6 +253,9 @@ function countSignals(text: string, signals: string[]): number {
 }
 
 function agentMatchesDomain(agent: RoomAgent, domain: Exclude<TaskDomain, null>): boolean {
+  if (domain === 'fullstack') {
+    return agentMatchesDomain(agent, 'frontend') && agentMatchesDomain(agent, 'backend');
+  }
   const text = [
     agent.agent_id,
     agent.agent_name,

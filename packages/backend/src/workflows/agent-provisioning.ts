@@ -1,8 +1,11 @@
 import type { ParsedPlanTask } from './plan-parser.js';
+import { getBuiltInAgentTemplate } from '../crew-templates.js';
 import { roomAgentRepo } from '../repos/rooms.js';
 import type { RoomAgent, WorkflowRole } from '../types.js';
+import { FULLSTACK_ENGINEER_AGENT_ID } from './fullstack-engineer.js';
+import { assignPlanTaskAgent, type AvailableWorkflowAgent } from './agent-assignment.js';
 
-type TaskDomain = 'frontend' | 'backend' | 'documentation' | null;
+type TaskDomain = 'frontend' | 'backend' | 'documentation' | 'fullstack' | null;
 
 interface WorkflowAgentProvisioningInput {
   roomId: string;
@@ -49,15 +52,23 @@ export function ensureGlobalExecutorForRecovery(input: {
   context?: Record<string, unknown>;
   globalAgentTemplateId?: string | null;
 }): RoomAgent {
-  const templateId = input.globalAgentTemplateId?.trim() || templateIdForRecoveryContext(input.context ?? {});
+  const requestedTemplateId = input.globalAgentTemplateId?.trim() || null;
+  const templateId = requestedTemplateId && getBuiltInAgentTemplate(requestedTemplateId)
+    ? requestedTemplateId
+    : templateIdForRecoveryContext(input.context ?? {});
   return roomAgentRepo.ensureBuiltInAgent(input.roomId, templateId);
 }
 
 function templateIdForPlanTask(task: ParsedPlanTask): string {
   const domain = inferTaskDomain(task);
-  if (domain === 'frontend') return 'frontend-executor';
-  if (domain === 'documentation') return 'technical-writer';
-  return 'backend-executor';
+  const assignment = assignPlanTaskAgent({
+    taskId: task.title,
+    title: task.title,
+    requiredCapabilities: requiredCapabilitiesForDomain(domain),
+    scopeWrite: task.scopeWrite,
+    agents: builtInExecutorCandidates(),
+  });
+  return assignment.assignedAgentId ?? FULLSTACK_ENGINEER_AGENT_ID;
 }
 
 function templateIdForRecoveryContext(context: Record<string, unknown>): string {
@@ -140,12 +151,64 @@ function inferTaskDomain(task: ParsedPlanTask): TaskDomain {
   if (documentation > 0 && (documentation > frontend && documentation > backend || (frontend === 0 && backend === 0))) {
     return 'documentation';
   }
+  if (frontend > 0 && backend > 0) return 'fullstack';
   if (frontend === 0 && backend === 0) return null;
   return frontend > backend ? 'frontend' : 'backend';
 }
 
 function countSignals(text: string, signals: string[]): number {
   return signals.reduce((count, signal) => count + (text.includes(signal) ? 1 : 0), 0);
+}
+
+function requiredCapabilitiesForDomain(domain: TaskDomain): string[] {
+  if (domain === null || domain === 'fullstack') return [];
+  return [domain];
+}
+
+function builtInExecutorCandidates(): AvailableWorkflowAgent[] {
+  return [
+    {
+      id: 'frontend-executor',
+      name: '前端执行者',
+      provider: 'codex',
+      capabilities: ['frontend', 'testing'],
+      workflowRoles: ['executor'],
+      acpEnabled: true,
+      available: true,
+      priority: 20,
+    },
+    {
+      id: 'backend-executor',
+      name: '后端执行者',
+      provider: 'codex',
+      capabilities: ['backend', 'testing'],
+      workflowRoles: ['executor'],
+      acpEnabled: true,
+      available: true,
+      priority: 20,
+    },
+    {
+      id: 'technical-writer',
+      name: '技术写作者',
+      provider: 'codex',
+      capabilities: ['documentation', 'writing'],
+      workflowRoles: ['executor'],
+      acpEnabled: true,
+      available: true,
+      priority: 20,
+    },
+    {
+      id: FULLSTACK_ENGINEER_AGENT_ID,
+      name: '全栈工程师',
+      provider: 'codex',
+      capabilities: ['frontend', 'backend', 'testing', 'integration'],
+      workflowRoles: ['executor'],
+      acpEnabled: true,
+      available: true,
+      fallback: true,
+      priority: 0,
+    },
+  ];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

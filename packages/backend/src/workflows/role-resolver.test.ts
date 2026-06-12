@@ -324,6 +324,140 @@ test('selectWorkflowAgentForPlanTask selects technical writer for absolute docs 
   assert.equal(selected?.id, 'writer');
 });
 
+test('selectWorkflowAgentForPlanTask prefers specialist over fullstack fallback for single-domain tasks', () => {
+  const fullstack = agent({
+    id: 'fullstack',
+    agent_id: 'fullstack-engineer',
+    agent_name: '全栈工程师',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['frontend', 'backend', 'testing'],
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['.'] },
+  });
+  const frontend = agent({
+    id: 'frontend',
+    agent_id: 'frontend-executor',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['frontend', 'testing'],
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['packages/frontend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [fullstack, frontend], {
+    title: '实现 React 页面',
+    description: '更新前端组件',
+    scopeRead: ['packages/frontend/src/pages/Home.tsx'],
+    scopeWrite: ['packages/frontend/src/pages/Home.tsx'],
+  });
+
+  assert.equal(selected?.id, 'frontend');
+});
+
+test('selectWorkflowAgentForPlanTask selects fullstack fallback when no specialist signal exists', () => {
+  const fullstack = agent({
+    id: 'fullstack',
+    agent_id: 'fullstack-engineer',
+    agent_name: '全栈工程师',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['frontend', 'backend', 'testing'],
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['.'] },
+  });
+  const backend = agent({
+    id: 'backend',
+    agent_id: 'backend-executor',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['backend', 'testing'],
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [backend, fullstack], {
+    title: '实现确认后的开发任务',
+    description: '按计划完成实现和验证',
+    scopeRead: [],
+    scopeWrite: [],
+  });
+
+  assert.equal(selected?.id, 'fullstack');
+});
+
+test('selectWorkflowAgentForPlanTask selects fullstack fallback for cross frontend backend writes', () => {
+  const fullstack = agent({
+    id: 'fullstack',
+    agent_id: 'fullstack-engineer',
+    agent_name: '全栈工程师',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['frontend', 'backend', 'testing'],
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['.'] },
+  });
+  const backend = agent({
+    id: 'backend',
+    agent_id: 'backend-executor',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['backend', 'testing'],
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['packages/backend'] },
+  });
+  const frontend = agent({
+    id: 'frontend',
+    agent_id: 'frontend-executor',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['frontend', 'testing'],
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['packages/frontend'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [backend, frontend, fullstack], {
+    title: '修复前后端集成',
+    description: '同时更新 API 和 React 调用',
+    scopeRead: ['packages/backend/src/routes.ts', 'packages/frontend/src/lib/api.ts'],
+    scopeWrite: ['packages/backend/src/routes.ts', 'packages/frontend/src/lib/api.ts'],
+  });
+
+  assert.equal(selected?.id, 'fullstack');
+});
+
+test('selectWorkflowAgentForPlanTask keeps technical writer ahead of fullstack for documentation tasks', () => {
+  const fullstack = agent({
+    id: 'fullstack',
+    agent_id: 'fullstack-engineer',
+    agent_name: '全栈工程师',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['frontend', 'backend', 'testing'],
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['.'] },
+  });
+  const writer = agent({
+    id: 'writer',
+    agent_id: 'technical-writer',
+    agent_name: '技术写作者',
+    workflow_role: 'executor',
+    acp_permission_mode: 'workspace-write',
+    capabilities: ['documentation', 'writing'],
+    tool_policy: { allowed: ['read_files', 'write_files', 'run_shell'] },
+    workspace_policy: { read: ['.'], write: ['docs'] },
+  });
+
+  const selected = selectWorkflowAgentForPlanTask('executor', [fullstack, writer], {
+    title: '补充验证文档',
+    description: '新增 Markdown 文档',
+    scopeRead: ['docs/superpowers/verification.md'],
+    scopeWrite: ['docs/superpowers/verification.md'],
+  });
+
+  assert.equal(selected?.id, 'writer');
+});
+
 test('selectWorkflowAgentForPlanTask requires explicit write capability and non-read-only permission for write tasks', () => {
   const implicitToolPolicy = agent({
     id: 'implicit-tool-policy',

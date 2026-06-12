@@ -58,6 +58,16 @@ describe('coordinator agent matching', () => {
       scope_write: ['/Users/chendimao/WWW/openDeepSea/docs/superpowers/verification/superpower-e2e-smoke.md'],
     })), 'technical-writer');
     assert.equal(requiredTemplateIdForTask(workflowTask({
+      role: 'executor',
+      title: '修复前后端集成',
+      description: '同时更新 backend API 和 React 调用',
+      scope_write: ['packages/backend/src/routes.ts', 'packages/frontend/src/lib/api.ts'],
+    })), 'fullstack-engineer');
+    assert.equal(requiredTemplateIdForTask(workflowTask({
+      role: 'executor',
+      title: '实现确认后的开发任务',
+    })), 'fullstack-engineer');
+    assert.equal(requiredTemplateIdForTask(workflowTask({
       role: 'reviewer',
       title: '审查实现结果',
     })), 'reviewer');

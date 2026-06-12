@@ -23,6 +23,7 @@ const LEGACY_BUILT_IN_AGENT_NAMES: Record<string, string> = {
   planner: 'Planner',
   'backend-executor': 'Backend Executor',
   'frontend-executor': 'Frontend Executor',
+  'fullstack-engineer': 'Fullstack Engineer',
   'ui-designer': 'UI Designer',
   'data-analyst': 'Data Analyst',
   'computer-assistant': 'Computer Assistant',

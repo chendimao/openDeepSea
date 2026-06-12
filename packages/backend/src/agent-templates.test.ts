@@ -127,6 +127,7 @@ test('executor built-in templates can write the project root by default', () => 
   const executorTemplateIds = [
     'backend-executor',
     'frontend-executor',
+    'fullstack-engineer',
     'computer-assistant',
     'devops-engineer',
     'technical-writer',
@@ -177,6 +178,17 @@ test('built-in agent templates include broader specialist roles', () => {
   const dataAnalyst = templates.find((template) => template.id === 'data-analyst');
   assert.equal(dataAnalyst?.workflow_role, 'analyst');
   assert.equal(dataAnalyst?.capabilities.includes('data-analysis'), true);
+});
+
+test('built-in templates include fullstack engineer executor fallback', () => {
+  const template = listBuiltInAgentTemplates().find((item) => item.id === 'fullstack-engineer');
+  assert.ok(template);
+  assert.equal(template.name, '全栈工程师');
+  assert.equal(template.workflow_role, 'executor');
+  assert.equal(template.acp_permission_mode, 'workspace-write');
+  assert.ok(template.capabilities.includes('frontend'));
+  assert.ok(template.capabilities.includes('backend'));
+  assert.ok(template.capabilities.includes('testing'));
 });
 
 test('built-in agent templates use Chinese display names by default', () => {
