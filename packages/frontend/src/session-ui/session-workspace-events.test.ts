@@ -20,7 +20,7 @@ test('applySessionWorkspaceEvent ignores events for another session', () => {
   assert.equal(applySessionWorkspaceEvent(payload, event), payload);
 });
 
-test('applySessionWorkspaceEvent appends answer chunks to matching run stdout', () => {
+test('applySessionWorkspaceEvent keeps live answer chunks out of run stdout', () => {
   const payload = createPayload('session-current');
   const event: WsServerEvent = {
     type: 'session_run:stream',
@@ -34,7 +34,7 @@ test('applySessionWorkspaceEvent appends answer chunks to matching run stdout', 
   };
 
   const next = applySessionWorkspaceEvent(payload, event);
-  assert.equal(next.activeSession.runs[0]?.stdout, 'hello');
+  assert.equal(next.activeSession.runs[0]?.stdout, '');
   assert.equal(next.activeSession.agentEvents[0]?.content, 'hello');
   assert.equal(next.activeSession.agentEvents[0]?.channel, 'answer');
 });

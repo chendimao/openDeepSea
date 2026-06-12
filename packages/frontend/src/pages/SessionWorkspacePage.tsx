@@ -320,10 +320,15 @@ export function SessionWorkspacePage({
         return;
       }
       if (!isSessionWorkspaceEvent(event)) return;
+      if (
+        activeSessionIdRef.current &&
+        'sessionId' in event &&
+        event.sessionId === activeSessionIdRef.current &&
+        event.type === 'session_inspector:snapshot'
+      ) {
+        setSessionTodoStats(buildSessionTodoStatsFromPlanItems(event.sessionId, event.planItems));
+      }
       if (shouldRefreshSessionTodoStats(activeSessionIdRef.current, event)) {
-        if (event.type === 'session_inspector:snapshot') {
-          setSessionTodoStats(buildSessionTodoStatsFromPlanItems(event.sessionId, event.planItems));
-        }
         void refreshSessionTodoStats(event.sessionId);
       }
       if (shouldRefreshSessionWorkspace(event, {
@@ -734,7 +739,7 @@ export function shouldRefreshSessionTodoStats(
   event: WsServerEvent,
 ): event is Extract<WsServerEvent, { type: 'session_message:new' | 'session_inspector:snapshot' }> {
   if (!activeSessionId || !('sessionId' in event) || event.sessionId !== activeSessionId) return false;
-  return event.type === 'session_message:new' || event.type === 'session_inspector:snapshot';
+  return event.type === 'session_message:new';
 }
 
 export function buildSessionTodoStatsFromPlanItems(sessionId: string, planItems: SessionPlanItem[]): SessionTodoStats {
@@ -804,8 +809,15 @@ function isSessionChangeEvidence(event: Extract<WsServerEvent, { type: 'session_
     nestedEventPayload?.tool_name,
   );
   if (nestedPayloadToolName && isSessionChangeToolName(nestedPayloadToolName)) return true;
-  const rawType = firstString(payload.rawType, nestedEvent?.type);
-  return Boolean(rawType && /file_diff|patch|diff/i.test(rawType));
+  const eventTypes = [
+    payload.rawType,
+    nestedEvent?.type,
+    nestedEvent?.event_type,
+    nestedEventPayload?.type,
+    nestedEventPayload?.event_type,
+    nestedEventPayload?.rawType,
+  ];
+  return eventTypes.some((type) => typeof type === 'string' && /file_diff|patch|diff/i.test(type));
 }
 
 function isSessionChangeToolName(toolName: string): boolean {

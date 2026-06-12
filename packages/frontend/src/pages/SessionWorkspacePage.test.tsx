@@ -486,7 +486,7 @@ test('isCompactPreviewForActiveSession ignores previews from inactive sessions',
   assert.equal(otherSession, false);
 });
 
-test('shouldRefreshSessionTodoStats refreshes after message and inspector changes only for active sessions', () => {
+test('shouldRefreshSessionTodoStats refreshes after messages only for active sessions', () => {
   const messageEvent: WsServerEvent = {
     type: 'session_message:new',
     sessionId: 'session-1',
@@ -515,7 +515,7 @@ test('shouldRefreshSessionTodoStats refreshes after message and inspector change
   };
 
   assert.equal(shouldRefreshSessionTodoStats('session-1', messageEvent), true);
-  assert.equal(shouldRefreshSessionTodoStats('session-1', inspectorEvent), true);
+  assert.equal(shouldRefreshSessionTodoStats('session-1', inspectorEvent), false);
   assert.equal(shouldRefreshSessionTodoStats('session-1', inactiveMessageEvent), false);
   assert.equal(shouldRefreshSessionTodoStats('session-1', streamEvent), false);
 });

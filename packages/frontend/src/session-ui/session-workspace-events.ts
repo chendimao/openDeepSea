@@ -112,7 +112,7 @@ export function isActiveSessionEvent(payload: SessionWorkspacePayload, event: Ws
 function appendRunChunk(run: SessionRun, event: Extract<WsServerEvent, { type: 'session_run:stream' }>): SessionRun {
   if (event.done || !event.chunk) return run;
   if (event.channel === 'answer') {
-    return { ...run, stdout: `${run.stdout}${event.chunk}`, updated_at: Date.now() };
+    return run;
   }
   if (
     event.channel === 'activity' ||
