@@ -2357,7 +2357,7 @@ test('dispatchSessionUserMessage rejects invalid workflow artifact change reques
   assert.match(blocker.summary ?? '', /不会启动新的 planner 或 workflow/);
 });
 
-test('dispatchSessionUserMessage blocks lightweight plan revisions instead of converting them into normal plans', async () => {
+test('workflow artifact change request for lightweight_plan re-enters lightweight plan instead of blocker', async () => {
   const project = projectRepo.create({
     name: 'Lightweight Artifact Change Request Project',
     path: mkdtempSync(join(tmpdir(), 'session-dispatch-lightweight-artifact-change-')),
@@ -2400,6 +2400,10 @@ test('dispatchSessionUserMessage blocks lightweight plan revisions instead of co
       }),
       workflowRunId: 'pending',
       currentNode: 'approval',
+      activeSuperpowersStage: 'lightweight_plan',
+      selectedIntent: 'lightweight_task',
+      selectedPath: ['intake', 'route_skills', 'lightweight_plan'],
+      lightweightPlanArtifactVersionId: 'approved-lightweight-plan-old',
       status: 'blocked',
       error: 'Superpowers dispatch requires approved plan artifact version',
     }),
@@ -2414,7 +2418,7 @@ test('dispatchSessionUserMessage blocks lightweight plan revisions instead of co
   });
   const enqueuedBefore = [...workflowIntakeEnqueueCalls];
 
-  await dispatchSessionUserMessage({
+  const requestMessage = await dispatchSessionUserMessage({
     sessionId: session.id,
     content: '请修改轻量计划。',
     workflowArtifactChangeRequest: {
@@ -2424,14 +2428,24 @@ test('dispatchSessionUserMessage blocks lightweight plan revisions instead of co
     },
   });
 
-  assert.deepEqual(workflowIntakeEnqueueCalls, enqueuedBefore);
-  const blocker = sessionEvidenceRepo.listBySession(session.id).find((event) =>
-    event.event_type === 'blocker' &&
-    (event.payload as { reason?: string }).reason === 'lightweight_plan_revision_not_implemented'
+  assert.deepEqual(workflowIntakeEnqueueCalls, [...enqueuedBefore, workflow.id]);
+  const blockerEvents = sessionEvidenceRepo.listBySession(session.id).filter((event) =>
+    JSON.stringify(event.payload).includes('lightweight_plan_revision_not_implemented')
   );
-  assert.ok(blocker);
+  assert.equal(blockerEvents.length, 0);
   const updatedState = parseGraphState(workflowRepo.getRun(workflow.id)?.graph_state ?? null);
+  assert.equal(updatedState?.artifactChangeRequestMessageId, requestMessage.id);
+  assert.equal(updatedState?.artifactChangeRequestArtifactVersionId, draft.id);
+  assert.equal(updatedState?.currentNode, 'route_skills');
+  assert.equal(updatedState?.selectedIntent, 'lightweight_task');
+  assert.deepEqual(updatedState?.selectedPath, ['intake', 'route_skills', 'lightweight_plan']);
+  assert.equal(updatedState?.activeSuperpowersStage, 'lightweight_plan');
   assert.equal(updatedState?.draftPlanArtifactVersionId, null);
+  assert.equal(updatedState?.approvedPlanArtifactVersionId, null);
+  assert.equal(updatedState?.lightweightPlanArtifactVersionId, null);
+  assert.equal(updatedState?.plan, null);
+  assert.equal(updatedState?.workflowPlan, null);
+  assert.equal(updatedState?.approval, 'pending');
 });
 
 function createPlatformSkill(provider: 'codex' | 'claudecode' | 'opencode', name: string, description: string): void {

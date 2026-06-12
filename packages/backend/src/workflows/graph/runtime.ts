@@ -1011,6 +1011,9 @@ async function runSuperpowersRoutingNode(
   else if (nodeToRun === 'route_skills') nextState = await nodes.routeSkills(state);
   else if (nodeToRun === 'answer') nextState = await nodes.answer(state);
   else if (nodeToRun === 'analysis_plan') nextState = await nodes.analysisPlan(state);
+  else if (nodeToRun === 'lightweight_plan') nextState = await nodes.lightweightPlan(state);
+  else if (nodeToRun === 'debug_plan') nextState = await nodes.debugPlan(state);
+  else if (nodeToRun === 'review_plan') nextState = await nodes.reviewPlan(state);
   else nextState = await nodes.passthrough(state, nodeToRun);
 
   const context = tools.readWorkflowContext(state.workflowRunId);

@@ -106,6 +106,99 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
       };
     },
 
+    async lightweightPlan(state: AgentWorkflowState): Promise<AgentWorkflowState> {
+      const plan = buildSingleTaskPlan({
+        goal: state.userGoal,
+        summary: '轻量任务走最小执行计划，用户确认后进入执行。',
+        taskTitle: '执行轻量任务',
+        taskDescription: state.userGoal,
+        verificationCommand: 'npm run build',
+        verificationReason: 'TypeScript and bundle gate',
+        needsApproval: false,
+      });
+      const structuredData = {
+        ...plan,
+        skipFullSpecReason: '轻量任务走最小计划，但仍需用户确认。',
+      };
+      const artifact = tools.createArtifactVersionDraft({
+        workflow_run_id: state.workflowRunId,
+        artifact_type: 'lightweight_plan',
+        title: 'Lightweight Plan',
+        content: formatJson(structuredData),
+        structured_data: structuredData,
+        created_by_agent_id: 'planner',
+      });
+      return {
+        ...state,
+        currentNode: 'lightweight_plan',
+        activeSuperpowersStage: 'lightweight_plan',
+        draftPlanArtifactVersionId: null,
+        approvedPlanArtifactVersionId: null,
+        lightweightPlanArtifactVersionId: artifact.id,
+        implementationPlanPath: `workflow-artifact:${artifact.id}`,
+        planReviewVerdict: 'approved',
+        plan,
+        workflowPlan: null,
+        status: 'blocked',
+        error: 'Superpowers dispatch requires approved plan artifact version',
+      };
+    },
+
+    async debugPlan(state: AgentWorkflowState): Promise<AgentWorkflowState> {
+      const plan = buildSingleTaskPlan({
+        goal: state.userGoal,
+        summary: '系统化排查失败并修复根因。',
+        taskTitle: '执行系统化调试',
+        taskDescription: state.userGoal,
+        verificationCommand: 'npm run build',
+        verificationReason: 'post-debug verification',
+        needsApproval: false,
+      });
+      const structuredData = {
+        ...plan,
+        mode: 'debug',
+        reproduction: [],
+      };
+      const artifact = tools.createArtifactVersionDraft({
+        workflow_run_id: state.workflowRunId,
+        artifact_type: 'plan',
+        title: 'Debug Plan',
+        content: formatJson(structuredData),
+        structured_data: structuredData,
+        created_by_agent_id: 'planner',
+      });
+      return {
+        ...state,
+        currentNode: 'debug_plan',
+        activeSuperpowersStage: 'debug_plan',
+        draftPlanArtifactVersionId: artifact.id,
+        plan,
+      };
+    },
+
+    async reviewPlan(state: AgentWorkflowState): Promise<AgentWorkflowState> {
+      const structuredData = {
+        goal: state.userGoal,
+        mode: 'review_only',
+        reviewScope: [],
+        verificationRequired: false,
+      };
+      const artifact = tools.createArtifactVersionDraft({
+        workflow_run_id: state.workflowRunId,
+        artifact_type: 'plan',
+        title: 'Review Plan',
+        content: formatJson(structuredData),
+        structured_data: structuredData,
+        created_by_agent_id: 'planner',
+      });
+      return {
+        ...state,
+        currentNode: 'review_plan',
+        activeSuperpowersStage: 'review_plan',
+        draftPlanArtifactVersionId: artifact.id,
+      };
+    },
+
     async passthrough(state: AgentWorkflowState, nodeName: string): Promise<AgentWorkflowState> {
       return {
         ...state,
@@ -113,6 +206,41 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
         activeSuperpowersStage: nodeName,
       };
     },
+  };
+}
+
+function buildSingleTaskPlan(input: {
+  goal: string;
+  summary: string;
+  taskTitle: string;
+  taskDescription: string;
+  verificationCommand: string;
+  verificationReason: string;
+  needsApproval: boolean;
+}): NonNullable<AgentWorkflowState['plan']> {
+  return {
+    goal: input.goal,
+    summary: input.summary,
+    assumptions: [],
+    tasks: [{
+      title: input.taskTitle,
+      description: input.taskDescription,
+      suggestedRole: 'executor',
+      priority: 'normal',
+      acceptance: ['完成用户请求并保持现有行为不回退。'],
+      scopeRead: [],
+      scopeWrite: [],
+      dependsOn: [],
+    }],
+    reviewFocus: [],
+    verification: [input.verificationCommand],
+    verificationCommands: [{
+      command: input.verificationCommand,
+      reason: input.verificationReason,
+      required: true,
+    }],
+    risks: [],
+    needsApproval: input.needsApproval,
   };
 }
 

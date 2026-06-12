@@ -392,16 +392,6 @@ function handleWorkflowArtifactChangeRequest(input: {
   if (!run || run.project_id !== input.project.id || run.graph_version !== SUPERPOWERS_V2_GRAPH_VERSION) return false;
   if (!sessionOwnsWorkflowRun(input.session, run)) return false;
 
-  if (artifact.artifact_type === 'lightweight_plan') {
-    recordUnsupportedWorkflowArtifactChangeRequest({
-      session: input.session,
-      sourceMessage: input.sourceMessage,
-      run,
-      artifact,
-    });
-    return true;
-  }
-
   const state = parseGraphState(run.graph_state);
   if (!state) return false;
   invalidateSupersededWorkflowExecution(run, state);
@@ -451,30 +441,6 @@ function recordInvalidWorkflowArtifactChangeRequest(input: {
     payload: {
       workflow_artifact_change_request: input.request,
       reason: 'invalid_or_foreign_artifact',
-    },
-  });
-  wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
-  broadcastActiveSessionUpsert(input.session.id);
-}
-
-function recordUnsupportedWorkflowArtifactChangeRequest(input: {
-  session: Session;
-  sourceMessage: SessionMessage;
-  run: WorkflowRun;
-  artifact: WorkflowArtifactVersion;
-}): void {
-  const event = sessionEvidenceRepo.create({
-    session_id: input.session.id,
-    event_type: 'blocker',
-    severity: 'warning',
-    source_message_id: input.sourceMessage.id,
-    title: 'Workflow artifact change request blocked',
-    summary: 'lightweight_plan 修订暂未接入可执行 graph 节点，本次请求未转换为普通 plan。',
-    payload: {
-      workflow_run_id: input.run.id,
-      artifact_version_id: input.artifact.id,
-      artifact_type: input.artifact.artifact_type,
-      reason: 'lightweight_plan_revision_not_implemented',
     },
   });
   wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
@@ -580,17 +546,36 @@ function buildWorkflowArtifactChangeRequestState(input: {
       approval: 'pending',
     };
   }
+  if (input.artifact.artifact_type === 'lightweight_plan') {
+    return {
+      ...input.state,
+      ...common,
+      currentNode: 'route_skills',
+      selectedIntent: 'lightweight_task',
+      selectedPath: ['intake', 'route_skills', 'lightweight_plan'],
+      superpowersPhase: null,
+      activeSuperpowersStage: 'lightweight_plan',
+      draftPlanArtifactVersionId: null,
+      approvedPlanArtifactVersionId: null,
+      lightweightPlanArtifactVersionId: null,
+      implementationPlanPath: null,
+      planReviewVerdict: null,
+      plan: null,
+      workflowPlan: null,
+      approval: 'pending',
+    };
+  }
   return {
     ...input.state,
     ...common,
     currentNode: 'planning',
     superpowersPhase: 'worktree',
-    activeSuperpowersStage: input.artifact.artifact_type === 'lightweight_plan' ? 'lightweight_plan' : 'writing_plans',
+    activeSuperpowersStage: 'writing_plans',
     draftPlanArtifactVersionId: input.artifact.artifact_type === 'plan' && input.artifact.status !== 'approved'
       ? input.artifact.id
       : input.state.draftPlanArtifactVersionId,
     approvedPlanArtifactVersionId: null,
-    lightweightPlanArtifactVersionId: input.artifact.artifact_type === 'lightweight_plan' ? null : input.state.lightweightPlanArtifactVersionId,
+    lightweightPlanArtifactVersionId: input.state.lightweightPlanArtifactVersionId,
     implementationPlanPath: null,
     planReviewVerdict: null,
     plan: null,

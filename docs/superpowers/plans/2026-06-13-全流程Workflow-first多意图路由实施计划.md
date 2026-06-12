@@ -1085,7 +1085,7 @@ git commit -m "feat(session): 统一消息进入workflow入口"
 - Test: `packages/backend/src/workflows/graph/superpowers-routing-nodes.test.ts`
 - Test: `packages/backend/src/session-message-dispatch.test.ts`
 
-- [ ] **Step 1: Write failing lightweight revision test**
+- [x] **Step 1: Write failing lightweight revision test**
 
 Add to `packages/backend/src/session-message-dispatch.test.ts`:
 
@@ -1116,7 +1116,7 @@ test('workflow artifact change request for lightweight_plan re-enters lightweigh
 
 Implement `createApprovedLightweightPlanFixture()` in the test using existing repo helpers: create project, room, session, task, workflow run with `superpowers-v2`, approved lightweight artifact, and graph state with `lightweightPlanArtifactVersionId`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -1126,7 +1126,7 @@ node --import tsx --test packages/backend/src/session-message-dispatch.test.ts
 
 Expected: FAIL because current code records `lightweight_plan_revision_not_implemented`.
 
-- [ ] **Step 3: Implement lightweight/debug/review plan nodes**
+- [x] **Step 3: Implement lightweight/debug/review plan nodes**
 
 In `packages/backend/src/workflows/graph/superpowers-routing-nodes.ts`, add:
 
@@ -1212,7 +1212,7 @@ async reviewPlan(state: AgentWorkflowState): Promise<AgentWorkflowState> {
 }
 ```
 
-- [ ] **Step 4: Dispatch new routing nodes**
+- [x] **Step 4: Dispatch new routing nodes**
 
 In `runSuperpowersRoutingNode()` from Task 3, route:
 
@@ -1222,7 +1222,7 @@ if (nodeToRun === 'debug_plan') return nodes.debugPlan(state);
 if (nodeToRun === 'review_plan') return nodes.reviewPlan(state);
 ```
 
-- [ ] **Step 5: Change lightweight artifact revision behavior**
+- [x] **Step 5: Change lightweight artifact revision behavior**
 
 In `packages/backend/src/session-message-dispatch.ts`, remove the special blocker branch:
 
@@ -1255,7 +1255,7 @@ return {
 
 Delete `recordUnsupportedWorkflowArtifactChangeRequest()` if it becomes unused.
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run:
 
@@ -1265,7 +1265,7 @@ node --import tsx --test packages/backend/src/workflows/graph/superpowers-routin
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 5**
+- [x] **Step 7: Commit Task 5**
 
 ```bash
 git add packages/backend/src/workflows/graph/superpowers-routing-nodes.ts packages/backend/src/workflows/graph/superpowers-routing-nodes.test.ts packages/backend/src/session-message-dispatch.ts packages/backend/src/session-message-dispatch.test.ts packages/backend/src/session.routes.ts
