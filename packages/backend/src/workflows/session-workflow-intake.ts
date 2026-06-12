@@ -52,6 +52,15 @@ export function createSessionWorkflowIntake(input: SessionWorkflowIntakeInput) {
     userGoal: input.sourceMessage.content,
     projectPath: input.project.path,
   });
+  const intakeState = {
+    ...pendingState,
+    currentNode: 'context' as const,
+    activeSuperpowersStage: 'intake',
+    selectedIntent: null,
+    selectedPath: [],
+    routingArtifactVersionId: null,
+    analysisArtifactVersionId: null,
+  };
   const workflow = workflowRepo.createRun({
     room_id: input.room.id,
     project_id: input.project.id,
@@ -60,15 +69,14 @@ export function createSessionWorkflowIntake(input: SessionWorkflowIntakeInput) {
     current_stage: 'planning',
     approval_required: true,
     graph_version: SUPERPOWERS_V2_GRAPH_VERSION,
-    graph_state: serializeGraphState(pendingState),
+    graph_state: serializeGraphState(intakeState),
     workflow_definition_id: definition.id,
     workflow_definition_version: definition.version,
     workflow_definition_snapshot: JSON.stringify(createWorkflowDefinitionSnapshot(definition)),
   });
   const updated = workflowRepo.updateGraphState(workflow.id, serializeGraphState({
-    ...pendingState,
+    ...intakeState,
     workflowRunId: workflow.id,
-    activeSuperpowersStage: 'intake',
   }));
   const finalWorkflow = updated ?? workflow;
   wsHub.broadcast(input.room.id, { type: 'workflow:created', roomId: input.room.id, workflow: finalWorkflow });

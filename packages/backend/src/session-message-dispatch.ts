@@ -221,29 +221,15 @@ export async function dispatchSessionUserMessage(input: {
     workspaceFileRefs,
     platformSkillRefs,
   });
-  if (riskGate.applies) {
-    startSessionWorkflowIntake({
-      project,
-      session: runtimeSession,
-      sourceMessage: message,
-      assessment: riskGate.assessment,
-      contextContent: riskGate.contextContent,
-      workspaceFileRefs,
-      libraryFileRefs,
-      platformSkillRefs,
-    });
-    return message;
-  }
-
-  await startSessionPlannerRun({
+  startSessionWorkflowIntake({
     project,
     session: runtimeSession,
-    content: message.content,
-    workspacePath,
+    sourceMessage: message,
+    assessment: riskGate.assessment,
+    contextContent: riskGate.contextContent,
     workspaceFileRefs,
     libraryFileRefs,
     platformSkillRefs,
-    plannerRuntime,
   });
   return message;
 }

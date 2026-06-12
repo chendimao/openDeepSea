@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { afterEach } from 'node:test';
@@ -84,32 +84,74 @@ afterEach(() => {
 resetWorkflowGraphDepsForTests();
 resetWorkflowIntakeEnqueueForTests();
 
-test('dispatchSessionUserMessage uses project Session Planner backend instead of session provider', async () => {
+test('dispatchSessionUserMessage keeps ordinary chat on workflow intake when project planner backend differs', async () => {
   const project = projectRepo.create({
-    name: 'Dispatch Planner Backend',
+    name: 'Dispatch Planner Backend Workflow Intake',
     path: mkdtempSync(join(tmpdir(), 'session-dispatch-planner-backend-')),
   });
   settingsRepo.updateProject(project.id, { session_planner_acp_backend: 'opencode' });
   const session = sessionRepo.create({
     project_id: project.id,
-    title: 'Dispatch Session',
+    title: 'Dispatch Planner Backend Workflow Intake',
     provider: 'codex',
     workspace_path: project.path,
   });
+  const prompts: string[] = [];
 
   setSessionRuntimeAdapterForTest({
     backend: 'opencode',
     listSessions: async () => [],
-    invoke: async () => ({ exitCode: 0, sessionId: 'opencode-session', stderr: '' }),
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      return { exitCode: 0, sessionId: 'opencode-session', stderr: '' };
+    },
   });
 
-  await dispatchSessionUserMessage({ sessionId: session.id, content: '分析当前项目' });
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  const message = await dispatchSessionUserMessage({ sessionId: session.id, content: '分析当前项目' });
 
-  const [run] = sessionRunRepo.listBySession(session.id);
-  assert.equal(run?.agent_id, 'planner');
-  assert.equal(run?.provider, 'opencode');
-  assert.match(run?.runtime_profile_snapshot ?? '', /"backend_source":"project"/);
+  assert.equal(prompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
+});
+
+test('dispatchSessionUserMessage routes ordinary chat through workflow intake instead of planner run', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Ordinary Chat Workflow',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-ordinary-chat-workflow-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Ordinary Chat Workflow',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const prompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-ordinary-chat', stderr: '' };
+    },
+  });
+
+  const message = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '这个项目的 workflow 是怎么工作的？',
+    mode: 'ask',
+  });
+
+  assert.equal(prompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
 });
 
 test('dispatchSessionUserMessage preserves explicit platform skill refs for workflow intake', async () => {
@@ -605,7 +647,7 @@ test('dispatchSessionUserMessage routes contextual fix follow-ups through workfl
     content: '帮我修复这个问题',
   });
 
-  assert.equal(plannerPrompts.length, 1);
+  assert.equal(plannerPrompts.length, 0);
   assert.equal(workflowAgentCalls.some((call) => call.stage === 'planning'), false);
 
   const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
@@ -700,7 +742,7 @@ test('dispatchSessionUserMessage routes bare contextual fix command through work
     content: '修复',
   });
 
-  assert.equal(plannerPrompts.length, 1);
+  assert.equal(plannerPrompts.length, 0);
   assert.deepEqual(workflowAgentCalls, []);
 
   const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
@@ -722,7 +764,7 @@ test('dispatchSessionUserMessage routes bare contextual fix command through work
   assert.equal(metadata.risk_assessment?.riskLevel, 'low');
 });
 
-test('dispatchSessionUserMessage keeps bare fix without context on planner path', async () => {
+test('dispatchSessionUserMessage routes bare fix without context through workflow intake', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Session Bare Fix Without Context',
     path: mkdtempSync(join(tmpdir(), 'session-dispatch-bare-fix-no-context-')),
@@ -747,19 +789,19 @@ test('dispatchSessionUserMessage keeps bare fix without context on planner path'
     sessionId: session.id,
     content: '修复',
   });
-  await new Promise((resolve) => setTimeout(resolve, 30));
 
-  assert.equal(plannerPrompts.length, 1);
-  assert.match(plannerPrompts[0] ?? '', /## User Request\s+修复/);
-  assert.equal(taskRepo.listByProject(project.id).filter((task) => task.source_message_id === message.id).length, 0);
-  assert.equal(sessionRunRepo.listBySession(session.id).length, 1);
+  assert.equal(plannerPrompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
 
   const metadata = JSON.parse(sessionMessageRepo.get(message.id)?.metadata ?? '{}') as {
-    risk_assessment?: unknown;
-    session_execution?: unknown;
+    session_execution?: { executionPath?: string };
   };
-  assert.equal(metadata.risk_assessment, undefined);
-  assert.equal(metadata.session_execution, undefined);
+  assert.equal(metadata.session_execution?.executionPath, 'workflow_graph');
 });
 
 test('dispatchSessionUserMessage treats continue-fix as new workflow even with stale pending approval', async () => {
@@ -810,7 +852,7 @@ test('dispatchSessionUserMessage treats continue-fix as new workflow even with s
   });
 });
 
-test('dispatchSessionUserMessage keeps analysis-only implementation questions on planner path', async () => {
+test('dispatchSessionUserMessage routes analysis-only implementation questions through workflow intake', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Session Analysis Only Implementation Question',
     path: mkdtempSync(join(tmpdir(), 'session-dispatch-analysis-only-implementation-question-')),
@@ -835,19 +877,19 @@ test('dispatchSessionUserMessage keeps analysis-only implementation questions on
     sessionId: session.id,
     content: '分析一下状态栏的网络延迟是怎么实现的',
   });
-  await new Promise((resolve) => setTimeout(resolve, 30));
 
-  assert.equal(plannerPrompts.length, 1);
-  assert.match(plannerPrompts[0] ?? '', /## User Request\s+分析一下状态栏的网络延迟是怎么实现的/);
-  assert.equal(taskRepo.listByProject(project.id).filter((task) => task.source_message_id === message.id).length, 0);
-  assert.equal(sessionRunRepo.listBySession(session.id).length, 1);
+  assert.equal(plannerPrompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
 
   const metadata = JSON.parse(sessionMessageRepo.get(message.id)?.metadata ?? '{}') as {
-    risk_assessment?: unknown;
-    session_execution?: unknown;
+    session_execution?: { executionPath?: string };
   };
-  assert.equal(metadata.risk_assessment, undefined);
-  assert.equal(metadata.session_execution, undefined);
+  assert.equal(metadata.session_execution?.executionPath, 'workflow_graph');
 });
 
 test('dispatchSessionUserMessage routes analysis-framed follow-up implementation actions through intake', async () => {
@@ -1487,7 +1529,7 @@ test('dispatchSessionUserMessage cancels pending session approval without starti
   assert.ok(messages.some((item) => item.sender_id === 'risk-gate' && /已取消/.test(item.content)));
 });
 
-test('dispatchSessionUserMessage prepends global session prompt before context and user request', async () => {
+test('dispatchSessionUserMessage records global-prompt sessions through workflow intake without planner prompt', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Global Session Prompt',
     path: mkdtempSync(join(tmpdir(), 'session-dispatch-global-prompt-')),
@@ -1514,25 +1556,19 @@ test('dispatchSessionUserMessage prepends global session prompt before context a
     sessionId: session.id,
     content: '分析当前状态',
   });
-  await new Promise((resolve) => setTimeout(resolve, 30));
 
-  const prompt = prompts[0] ?? '';
+  assert.equal(prompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
   assert.equal(message.content, '分析当前状态');
-  assert.ok(prompt.startsWith('## Global Session Instruction\n全局规则：先遵循系统设置注入。'));
-  assert.ok(
-    prompt.indexOf('## Global Session Instruction') <
-      prompt.indexOf('本轮 prompt 来源由 SessionOS Context Inspector 记录。'),
-  );
-  assert.ok(
-    prompt.indexOf('本轮 prompt 来源由 SessionOS Context Inspector 记录。') <
-      prompt.indexOf('当前目标：完成会话提示词验收'),
-  );
-  assert.ok(prompt.indexOf('当前目标：完成会话提示词验收') < prompt.indexOf('## User Request'));
-  assert.ok(prompt.includes('## User Request\n\n分析当前状态'));
-  assert.ok(prompt.indexOf('## User Request\n\n分析当前状态') < prompt.indexOf('<opendeepsea-session-tools>'));
+  const { task } = assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
+  assert.match(task.description ?? '', /分析当前状态/);
 });
 
-test('dispatchSessionUserMessage injects knowledge tool prompt into runtime prompt', async () => {
+test('dispatchSessionUserMessage routes knowledge requests through workflow intake without runtime prompt', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Knowledge Tool Prompt',
     path: mkdtempSync(join(tmpdir(), 'session-dispatch-knowledge-tool-')),
@@ -1553,19 +1589,22 @@ test('dispatchSessionUserMessage injects knowledge tool prompt into runtime prom
     },
   });
 
-  await dispatchSessionUserMessage({
+  const message = await dispatchSessionUserMessage({
     sessionId: session.id,
     content: '查询项目知识库里的验收记录',
   });
-  await new Promise((resolve) => setTimeout(resolve, 30));
 
-  const prompt = prompts[0] ?? '';
-  assert.match(prompt, /OpenDeepSea 知识库工具/);
-  assert.ok(prompt.includes(`npm run openclaw:knowledge -- search --project ${project.id} --query`));
-  assert.match(prompt, /citation key/);
+  assert.equal(prompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  const { task } = assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
+  assert.match(task.description ?? '', /查询项目知识库里的验收记录/);
 });
 
-test('dispatchSessionUserMessage omits global session prompt block when setting is empty', async () => {
+test('dispatchSessionUserMessage routes empty-global-prompt sessions through workflow intake', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Empty Global Session Prompt',
     path: mkdtempSync(join(tmpdir(), 'session-dispatch-empty-global-prompt-')),
@@ -1587,11 +1626,16 @@ test('dispatchSessionUserMessage omits global session prompt block when setting 
     },
   });
 
-  await dispatchSessionUserMessage({ sessionId: session.id, content: '保持现有 prompt' });
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  const message = await dispatchSessionUserMessage({ sessionId: session.id, content: '保持现有 prompt' });
 
-  assert.doesNotMatch(prompts[0] ?? '', /## Global Session Instruction/);
-  assert.match(prompts[0] ?? '', /## User Request\n\n保持现有 prompt/);
+  assert.equal(prompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  const { task } = assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
+  assert.match(task.description ?? '', /保持现有 prompt/);
 });
 
 test('dispatchSessionUserMessage rejects platform skill refs outside planner backend', async () => {
@@ -1776,7 +1820,7 @@ test('dispatchSessionUserMessage rejects foreign library refs before creating a 
   assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
 });
 
-test('dispatchSessionUserMessage injects referenced file context into runtime prompt', async () => {
+test('dispatchSessionUserMessage carries referenced workspace files into workflow intake', async () => {
   const root = mkdtempSync(join(tmpdir(), 'session-dispatch-context-'));
   mkdirSync(join(root, 'src'), { recursive: true });
   writeFileSync(join(root, 'src', 'app.ts'), 'export const app = true;\n');
@@ -1798,19 +1842,23 @@ test('dispatchSessionUserMessage injects referenced file context into runtime pr
     },
   });
 
-  await dispatchSessionUserMessage({
+  const message = await dispatchSessionUserMessage({
     sessionId: session.id,
     content: '分析引用',
     workspaceFileRefs: ['src/app.ts'],
   });
-  await new Promise((resolve) => setTimeout(resolve, 30));
 
-  assert.match(prompts[0] ?? '', /## Referenced Files/);
-  assert.match(prompts[0] ?? '', /Source: src\/app\.ts/);
-  assert.match(prompts[0] ?? '', /export const app = true/);
+  assert.equal(prompts.length, 0);
+  const { task } = assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
+  assert.match(task.description ?? '', /Workspace refs:/);
+  assert.match(task.description ?? '', /src\/app\.ts/);
 });
 
-test('dispatchSessionUserMessage injects uploaded text content and image project files into runtime context', async () => {
+test('dispatchSessionUserMessage carries uploaded project file refs into workflow intake', async () => {
   const root = mkdtempSync(join(tmpdir(), 'session-dispatch-uploaded-context-'));
   const textPath = join(root, 'notes.md');
   const imagePath = join(root, 'screen.png');
@@ -1856,17 +1904,21 @@ test('dispatchSessionUserMessage injects uploaded text content and image project
     },
   });
 
-  await dispatchSessionUserMessage({
+  const message = await dispatchSessionUserMessage({
     sessionId: session.id,
     content: '分析粘贴附件',
     libraryFileRefs: [textFile.id, imageFile.id],
   });
-  await new Promise((resolve) => setTimeout(resolve, 30));
 
-  assert.match(captured[0]?.prompt ?? '', /Library: notes\.md/);
-  assert.match(captured[0]?.prompt ?? '', /请读取这段内容/);
-  assert.match(captured[0]?.prompt ?? '', /Library Metadata: screen\.png/);
-  assert.deepEqual(captured[0]?.imagePaths, [realpathSync(imagePath)]);
+  assert.deepEqual(captured, []);
+  const { task } = assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
+  assert.match(task.description ?? '', /Library refs:/);
+  assert.match(task.description ?? '', new RegExp(textFile.id));
+  assert.match(task.description ?? '', new RegExp(imageFile.id));
 });
 
 test('recordSessionImageGenerationJobMessage stores image job id and output attachments', () => {
@@ -2535,11 +2587,26 @@ function assertSuperpowersIntakeForMessage(input: {
   assert.doesNotMatch(JSON.stringify(metadata), /low_risk_auto/);
 
   const messages = sessionMessageRepo.listBySession(input.sessionId);
-  const workflowMessage = messages.find((item) =>
+  const workflowMessages = messages.filter((item) =>
     item.sender_id === 'workflow' && /已进入 Superpowers 工作流/.test(item.content)
   );
-  assert.ok(workflowMessage);
-  const workflowMessageMetadata = JSON.parse(workflowMessage.metadata ?? '{}') as {
+  const workflowMessageMetadataByMessage = workflowMessages.map((item) => ({
+    message: item,
+    metadata: JSON.parse(item.metadata ?? '{}') as {
+      session_workflow?: {
+        trigger?: string;
+        graphVersion?: string;
+        activeSuperpowersStage?: string;
+        workflowRunId?: string;
+        sourceMessageId?: string;
+      };
+    },
+  }));
+  const workflowMessageWithMetadata = workflowMessageMetadataByMessage.find((item) =>
+    item.metadata.session_workflow?.sourceMessageId === input.messageId
+  );
+  assert.ok(workflowMessageWithMetadata?.message);
+  const workflowMessageMetadata = workflowMessageWithMetadata.metadata as {
     session_workflow?: {
       trigger?: string;
       graphVersion?: string;

@@ -975,7 +975,7 @@ git commit -m "feat(workflow): 执行Superpowers路由节点"
 - Test: `packages/backend/src/session-message-dispatch.test.ts`
 - Test: `packages/backend/src/workflows/session-workflow-intake.test.ts`
 
-- [ ] **Step 1: Write failing dispatch test**
+- [x] **Step 1: Write failing dispatch test**
 
 In `packages/backend/src/session-message-dispatch.test.ts`, add:
 
@@ -999,7 +999,7 @@ test('dispatchSessionUserMessage routes ordinary chat through workflow intake in
 
 Use the existing fixture builder in that file. If the file has no shared fixture, extract setup from the closest existing session dispatch test into `createSessionDispatchFixture()`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -1009,7 +1009,7 @@ node --import tsx --test packages/backend/src/session-message-dispatch.test.ts
 
 Expected: FAIL because ordinary chat still calls `startSessionPlannerRun()`.
 
-- [ ] **Step 3: Refactor dispatch entry**
+- [x] **Step 3: Refactor dispatch entry**
 
 In `packages/backend/src/session-message-dispatch.ts`, replace the `riskGate.applies` branch with unconditional workflow intake:
 
@@ -1042,7 +1042,7 @@ Keep these paths before intake:
 
 Do not delete `startSessionPlannerRun()` in this task; mark it as internal compatibility by moving it below workflow helpers and ensuring no ordinary dispatch path calls it.
 
-- [ ] **Step 4: Initialize route state in intake**
+- [x] **Step 4: Initialize route state in intake**
 
 In `packages/backend/src/workflows/session-workflow-intake.ts`, when creating `pendingState`, set:
 
@@ -1057,7 +1057,7 @@ analysisArtifactVersionId: null,
 
 When updating graph state after workflow creation, keep `workflowRunId` and preserve these fields.
 
-- [ ] **Step 5: Run dispatch and intake tests**
+- [x] **Step 5: Run dispatch and intake tests**
 
 Run:
 
@@ -1067,7 +1067,7 @@ node --import tsx --test packages/backend/src/session-message-dispatch.test.ts p
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 4**
+- [x] **Step 6: Commit Task 4**
 
 ```bash
 git add packages/backend/src/session-message-dispatch.ts packages/backend/src/session-message-dispatch.test.ts packages/backend/src/workflows/session-workflow-intake.ts packages/backend/src/workflows/session-workflow-intake.test.ts

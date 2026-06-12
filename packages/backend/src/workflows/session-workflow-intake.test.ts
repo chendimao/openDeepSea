@@ -52,7 +52,13 @@ test('createSessionWorkflowIntake creates task and superpowers v2 workflow for u
   assert.equal(snapshot.builtinKey, 'superpowers-development');
   assert.equal(snapshot.definition?.metadata?.runtime_profile, 'superpowers');
   assert.equal(result.workflow.current_stage, 'planning');
-  assert.equal(parseGraphState(result.workflow.graph_state)?.activeSuperpowersStage, 'intake');
+  const state = parseGraphState(result.workflow.graph_state);
+  assert.equal(state?.currentNode, 'context');
+  assert.equal(state?.activeSuperpowersStage, 'intake');
+  assert.equal(state?.selectedIntent, null);
+  assert.deepEqual(state?.selectedPath, []);
+  assert.equal(state?.routingArtifactVersionId, null);
+  assert.equal(state?.analysisArtifactVersionId, null);
   assert.deepEqual(
     taskEventRepo.listByTask(result.task.id).map((event) => event.type),
     ['task_created'],
