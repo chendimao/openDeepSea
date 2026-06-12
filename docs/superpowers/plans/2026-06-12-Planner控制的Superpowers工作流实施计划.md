@@ -965,7 +965,7 @@ git commit -m "feat(session): 统一消息进入Superpowers工作流"
 - Modify: `packages/backend/src/workflows/graph/superpowers-nodes.ts`
 - Modify: `packages/backend/src/workflows/graph/superpowers-runtime.test.ts`
 
-- [ ] **Step 1: Write failing invocation tests**
+- [x] **Step 1: Write failing invocation tests**
 
 Create `packages/backend/src/workflows/superpowers-invocation.test.ts`:
 
@@ -1000,7 +1000,7 @@ test('parseRequiredSuperpowersEvidence reports missing evidence', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --import tsx --test packages/backend/src/workflows/superpowers-invocation.test.ts
@@ -1008,7 +1008,7 @@ node --import tsx --test packages/backend/src/workflows/superpowers-invocation.t
 
 Expected: FAIL because module does not exist.
 
-- [ ] **Step 3: Implement invocation helper**
+- [x] **Step 3: Implement invocation helper**
 
 Create `packages/backend/src/workflows/superpowers-invocation.ts`:
 
@@ -1054,7 +1054,7 @@ export function parseRequiredSuperpowersEvidence(output: string, requiredFields:
 }
 ```
 
-- [ ] **Step 4: Integrate into superpowers nodes**
+- [x] **Step 4: Integrate into superpowers nodes**
 
 In `packages/backend/src/workflows/graph/superpowers-nodes.ts`:
 
@@ -1068,7 +1068,7 @@ In `packages/backend/src/workflows/graph/superpowers-nodes.ts`:
 
 Keep no-tools fallback for pure unit tests, but mark it as deterministic test fallback.
 
-- [ ] **Step 5: Run targeted tests**
+- [x] **Step 5: Run targeted tests**
 
 ```bash
 node --import tsx --test packages/backend/src/workflows/superpowers-invocation.test.ts
@@ -1078,7 +1078,7 @@ node --import tsx --test packages/backend/src/workflows/prompts.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 5**
+- [x] **Step 6: Commit Task 5**
 
 ```bash
 git add packages/backend/src/workflows/superpowers-invocation.ts packages/backend/src/workflows/superpowers-invocation.test.ts packages/backend/src/workflows/prompts.ts packages/backend/src/workflows/graph/superpowers-nodes.ts packages/backend/src/workflows/graph/superpowers-runtime.test.ts packages/backend/src/workflows/prompts.test.ts

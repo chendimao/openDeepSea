@@ -295,6 +295,156 @@ test('Superpowers review nodes invoke current room reviewer agent and parse JSON
   assert.equal(reviewStep?.result, reviewOutput);
 });
 
+test('Superpowers brainstorming node invokes planner agent and records required evidence', async () => {
+  const projectPath = `/tmp/superpowers-planner-runtime-project-${Date.now()}`;
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Superpowers planner runtime project', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Superpowers planner runtime room' });
+  const planner = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'planner-agent',
+    agent_name: 'Planner Agent',
+  });
+  roomAgentRepo.setWorkflowRole(planner.id, 'planner');
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'workspace-write',
+    acp_writable_dirs: [],
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Run planner brainstorming',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const planningOutput = JSON.stringify({
+    superpowers: {
+      designDocPath: 'docs/superpowers/specs/runtime-planner-design.md',
+    },
+  });
+  const calls: string[] = [];
+  const graph = buildSuperpowersRuntimeGraph({
+    runAcpAgent: async (input) => {
+      calls.push(`${input.workflowStage}:${input.agent.agent_id}`);
+      assert.match(input.prompt, /当前 Superpowers 阶段：brainstorming/);
+      assert.match(input.prompt, /你是 planner controller/);
+      const runRecord = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        task_id: input.taskId ?? null,
+        workflow_run_id: input.workflowRunId ?? null,
+        workflow_step_id: input.workflowStepId ?? null,
+        workflow_stage: input.workflowStage ?? null,
+        prompt: input.prompt,
+      });
+      const completedRun = agentRunRepo.updateStatus(runRecord.id, 'completed', { stdout: planningOutput }) ?? runRecord;
+      const message = messageRepo.create({
+        room_id: room.id,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: planningOutput,
+        message_type: 'agent_stream',
+      });
+      return { run: completedRun, message, status: 'completed' };
+    },
+  });
+
+  const latest = await graph.nodes.brainstorming(emptyAgentWorkflowState({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+  }));
+
+  assert.equal(calls.length, 1);
+  assert.match(calls[0] ?? '', /^planning:/);
+  assert.equal(latest.superpowersPhase, 'brainstorming');
+  assert.equal(latest.designDocPath, 'docs/superpowers/specs/runtime-planner-design.md');
+  assert.equal(latest.status, 'running');
+  assert.equal(latest.error, null);
+  const brainstormingStep = workflowRepo.listSteps(run.id).find((step) => step.node_name === 'brainstorming');
+  assert.equal(brainstormingStep?.status, 'completed');
+  assert.ok(brainstormingStep?.agent_run_id);
+  assert.equal(brainstormingStep?.result, planningOutput);
+});
+
+test('Superpowers writing plans node blocks when planner omits required evidence', async () => {
+  const projectPath = `/tmp/superpowers-planner-missing-evidence-${Date.now()}`;
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Superpowers planner missing evidence project', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Superpowers planner missing evidence room' });
+  const planner = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'planner-agent-missing-evidence',
+    agent_name: 'Planner Agent Missing Evidence',
+  });
+  roomAgentRepo.setWorkflowRole(planner.id, 'planner');
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'workspace-write',
+    acp_writable_dirs: [],
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Run planner writing plans',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const graph = buildSuperpowersRuntimeGraph({
+    runAcpAgent: async (input) => {
+      const runRecord = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        task_id: input.taskId ?? null,
+        workflow_run_id: input.workflowRunId ?? null,
+        workflow_step_id: input.workflowStepId ?? null,
+        workflow_stage: input.workflowStage ?? null,
+        prompt: input.prompt,
+      });
+      const completedRun = agentRunRepo.updateStatus(runRecord.id, 'completed', { stdout: '自然语言完成了' }) ?? runRecord;
+      const message = messageRepo.create({
+        room_id: room.id,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: '自然语言完成了',
+        message_type: 'agent_stream',
+      });
+      return { run: completedRun, message, status: 'completed' };
+    },
+  });
+
+  const latest = await graph.nodes.writingPlans(emptyAgentWorkflowState({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+  }));
+
+  assert.equal(latest.status, 'blocked');
+  assert.equal(latest.recoveryState?.reason, 'missing_required_evidence');
+  assert.equal(latest.recoveryState?.failedStage, 'writing_plans');
+  assert.match(latest.error ?? '', /missing required evidence.*implementationPlanPath/);
+  const writingPlansStep = workflowRepo.listSteps(run.id).find((step) => step.node_name === 'writing_plans');
+  assert.equal(writingPlansStep?.status, 'failed');
+  assert.match(writingPlansStep?.error ?? '', /missing required evidence.*implementationPlanPath/);
+});
+
 test('Superpowers finish branch node records default keep branch decision and available options', async () => {
   const graph = buildSuperpowersRuntimeGraph();
   const state = emptyAgentWorkflowState({

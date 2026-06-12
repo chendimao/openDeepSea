@@ -2,9 +2,11 @@ import { canLeaveTddExecute, canLeaveVerify, canLeaveWritingPlans } from './supe
 import { buildStagePrompt, buildSuperpowersPhasePrompt } from '../prompts.js';
 import { parseReviewVerdict } from '../plan-parser.js';
 import { ensureWorkflowAgentsForRun } from '../agent-provisioning.js';
+import { applySuperpowersEvidencePatch } from './superpowers-evidence.js';
+import { buildSuperpowersInvocationPrompt, parseRequiredSuperpowersEvidence } from '../superpowers-invocation.js';
 import type { GraphTools } from './tools.js';
 import { serializeGraphState, type AgentWorkflowState, type SuperpowersReviewVerdict } from './state.js';
-import type { WorkflowDefinitionNodeType, WorkflowRole, WorkflowStage } from '../../types.js';
+import type { TaskArtifactType, WorkflowDefinitionNodeType, WorkflowRole, WorkflowStage } from '../../types.js';
 
 export type SuperpowersPlanningNodeName =
   | 'brainstorming'
@@ -96,6 +98,18 @@ export const SUPERPOWERS_FINISH_BRANCH_OPTIONS = [
 export function createSuperpowersRuntimeNodes(tools?: GraphTools): SuperpowersRuntimeNodes {
   return {
     async brainstorming(state) {
+      if (tools) {
+        return runSuperpowersPlannerPhase({
+          nodeName: 'brainstorming',
+          state,
+          tools,
+          requiredSkills: ['brainstorming'],
+          expectedEvidence: ['designDocPath'],
+          roleInstruction: '你是 planner controller，负责完成 brainstorming 并产出可审查 spec/design artifact。',
+          artifactTitle: 'Superpowers Brainstorming Evidence',
+          artifactType: 'analysis',
+        });
+      }
       const designDocPath = normalizePath(state.designDocPath) ?? DEFAULT_DESIGN_DOC_PATH;
       return {
         ...state,
@@ -130,6 +144,18 @@ export function createSuperpowersRuntimeNodes(tools?: GraphTools): SuperpowersRu
     },
 
     async writingPlans(state) {
+      if (tools) {
+        return runSuperpowersPlannerPhase({
+          nodeName: 'writing_plans',
+          state,
+          tools,
+          requiredSkills: ['writing-plans'],
+          expectedEvidence: ['implementationPlanPath'],
+          roleInstruction: '你是 planner controller，负责基于已确认 spec 编写可执行 plan artifact。',
+          artifactTitle: 'Superpowers Writing Plans Evidence',
+          artifactType: 'plan',
+        });
+      }
       const implementationPlanPath = normalizePath(state.implementationPlanPath) ?? DEFAULT_IMPLEMENTATION_PLAN_PATH;
       return {
         ...state,
@@ -283,6 +309,207 @@ function hasExecutableWorkflowRole(agents: ReturnType<GraphTools['readWorkflowCo
     agent.acp_enabled === 1 &&
     Boolean(agent.acp_backend),
   );
+}
+
+async function runSuperpowersPlannerPhase(input: {
+  nodeName: 'brainstorming' | 'writing_plans';
+  state: AgentWorkflowState;
+  tools: GraphTools;
+  requiredSkills: string[];
+  expectedEvidence: string[];
+  roleInstruction: string;
+  artifactTitle: string;
+  artifactType: TaskArtifactType;
+}): Promise<AgentWorkflowState> {
+  const context = input.tools.readWorkflowContext(input.state.workflowRunId);
+  let agents = context.agents;
+  if (!hasExecutableWorkflowRole(agents, 'planner')) {
+    const provisioning = ensureWorkflowAgentsForRun({
+      roomId: context.room.id,
+      agents,
+      roles: ['planner'],
+    });
+    agents = provisioning.agents;
+    for (const agent of provisioning.joinedAgents) {
+      input.tools.broadcastAgentJoined(context.room.id, agent);
+    }
+  }
+  const planner = input.tools.selectAgentForRole('planner', agents);
+  if (!planner) {
+    return {
+      ...input.state,
+      superpowersPhase: input.nodeName,
+      activeSuperpowersStage: input.nodeName,
+      status: 'blocked',
+      error: `No planner available for Superpowers ${input.nodeName}`,
+      recoveryState: {
+        reason: 'missing_planner_agent',
+        failedStage: input.nodeName,
+        retryable: true,
+      },
+    };
+  }
+
+  const promptContext = {
+    projectName: context.project.name,
+    projectPath: context.project.path,
+    room: context.room,
+    task: context.task,
+    agents,
+    workflowContext: context.workflowContext,
+    childTasks: input.tools.listChildTasks(context.task.id),
+    memoryContext: context.memories,
+  };
+  const basePrompt = [
+    buildStagePrompt('planning', promptContext),
+    buildSuperpowersPhasePrompt(input.nodeName, promptContext),
+  ].join('\n\n');
+  const prompt = buildSuperpowersInvocationPrompt({
+    stageId: input.nodeName,
+    controller: 'planner',
+    requiredSkills: input.requiredSkills,
+    roleInstruction: input.roleInstruction,
+    context: basePrompt,
+    expectedEvidence: input.expectedEvidence,
+  });
+  const step = input.tools.createGraphStep({
+    workflow_run_id: context.run.id,
+    task_id: context.task.id,
+    stage: 'planning',
+    node_name: input.nodeName,
+    status: 'running',
+    room_agent_id: planner.id,
+    assigned_room_agent_id: planner.id,
+    prompt,
+    sort_order: input.tools.nextStepSortOrder(context.run.id),
+  });
+  input.tools.broadcastStepCreated(context.room.id, step);
+  input.tools.updateGraphState(context.run.id, serializeGraphState({
+    ...input.state,
+    currentNode: input.nodeName,
+    currentStepId: step.id,
+    activeAgentRunId: null,
+    superpowersPhase: input.nodeName,
+    activeSuperpowersStage: input.nodeName,
+    status: input.state.status === 'blocked' ? 'running' : input.state.status,
+    error: null,
+    recoveryState: null,
+  }));
+
+  let runResult: Awaited<ReturnType<GraphTools['runAcpAgent']>>;
+  try {
+    runResult = await input.tools.runAcpAgent({
+      agent: planner,
+      projectPath: context.project.path,
+      roomId: context.room.id,
+      prompt,
+      taskId: context.task.id,
+      workflowRunId: context.run.id,
+      workflowStepId: step.id,
+      workflowStage: 'planning',
+    });
+  } catch (error) {
+    const message = (error as Error).message;
+    const failedStep = input.tools.updateGraphStep(step.id, {
+      status: 'failed',
+      error: message,
+    });
+    if (failedStep) input.tools.broadcastStepUpdated(context.room.id, failedStep);
+    return {
+      ...input.state,
+      superpowersPhase: input.nodeName,
+      activeSuperpowersStage: input.nodeName,
+      currentStepId: step.id,
+      status: 'blocked',
+      error: message,
+      recoveryState: {
+        reason: /timeout/i.test(message) ? 'timeout' : 'agent_invocation_failed',
+        failedStage: input.nodeName,
+        retryable: true,
+      },
+    };
+  }
+
+  const output = runResult.run.stdout || runResult.message.content;
+  if (runResult.status !== 'completed') {
+    const error = runResult.run.error ?? (runResult.status === 'cancelled' ? 'Agent run cancelled' : 'Agent run failed');
+    const failedStep = input.tools.updateGraphStep(step.id, {
+      status: runResult.status === 'cancelled' ? 'cancelled' : 'failed',
+      agent_run_id: runResult.run.id,
+      result: output,
+      result_message_id: runResult.message.id,
+      error,
+    });
+    if (failedStep) input.tools.broadcastStepUpdated(context.room.id, failedStep);
+    return {
+      ...input.state,
+      activeAgentRunId: runResult.run.id,
+      currentStepId: step.id,
+      superpowersPhase: input.nodeName,
+      activeSuperpowersStage: input.nodeName,
+      status: 'blocked',
+      error,
+      recoveryState: {
+        reason: runResult.status === 'cancelled' ? 'agent_cancelled' : 'agent_run_failed',
+        failedStage: input.nodeName,
+        retryable: true,
+      },
+    };
+  }
+
+  const parsed = parseRequiredSuperpowersEvidence(output, input.expectedEvidence);
+  if (!parsed.ok) {
+    const failedStep = input.tools.updateGraphStep(step.id, {
+      status: 'failed',
+      agent_run_id: runResult.run.id,
+      result: output,
+      result_message_id: runResult.message.id,
+      error: parsed.error,
+    });
+    if (failedStep) input.tools.broadcastStepUpdated(context.room.id, failedStep);
+    return {
+      ...input.state,
+      activeAgentRunId: runResult.run.id,
+      currentStepId: step.id,
+      superpowersPhase: input.nodeName,
+      activeSuperpowersStage: input.nodeName,
+      status: 'blocked',
+      error: parsed.error,
+      recoveryState: {
+        reason: 'missing_required_evidence',
+        failedStage: input.nodeName,
+        retryable: true,
+      },
+    };
+  }
+
+  const artifact = input.tools.createArtifact({
+    task_id: context.task.id,
+    workflow_run_id: context.run.id,
+    workflow_step_id: step.id,
+    artifact_type: input.artifactType,
+    title: input.artifactTitle,
+    content: output,
+  });
+  input.tools.broadcastArtifactCreated(context.room.id, artifact);
+  const completedStep = input.tools.updateGraphStep(step.id, {
+    status: 'completed',
+    agent_run_id: runResult.run.id,
+    result: output,
+    result_message_id: runResult.message.id,
+    error: null,
+  });
+  if (completedStep) input.tools.broadcastStepUpdated(context.room.id, completedStep);
+  return {
+    ...applySuperpowersEvidencePatch(input.state, parsed.evidence),
+    activeAgentRunId: runResult.run.id,
+    currentStepId: step.id,
+    superpowersPhase: input.nodeName,
+    activeSuperpowersStage: input.nodeName,
+    status: input.state.status === 'blocked' ? 'running' : input.state.status,
+    error: null,
+    recoveryState: null,
+  };
 }
 
 async function runSuperpowersReview(
