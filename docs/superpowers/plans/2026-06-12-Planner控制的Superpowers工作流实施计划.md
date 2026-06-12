@@ -1407,7 +1407,7 @@ git commit -m "feat(frontend): 展示只读工作流产物确认门禁"
 - Modify: `packages/backend/src/workflows/graph/runtime.test.ts`
 - Modify: `packages/backend/src/workflows/graph/execute.test.ts`
 
-- [ ] **Step 1: Write failing runtime test**
+- [x] **Step 1: Write failing runtime test**
 
 In `packages/backend/src/workflows/graph/runtime.test.ts`, add a test:
 
@@ -1425,7 +1425,7 @@ test('Superpowers v2 dispatch blocks without approved plan artifact version', as
 
 Add a local helper named `createSuperpowersV2TestRunWithoutApprovedPlan()` in `runtime.test.ts` near the existing helper functions. It must create `project`, `room`, and `task` with `projectRepo`, `roomRepo`, and `taskRepo`, then call `createGraphWorkflowRun(task.id)`, update its graph state with `createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path)`, set `activeSuperpowersStage: 'subagent_driven_development'`, and intentionally leave `approvedPlanArtifactVersionId` unset.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --import tsx --test packages/backend/src/workflows/graph/runtime.test.ts --test-name-pattern "approved plan artifact"
@@ -1433,7 +1433,7 @@ node --import tsx --test packages/backend/src/workflows/graph/runtime.test.ts --
 
 Expected: FAIL because dispatch still relies on parsed `state.plan` or existing behavior.
 
-- [ ] **Step 3: Enforce approved artifact in dispatch**
+- [x] **Step 3: Enforce approved artifact in dispatch**
 
 In `superpowers-nodes.ts` or runtime routing before dispatch:
 
@@ -1443,14 +1443,14 @@ In `superpowers-nodes.ts` or runtime routing before dispatch:
 4. Use `agentAssignments` from state or regenerate through `agent-assignment.ts`.
 5. Ensure no worker prompt can modify approved artifact.
 
-- [ ] **Step 4: Ensure reviewer/verifier separation**
+- [x] **Step 4: Ensure reviewer/verifier separation**
 
 In dispatch/review node:
 
 1. When selecting reviewer/verifier, exclude implementer agent id for same task if another reviewer/verifier exists.
 2. If only fullstack exists, block with `needs_agent_assignment` for review rather than self-reviewing execution work.
 
-- [ ] **Step 5: Run graph tests**
+- [x] **Step 5: Run graph tests**
 
 ```bash
 node --import tsx --test packages/backend/src/workflows/graph/runtime.test.ts
@@ -1460,7 +1460,7 @@ node --import tsx --test packages/backend/src/workflows/graph/review.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 8**
+- [x] **Step 6: Commit Task 8**
 
 ```bash
 git add packages/backend/src/workflows/graph/superpowers-nodes.ts packages/backend/src/workflows/graph/runtime.ts packages/backend/src/workflows/graph/runtime.test.ts packages/backend/src/workflows/graph/execute.test.ts packages/backend/src/workflows/graph/review.test.ts

@@ -4,6 +4,7 @@ import { parseReviewVerdict } from '../plan-parser.js';
 import { ensureWorkflowAgentsForRun } from '../agent-provisioning.js';
 import { applySuperpowersEvidencePatch } from './superpowers-evidence.js';
 import { buildSuperpowersInvocationPrompt, parseRequiredSuperpowersEvidence } from '../superpowers-invocation.js';
+import { workflowArtifactVersionRepo } from '../../repos/workflows.js';
 import type { GraphTools } from './tools.js';
 import { serializeGraphState, type AgentWorkflowState, type SuperpowersReviewVerdict } from './state.js';
 import type { TaskArtifactType, WorkflowDefinitionNodeType, WorkflowRole, WorkflowStage } from '../../types.js';
@@ -224,7 +225,27 @@ export function createSuperpowersRuntimeNodes(tools?: GraphTools): SuperpowersRu
 }
 
 export function canDispatchSuperpowersRuntime(state: AgentWorkflowState): boolean {
-  return canLeaveWritingPlans(state);
+  return canLeaveWritingPlans(state) && hasApprovedPlanArtifactVersion(state);
+}
+
+function hasApprovedPlanArtifactVersion(state: AgentWorkflowState): boolean {
+  const approvedPlanId = normalizePath(state.approvedPlanArtifactVersionId);
+  const lightweightPlanId = normalizePath(state.lightweightPlanArtifactVersionId);
+  return Boolean(
+    (approvedPlanId && isApprovedPlanArtifact(approvedPlanId, state.workflowRunId, 'plan')) ||
+    (lightweightPlanId && isApprovedPlanArtifact(lightweightPlanId, state.workflowRunId, 'lightweight_plan')),
+  );
+}
+
+function isApprovedPlanArtifact(
+  artifactVersionId: string,
+  workflowRunId: string,
+  artifactType: 'plan' | 'lightweight_plan',
+): boolean {
+  const artifact = workflowArtifactVersionRepo.get(artifactVersionId);
+  return artifact?.workflow_run_id === workflowRunId &&
+    artifact.artifact_type === artifactType &&
+    artifact.status === 'approved';
 }
 
 function normalizePath(value: string | null | undefined): string | null {

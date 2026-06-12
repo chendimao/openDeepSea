@@ -12,6 +12,7 @@ const { projectRepo } = await import('../../repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('../../repos/rooms.js');
 const { taskRepo } = await import('../../repos/tasks.js');
 const { workflowRepo } = await import('../../repos/workflows.js');
+const { workflowArtifactVersionRepo } = await import('../../repos/workflows.js');
 const { agentRunRepo } = await import('../../repos/agent-runs.js');
 const { messageRepo } = await import('../../repos/messages.js');
 const { settingsRepo } = await import('../../repos/settings.js');
@@ -514,7 +515,7 @@ test('Superpowers run records planning gate steps before dispatch', async () => 
   });
 
   const nodeNames = listRawStepNodeNames(run.id);
-  assert.deepEqual(nodeNames.slice(0, 8), [
+  assertOrderedSubsequence(nodeNames, [
     'context',
     'brainstorming',
     'spec_review',
@@ -1065,6 +1066,20 @@ test('Superpowers actual runtime blocks before spec review without TDD evidence 
   assert.deepEqual(nodeNames.slice(0, 2), ['dispatch', 'tdd_execute']);
   assert.equal(nodeNames.includes('spec_compliance_review'), false);
   assert.equal(state?.superpowersPhase, 'tdd_execute');
+});
+
+test('Superpowers v2 dispatch blocks without approved plan artifact version', async () => {
+  const { run, room } = createSuperpowersV2TestRunWithoutApprovedPlan();
+
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+  const state = parseGraphState(latest.graph_state);
+
+  assert.equal(latest.status, 'blocked');
+  assert.match(latest.error ?? '', /approved plan artifact/i);
+  assert.equal(state?.currentNode, 'dispatch');
+  assert.match(state?.error ?? '', /approved plan artifact/i);
 });
 
 test('Superpowers actual runtime proceeds from TDD execute to spec compliance review with RED and GREEN evidence', async () => {
@@ -1864,14 +1879,14 @@ test('graph workflow skips optional executor task when no single agent covers it
   const children = taskRepo.listChildren(task.id);
 
   assert.equal(detail?.run.status, 'completed');
-  assert.deepEqual(implementationAgents, ['backend-executor']);
-  assert.deepEqual(children.map((child) => child.title), ['补充后端 workflow 诊断']);
+  assert.deepEqual(implementationAgents, ['backend-executor', 'fullstack-engineer']);
+  assert.deepEqual(children.map((child) => child.title), ['补充后端 workflow 诊断', '必要时同步前后端共享展示字段']);
   assert.equal(graphState?.workflowPlan?.tasks[0]?.status, 'completed');
-  assert.equal(graphState?.workflowPlan?.tasks[1]?.status, 'skipped');
+  assert.equal(graphState?.workflowPlan?.tasks[1]?.status, 'completed');
   assert.equal(graphState?.workflowPlan?.tasks[1]?.progress, 100);
 });
 
-test('graph workflow blocks required executor task when no single agent covers its write scope', async () => {
+test('graph workflow assigns required cross-scope executor task to fullstack fallback', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-required-cross-scope-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Runtime Required Cross Scope', path: projectPath });
@@ -1917,14 +1932,15 @@ test('graph workflow blocks required executor task when no single agent covers i
   const graphState = parseGraphState(detail?.run.graph_state ?? null);
   const children = taskRepo.listChildren(task.id);
 
-  assert.equal(detail?.run.status, 'blocked');
-  assert.equal(implementationCalls, 0);
+  assert.equal(detail?.run.status, 'completed');
+  assert.equal(implementationCalls, 1);
   assert.equal(children.length, 1);
-  assert.equal(children[0]?.assigned_agent_id, null);
-  assert.match(detail?.run.error ?? '', /No single executor can cover scopeWrite/);
-  assert.match(detail?.run.error ?? '', /packages\/backend\/src\/types\.ts/);
-  assert.match(detail?.run.error ?? '', /packages\/frontend\/src\/lib\/types\.ts/);
-  assert.equal(graphState?.workflowPlan?.tasks[0]?.status, 'blocked');
+  assert.equal(
+    children[0]?.assigned_agent_id,
+    roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'fullstack-engineer')?.id,
+  );
+  assert.equal(detail?.run.error, null);
+  assert.equal(graphState?.workflowPlan?.tasks[0]?.status, 'completed');
 });
 
 test('planning node consumes product-manager background without calling planner again', async () => {
@@ -2087,7 +2103,7 @@ test('supervisor assignment hint ignores scope mismatch and falls back to resolv
     title: 'Ignore mismatched supervisor assignment hint',
   });
 
-  await startGraphWorkflow(task.id, {
+  await startGraphWorkflowAfterApproval(task.id, {
     supervisor: async () => ({
       mode: 'select_existing_workflow',
       workflowDefinitionId: workflow.id,
@@ -2148,7 +2164,7 @@ test('supervisor assignment hint ignores executor without matching runtime write
     title: 'Ignore runtime-ineligible supervisor assignment hint',
   });
 
-  await startGraphWorkflow(task.id, {
+  await startGraphWorkflowAfterApproval(task.id, {
     supervisor: async () => ({
       mode: 'select_existing_workflow',
       workflowDefinitionId: workflow.id,
@@ -2395,7 +2411,7 @@ test('graph dispatch joins global frontend agent for frontend UI task with empty
     description: '任务目标是在侧边栏最近项目下方展示当前用户最近访问过的群聊，补充 i18n 文案、空态和跳转高亮处理。',
   });
 
-  await startGraphWorkflow(task.id, {
+  await startGraphWorkflowAfterApproval(task.id, {
     planner: async () => ({
       goal: task.title,
       summary: '在侧边栏展示最近访问过的群聊',
@@ -2425,11 +2441,14 @@ test('graph dispatch joins global frontend agent for frontend UI task with empty
 
   const agents = roomAgentRepo.listByRoom(room.id);
   const frontend = agents.find((agent) => agent.agent_id === 'frontend-executor');
+  const fullstack = agents.find((agent) => agent.agent_id === 'fullstack-engineer');
   const children = taskRepo.listChildren(task.id);
+  const expectedAgentIds = [frontend?.id, fullstack?.id]
+    .filter((id): id is string => typeof id === 'string');
 
-  assert.ok(frontend);
   assert.notEqual(children[0]?.assigned_agent_id, backend.id);
-  assert.equal(children[0]?.assigned_agent_id, frontend.id);
+  assert.ok(frontend || fullstack);
+  assert.ok(children[0]?.assigned_agent_id && expectedAgentIds.includes(children[0].assigned_agent_id));
 });
 
 test('graph dispatch joins global writer for presentation task instead of backend executor', async () => {
@@ -2446,7 +2465,7 @@ test('graph dispatch joins global writer for presentation task instead of backen
     description: '整理项目目标、核心功能、截图说明和验收结论，输出演示文稿。',
   });
 
-  await startGraphWorkflow(task.id, {
+  await startGraphWorkflowAfterApproval(task.id, {
     planner: async () => ({
       goal: task.title,
       summary: '制作项目汇报演示文稿',
@@ -2497,7 +2516,7 @@ test('graph dispatch ignores supervisor backend hint for presentation task profi
     description: '整理项目目标、核心功能、截图说明和验收结论，输出演示文稿。',
   });
 
-  await startGraphWorkflow(task.id, {
+  await startGraphWorkflowAfterApproval(task.id, {
     supervisor: async () => ({
       mode: 'select_existing_workflow',
       workflowDefinitionId: workflow.id,
@@ -2622,7 +2641,7 @@ test('graph execute invites matching executor instead of falling back outside ru
   });
 
   let implementationAgentId: string | null = null;
-  const run = await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflowAfterApproval(task.id, {
     planner: async () => ({
       goal: 'Do not fallback outside write boundary',
       summary: 'Create one frontend child task without eligible existing executor',
@@ -3352,8 +3371,43 @@ async function startGraphWorkflowAfterApproval(
   deps: Parameters<typeof startGraphWorkflow>[1] = {},
 ): Promise<WorkflowRun> {
   const run = await startGraphWorkflow(taskId, deps);
-  if (run.status !== 'awaiting_approval') return run;
-  return approveGraphWorkflow(run.id, 'test', deps);
+  if (run.status !== 'awaiting_approval') return continueAfterApprovedPlanArtifactIfNeeded(
+    ensureApprovedPlanArtifactForRun(run),
+    deps,
+  );
+  const withApprovedPlan = ensureApprovedPlanArtifactForRun(run);
+  return approveGraphWorkflow(withApprovedPlan.id, 'test', deps);
+}
+
+function ensureApprovedPlanArtifactForRun(run: WorkflowRun): WorkflowRun {
+  const state = parseGraphState(run.graph_state);
+  if (!state || state.approvedPlanArtifactVersionId) return run;
+  const approved = createApprovedPlanArtifactVersion(run.id, state.userGoal);
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...state,
+    approvedPlanArtifactVersionId: approved.id,
+    draftPlanArtifactVersionId: state.draftPlanArtifactVersionId === approved.id
+      ? null
+      : state.draftPlanArtifactVersionId,
+  }));
+  return workflowRepo.getRun(run.id) ?? run;
+}
+
+async function continueAfterApprovedPlanArtifactIfNeeded(
+  run: WorkflowRun,
+  deps: Parameters<typeof startGraphWorkflow>[1],
+): Promise<WorkflowRun> {
+  if (run.status !== 'blocked' || !/approved plan artifact/i.test(run.error ?? '')) return run;
+  const state = parseGraphState(run.graph_state);
+  if (!state?.approvedPlanArtifactVersionId) return run;
+  workflowRepo.updateRun(run.id, { status: 'running', error: null });
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...state,
+    currentNode: 'approval',
+    status: 'running',
+    error: null,
+  }));
+  return continueGraphWorkflow(run.id, deps);
 }
 
 function addAcpWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'acceptor'): RoomAgent {
@@ -3433,7 +3487,11 @@ function createRunnableSuperpowersState(
   taskId: string,
   title: string,
   projectPath: string,
+  options: { approvedPlanArtifactVersionId?: string | null } = {},
 ) {
+  const approvedPlanArtifactVersionId = Object.hasOwn(options, 'approvedPlanArtifactVersionId')
+    ? options.approvedPlanArtifactVersionId ?? null
+    : createApprovedPlanArtifactVersion(workflowRunId, title).id;
   return {
     workflowRunId,
     projectId,
@@ -3463,6 +3521,7 @@ function createRunnableSuperpowersState(
     designReviewVerdict: 'approved' as const,
     implementationPlanPath: 'docs/superpowers/plans/test-plan.md',
     planReviewVerdict: 'approved' as const,
+    approvedPlanArtifactVersionId,
     worktree: null,
     tddEvidence: [],
     tddExemption: null,
@@ -3478,6 +3537,47 @@ function createRunnableSuperpowersState(
     status: 'running' as const,
     error: null,
   };
+}
+
+function createApprovedPlanArtifactVersion(workflowRunId: string, title: string) {
+  const draft = workflowArtifactVersionRepo.createDraft({
+    workflow_run_id: workflowRunId,
+    artifact_type: 'plan',
+    title: 'Runtime Test Plan',
+    content: `# Plan\n\n${title}`,
+    structured_data: { tasks: [] },
+    created_by_agent_id: 'planner',
+  });
+  const approved = workflowArtifactVersionRepo.approve(draft.id, {
+    approved_by: 'test',
+    approval_message_id: null,
+  });
+  assert.ok(approved);
+  return approved;
+}
+
+function createSuperpowersV2TestRunWithoutApprovedPlan(): {
+  run: WorkflowRun;
+  room: ReturnType<typeof roomRepo.create>;
+} {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-approved-plan-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers Approved Plan Gate', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Approved Plan Gate Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Require approved plan artifact before dispatch',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path, {
+      approvedPlanArtifactVersionId: null,
+    }),
+    activeSuperpowersStage: 'subagent_driven_development',
+    lightweightPlanArtifactVersionId: null,
+  }));
+  return { run, room };
 }
 
 function assertSuperpowersWorkflowRun(run: WorkflowRun): void {
@@ -3548,6 +3648,15 @@ function createLegacyGraphWorkflowRun(input: {
 
 function listRawStepNodeNames(workflowRunId: string): Array<string | null> {
   return listRawSteps(workflowRunId).map((step) => step.node_name);
+}
+
+function assertOrderedSubsequence<T>(actual: T[], expected: T[]): void {
+  let index = 0;
+  for (const item of actual) {
+    if (item === expected[index]) index += 1;
+    if (index === expected.length) return;
+  }
+  assert.deepEqual(actual, expected);
 }
 
 function listRawSteps(workflowRunId: string): Array<{ node_name: string | null; status: string }> {

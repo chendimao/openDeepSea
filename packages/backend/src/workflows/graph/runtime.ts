@@ -6,6 +6,7 @@ import { roomAgentRepo, roomRepo } from '../../repos/rooms.js';
 import { taskRepo } from '../../repos/tasks.js';
 import { workflowDefinitionRepo } from '../../repos/workflow-definitions.js';
 import { workflowRepo } from '../../repos/workflows.js';
+import { workflowArtifactVersionRepo } from '../../repos/workflows.js';
 import { runRegistry } from '../../run-registry.js';
 import { recordTaskEvent, recordTaskStatusChanged } from '../../task-conversation.js';
 import type {
@@ -1365,7 +1366,7 @@ function blockSuperpowersDispatch(state: AgentWorkflowState): AgentWorkflowState
   }
   return {
     ...blockedState,
-    currentNode: 'planning',
+    currentNode: 'dispatch',
     superpowersPhase: 'plan_review',
   };
 }
@@ -1414,7 +1415,27 @@ function getSuperpowersDispatchGateError(state: AgentWorkflowState): string {
   if (state.planReviewVerdict !== 'approved') {
     return 'Superpowers dispatch requires approved plan review';
   }
+  if (!hasApprovedSuperpowersPlanArtifact(state)) {
+    return 'Superpowers dispatch requires approved plan artifact version';
+  }
   return 'Superpowers dispatch requires approved implementation plan';
+}
+
+function hasApprovedSuperpowersPlanArtifact(state: AgentWorkflowState): boolean {
+  return isApprovedSuperpowersPlanArtifact(state.approvedPlanArtifactVersionId, state.workflowRunId, 'plan') ||
+    isApprovedSuperpowersPlanArtifact(state.lightweightPlanArtifactVersionId, state.workflowRunId, 'lightweight_plan');
+}
+
+function isApprovedSuperpowersPlanArtifact(
+  artifactVersionId: string | null | undefined,
+  workflowRunId: string,
+  artifactType: 'plan' | 'lightweight_plan',
+): boolean {
+  if (typeof artifactVersionId !== 'string' || artifactVersionId.trim().length === 0) return false;
+  const artifact = workflowArtifactVersionRepo.get(artifactVersionId.trim());
+  return artifact?.workflow_run_id === workflowRunId &&
+    artifact.artifact_type === artifactType &&
+    artifact.status === 'approved';
 }
 
 function isTerminalResumeState(state: AgentWorkflowState): boolean {
