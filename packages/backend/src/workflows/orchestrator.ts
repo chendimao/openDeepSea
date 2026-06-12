@@ -32,6 +32,7 @@ import { getLangGraphWorkflowConfig } from './graph/runtime-config.js';
 import {
   approveGraphWorkflow,
   cancelGraphWorkflow,
+  enqueueExistingGraphWorkflowRun,
   recoverGraphWorkflow,
   retryGraphWorkflow,
   startGraphWorkflow,
@@ -99,6 +100,10 @@ export const workflowOrchestrator = {
       return startGraphWorkflowInBackground(taskId, workflowOrchestratorGraphDeps);
     }
     return this.start(taskId);
+  },
+
+  enqueueExistingGraphRun(id: string): { run: WorkflowRun; enqueued: true } {
+    return enqueueExistingGraphWorkflowRun(id, workflowOrchestratorGraphDeps);
   },
 
   detail(id: string) {

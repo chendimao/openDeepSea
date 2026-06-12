@@ -797,7 +797,7 @@ git commit -m "feat(workflow): 添加全栈工程师兜底分配"
 - Modify: `packages/backend/src/session-message-dispatch.ts`
 - Modify: `packages/backend/src/session-message-dispatch.test.ts`
 
-- [ ] **Step 1: Write failing intake tests**
+- [x] **Step 1: Write failing intake tests**
 
 Create `packages/backend/src/workflows/session-workflow-intake.test.ts`:
 
@@ -846,7 +846,7 @@ test('createSessionWorkflowIntake creates task and superpowers v2 workflow for u
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --import tsx --test packages/backend/src/workflows/session-workflow-intake.test.ts
@@ -854,7 +854,7 @@ node --import tsx --test packages/backend/src/workflows/session-workflow-intake.
 
 Expected: FAIL because `session-workflow-intake.js` does not exist.
 
-- [ ] **Step 3: Implement session workflow intake**
+- [x] **Step 3: Implement session workflow intake**
 
 Create `packages/backend/src/workflows/session-workflow-intake.ts`:
 
@@ -920,7 +920,7 @@ function buildIntakeTaskTitle(content: string): string {
 }
 ```
 
-- [ ] **Step 4: Refactor session-message-dispatch away from low_risk_auto**
+- [x] **Step 4: Refactor session-message-dispatch away from low_risk_auto**
 
 In `packages/backend/src/session-message-dispatch.ts`:
 
@@ -932,7 +932,7 @@ In `packages/backend/src/session-message-dispatch.ts`:
 
 Expected behavior: a user implementation message no longer creates `trigger: low_risk_auto` metadata.
 
-- [ ] **Step 5: Update dispatch tests**
+- [x] **Step 5: Update dispatch tests**
 
 In `packages/backend/src/session-message-dispatch.test.ts`, update tests that expect `low_risk_auto`:
 
@@ -940,7 +940,7 @@ In `packages/backend/src/session-message-dispatch.test.ts`, update tests that ex
 - Assert no session evidence payload contains `trigger: 'low_risk_auto'` for new messages.
 - Keep tests for old approval message parsing if they are about backward compatibility.
 
-- [ ] **Step 6: Run targeted tests**
+- [x] **Step 6: Run targeted tests**
 
 ```bash
 node --import tsx --test packages/backend/src/workflows/session-workflow-intake.test.ts
@@ -949,7 +949,7 @@ node --import tsx --test packages/backend/src/session-message-dispatch.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 4**
+- [x] **Step 7: Commit Task 4**
 
 ```bash
 git add packages/backend/src/workflows/session-workflow-intake.ts packages/backend/src/workflows/session-workflow-intake.test.ts packages/backend/src/session-message-dispatch.ts packages/backend/src/session-message-dispatch.test.ts

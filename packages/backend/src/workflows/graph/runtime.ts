@@ -292,6 +292,17 @@ export function enqueueGraphWorkflow(runId: string, deps: GraphRuntimeDeps = {})
   enqueueGraphWorkflowAttempt(runId, deps, 0);
 }
 
+export function enqueueExistingGraphWorkflowRun(
+  runId: string,
+  deps: GraphRuntimeDeps = {},
+): { run: WorkflowRun; enqueued: true } {
+  const run = requireGraphRun(runId);
+  requireGraphStateOrBlock(run);
+  recordWorkflowStartedEvent(run);
+  enqueueGraphWorkflow(run.id, deps);
+  return { run, enqueued: true };
+}
+
 function enqueueGraphWorkflowAttempt(runId: string, deps: GraphRuntimeDeps, attempt: number): void {
   setImmediate(() => {
     void continueGraphWorkflow(runId, deps, { blockOnError: false }).catch((err) => {

@@ -13,9 +13,11 @@ const { projectRepo } = await import('./repos/projects.js');
 const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { fileRepo } = await import('./repos/files.js');
 const { messageRepo } = await import('./repos/messages.js');
+const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
 const { roomAgentRepo } = await import('./repos/rooms.js');
 const { settingsRepo } = await import('./repos/settings.js');
 const { sessionMessageRepo, sessionRepo, sessionRunRepo } = await import('./repos/sessions.js');
+const { taskEventRepo } = await import('./repos/task-events.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { workflowRepo } = await import('./repos/workflows.js');
 const {
@@ -24,15 +26,63 @@ const {
   recordSessionImageGenerationToolResultEvidence,
 } = await import('./session-message-dispatch.js');
 const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
+const { recordTaskEvent } = await import('./task-conversation.js');
 const { setWorkflowOrchestratorGraphDeps, workflowOrchestrator } = await import('./workflows/orchestrator.js');
 const { setVerificationCommandRunnerForTests } = await import('./workflows/graph/verification.js');
+const { parseGraphState } = await import('./workflows/graph/state.js');
+const { SUPERPOWERS_V2_GRAPH_VERSION } = await import('./workflows/superpowers-stage-registry.js');
+
+type WorkflowGraphDepsForTest = Parameters<typeof setWorkflowOrchestratorGraphDeps>[0];
+const noRetryGraphDepsForTests: WorkflowGraphDepsForTest = {
+  scheduleRetry: () => undefined,
+};
+let workflowIntakeEnqueueCalls: string[] = [];
+
+function resetWorkflowGraphDepsForTests(): void {
+  setWorkflowOrchestratorGraphDeps(noRetryGraphDepsForTests);
+}
+
+function setWorkflowGraphDepsForTests(deps: WorkflowGraphDepsForTest): void {
+  setWorkflowOrchestratorGraphDeps({
+    ...noRetryGraphDepsForTests,
+    ...deps,
+  });
+}
+
+function resetWorkflowIntakeEnqueueForTests(): void {
+  workflowIntakeEnqueueCalls = [];
+  workflowOrchestrator.enqueueExistingGraphRun = (runId) => {
+    workflowIntakeEnqueueCalls.push(runId);
+    const run = workflowRepo.getRun(runId);
+    assert.ok(run);
+    const task = taskRepo.get(run.task_id);
+    assert.ok(task);
+    recordTaskEvent({
+      roomId: run.room_id,
+      taskId: task.id,
+      taskTitle: task.title,
+      workflowRunId: run.id,
+      eventType: 'workflow_started',
+      content: `工作流已启动，进入 ${run.current_stage ?? 'planning'} 阶段。`,
+      metadata: {
+        graph_node: 'start',
+        workflow_stage: run.current_stage ?? 'planning',
+      },
+    });
+    return { run, enqueued: true };
+  };
+}
 
 afterEach(() => {
   setSessionRuntimeAdapterForTest(undefined);
-  setWorkflowOrchestratorGraphDeps({});
+  resetWorkflowGraphDepsForTests();
+  resetWorkflowIntakeEnqueueForTests();
   setVerificationCommandRunnerForTests(null);
   settingsRepo.updateSystem({ global_session_prompt: null });
 });
+
+resetWorkflowGraphDepsForTests();
+resetWorkflowIntakeEnqueueForTests();
 
 test('dispatchSessionUserMessage uses project Session Planner backend instead of session provider', async () => {
   const project = projectRepo.create({
@@ -62,7 +112,7 @@ test('dispatchSessionUserMessage uses project Session Planner backend instead of
   assert.match(run?.runtime_profile_snapshot ?? '', /"backend_source":"project"/);
 });
 
-test('dispatchSessionUserMessage injects explicit planner platform skill refs into runtime prompt', async () => {
+test('dispatchSessionUserMessage preserves explicit platform skill refs for workflow intake', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Platform Skill Refs',
     path: mkdtempSync(join(tmpdir(), 'session-dispatch-platform-skills-')),
@@ -89,19 +139,24 @@ test('dispatchSessionUserMessage injects explicit planner platform skill refs in
     content: '优化会话输入框',
     platformSkillRefs: [{ provider: 'codex', name: 'frontend-design' }],
   });
-  await new Promise((resolve) => setTimeout(resolve, 30));
 
   const updatedMessage = sessionMessageRepo.get(message.id);
   const metadata = JSON.parse(updatedMessage?.metadata ?? '{}') as {
     platform_skill_refs?: Array<{ provider: string; name: string }>;
   };
   assert.deepEqual(metadata.platform_skill_refs, [{ provider: 'codex', name: 'frontend-design' }]);
-  assert.match(prompts[0] ?? '', /## Explicit Platform Skills/);
-  assert.match(prompts[0] ?? '', /\$frontend-design/);
-  assert.match(prompts[0] ?? '', /Frontend design workflow\./);
+  assert.equal(prompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  const { task } = assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
+  assert.match(task.description ?? '', /Platform skills:/);
+  assert.match(task.description ?? '', /codex:frontend-design/);
 });
 
-test('dispatchSessionUserMessage gates medium-risk development tasks before starting planner', async () => {
+test('dispatchSessionUserMessage routes medium-risk development tasks through Superpowers intake', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Session Risk Gate',
     path: mkdtempSync(join(tmpdir(), 'session-dispatch-risk-gate-')),
@@ -134,28 +189,25 @@ test('dispatchSessionUserMessage gates medium-risk development tasks before star
   const messages = sessionMessageRepo.listBySession(session.id);
   const gateMessage = messages.find((item) => item.sender_id === 'risk-gate');
   assert.equal(message.content, GIT_STATUS_BAR_TASK);
-  assert.ok(gateMessage);
-  assert.match(gateMessage.content, /风险确认/);
-  assert.match(gateMessage.content, /回复“确认”/);
+  assert.equal(gateMessage, undefined);
+
+  const { run } = assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
+  assert.equal(run.approved_by, null);
 
   const updatedMessage = sessionMessageRepo.get(message.id);
   const metadata = JSON.parse(updatedMessage?.metadata ?? '{}') as {
     risk_assessment?: { riskLevel?: string; requiresApproval?: boolean };
-    approval_card?: { riskLevel?: string; taskKind?: string; agents?: string[] };
-    session_approval?: { status?: string; originalContent?: string };
+    approval_card?: unknown;
+    session_approval?: unknown;
   };
   assert.equal(metadata.risk_assessment?.riskLevel, 'medium');
   assert.equal(metadata.risk_assessment?.requiresApproval, true);
-  assert.equal(metadata.approval_card?.riskLevel, 'medium');
-  assert.deepEqual(metadata.approval_card?.agents, [
-    'planner',
-    'frontend-executor',
-    'backend-executor',
-    'reviewer',
-    'acceptor',
-  ]);
-  assert.equal(metadata.session_approval?.status, 'pending');
-  assert.equal(metadata.session_approval?.originalContent, GIT_STATUS_BAR_TASK);
+  assert.equal(metadata.approval_card, undefined);
+  assert.equal(metadata.session_approval, undefined);
 });
 
 test('dispatchSessionUserMessage starts graph workflow for approved fullstack session task', async () => {
@@ -182,7 +234,7 @@ test('dispatchSessionUserMessage starts graph workflow for approved fullstack se
     stdout: 'session workflow verification passed',
     stderr: '',
   }));
-  setWorkflowOrchestratorGraphDeps({
+  setWorkflowGraphDepsForTests({
     planner: async () => {
       throw new Error('planner should not be called for approved session workflow handoff');
     },
@@ -217,9 +269,11 @@ test('dispatchSessionUserMessage starts graph workflow for approved fullstack se
     },
   });
 
-  const taskMessage = await dispatchSessionUserMessage({
+  const taskMessage = createPendingSessionApprovalMessage({
     sessionId: session.id,
     content: GIT_STATUS_BAR_TASK,
+    taskKind: 'fullstack_change',
+    riskLevel: 'medium',
   });
   await dispatchSessionUserMessage({
     sessionId: session.id,
@@ -317,7 +371,7 @@ test('dispatchSessionUserMessage preserves contextual fix content after risk app
     stdout: 'contextual approval workflow verification passed',
     stderr: '',
   }));
-  setWorkflowOrchestratorGraphDeps({
+  setWorkflowGraphDepsForTests({
     planner: async () => {
       throw new Error('planner should not be called for approved contextual workflow handoff');
     },
@@ -352,11 +406,13 @@ test('dispatchSessionUserMessage preserves contextual fix content after risk app
     },
   });
 
-  const taskMessage = await dispatchSessionUserMessage({
+  const taskMessage = createPendingSessionApprovalMessage({
     sessionId: session.id,
     content: '帮我修复这个问题',
+    contextContent: GIT_STATUS_BAR_TASK,
+    taskKind: 'bug_fix',
+    riskLevel: 'medium',
   });
-  await new Promise((resolve) => setTimeout(resolve, 30));
 
   const pendingMessage = sessionMessageRepo.get(taskMessage.id);
   const pendingMetadata = JSON.parse(pendingMessage?.metadata ?? '{}') as {
@@ -423,7 +479,7 @@ test('dispatchSessionUserMessage auto-starts graph workflow for low-risk fronten
     stdout: 'low-risk frontend workflow verification passed',
     stderr: '',
   }));
-  setWorkflowOrchestratorGraphDeps({
+  setWorkflowGraphDepsForTests({
     planner: async () => {
       throw new Error('planner should not be called for low-risk session workflow handoff');
     },
@@ -462,67 +518,16 @@ test('dispatchSessionUserMessage auto-starts graph workflow for low-risk fronten
     sessionId: session.id,
     content: LOW_RISK_FRONTEND_TASK,
   });
-  await waitFor(
-    () => workflowAgentCalls.some((call) => call.stage === 'acceptance'),
-    1000,
-    () => `calls=${JSON.stringify(workflowAgentCalls)}`,
-  );
 
   assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
-  assert.deepEqual(
-    workflowAgentCalls
-      .filter((call) => call.stage !== 'planning')
-      .map((call) => `${call.stage}:${call.agentId}`),
-    [
-      'implementation:frontend-executor',
-      'code_review:reviewer',
-      'code_review:reviewer',
-      'acceptance:acceptor',
-    ],
-  );
-
-  const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
-  assert.equal(workflowTasks.length, 1);
-  const workflowRuns = workflowRepo.listByTask(workflowTasks[0]!.id);
-  assert.equal(workflowRuns.length, 1);
-  assert.equal(workflowRuns[0]?.approved_by, null);
-
-  const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
-  const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
-    session_execution?: {
-      executionPath?: string;
-      trigger?: string;
-      workflowTaskId?: string;
-      workflowRunId?: string;
-    };
-  };
-  assert.equal(metadata.session_execution?.executionPath, 'workflow_graph');
-  assert.equal(metadata.session_execution?.trigger, 'low_risk_auto');
-  assert.equal(metadata.session_execution?.workflowTaskId, workflowTasks[0]?.id);
-  assert.equal(metadata.session_execution?.workflowRunId, workflowRuns[0]?.id);
-
-  const sessionMessages = sessionMessageRepo.listBySession(session.id);
-  assert.ok(sessionMessages.some((item) =>
-    item.sender_id === 'workflow' && /SessionOS 已创建开发任务/.test(item.content)
-  ));
-  assert.ok(sessionMessages.some((item) =>
-    item.sender_id === 'workflow' && /创建 1 个子任务/.test(item.content)
-  ));
-  const executionMessage = sessionMessages.find((item) =>
-    item.sender_id === 'frontend-executor' && /implementation completed/.test(item.content)
-  );
-  assert.ok(executionMessage);
-  const executionMetadata = JSON.parse(executionMessage.metadata ?? '{}') as {
-    session_workflow_bridge?: {
-      sourceRoomMessageId?: string;
-      workflowRunId?: string;
-      workflowStepId?: string;
-      taskId?: string;
-      rootTaskId?: string;
-    };
-  };
-  assert.equal(executionMetadata.session_workflow_bridge?.workflowRunId, workflowRuns[0]?.id);
-  assert.equal(executionMetadata.session_workflow_bridge?.rootTaskId, workflowTasks[0]?.id);
+  assert.equal(workflowAgentCalls.some((call) => call.stage === 'planning'), false);
+  const { run } = assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: taskMessage.id,
+  });
+  assert.equal(run.approved_by, null);
+  assert.deepEqual(workflowIntakeEnqueueCalls, [run.id]);
 });
 
 test('dispatchSessionUserMessage routes contextual fix follow-ups through workflow', async () => {
@@ -553,7 +558,7 @@ test('dispatchSessionUserMessage routes contextual fix follow-ups through workfl
     stdout: 'contextual fix workflow verification passed',
     stderr: '',
   }));
-  setWorkflowOrchestratorGraphDeps({
+  setWorkflowGraphDepsForTests({
     planner: async () => {
       throw new Error('planner should not be called for contextual fix workflow handoff');
     },
@@ -597,49 +602,27 @@ test('dispatchSessionUserMessage routes contextual fix follow-ups through workfl
     sessionId: session.id,
     content: '帮我修复这个问题',
   });
-  await waitFor(
-    () => workflowAgentCalls.some((call) => call.stage === 'acceptance'),
-    1000,
-    () => `calls=${JSON.stringify(workflowAgentCalls)}`,
-  );
 
   assert.equal(plannerPrompts.length, 1);
-  assert.deepEqual(
-    workflowAgentCalls
-      .filter((call) => call.stage !== 'planning')
-      .map((call) => `${call.stage}:${call.agentId}`),
-    [
-      'implementation:frontend-executor',
-      'code_review:reviewer',
-      'code_review:reviewer',
-      'acceptance:acceptor',
-    ],
-  );
+  assert.equal(workflowAgentCalls.some((call) => call.stage === 'planning'), false);
 
   const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
   assert.equal(workflowTasks.length, 1);
   assert.equal(workflowTasks[0]?.title, '帮我修复这个问题');
   assert.match(workflowTasks[0]?.description ?? '', /会话页面右侧栏/);
 
-  const workflowRuns = workflowRepo.listByTask(workflowTasks[0]!.id);
-  assert.equal(workflowRuns.length, 1);
+  assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: taskMessage.id,
+  });
 
   const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
   const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
     risk_assessment?: { taskKind?: string; riskLevel?: string };
-    session_execution?: {
-      executionPath?: string;
-      trigger?: string;
-      workflowTaskId?: string;
-      workflowRunId?: string;
-    };
   };
   assert.equal(metadata.risk_assessment?.taskKind, 'frontend_change');
   assert.equal(metadata.risk_assessment?.riskLevel, 'low');
-  assert.equal(metadata.session_execution?.executionPath, 'workflow_graph');
-  assert.equal(metadata.session_execution?.trigger, 'low_risk_auto');
-  assert.equal(metadata.session_execution?.workflowTaskId, workflowTasks[0]?.id);
-  assert.equal(metadata.session_execution?.workflowRunId, workflowRuns[0]?.id);
 });
 
 test('dispatchSessionUserMessage routes bare contextual fix command through workflow', async () => {
@@ -670,7 +653,7 @@ test('dispatchSessionUserMessage routes bare contextual fix command through work
     stdout: 'bare contextual fix workflow verification passed',
     stderr: '',
   }));
-  setWorkflowOrchestratorGraphDeps({
+  setWorkflowGraphDepsForTests({
     planner: async () => {
       throw new Error('planner should not be called for bare contextual fix workflow handoff');
     },
@@ -714,49 +697,27 @@ test('dispatchSessionUserMessage routes bare contextual fix command through work
     sessionId: session.id,
     content: '修复',
   });
-  await waitFor(
-    () => workflowAgentCalls.some((call) => call.stage === 'acceptance'),
-    1000,
-    () => `calls=${JSON.stringify(workflowAgentCalls)}`,
-  );
 
   assert.equal(plannerPrompts.length, 1);
-  assert.deepEqual(
-    workflowAgentCalls
-      .filter((call) => call.stage !== 'planning')
-      .map((call) => `${call.stage}:${call.agentId}`),
-    [
-      'implementation:frontend-executor',
-      'code_review:reviewer',
-      'code_review:reviewer',
-      'acceptance:acceptor',
-    ],
-  );
+  assert.deepEqual(workflowAgentCalls, []);
 
   const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
   assert.equal(workflowTasks.length, 1);
   assert.equal(workflowTasks[0]?.title, '修复');
   assert.match(workflowTasks[0]?.description ?? '', /右侧栏的会话变更/);
 
-  const workflowRuns = workflowRepo.listByTask(workflowTasks[0]!.id);
-  assert.equal(workflowRuns.length, 1);
+  assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: taskMessage.id,
+  });
 
   const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
   const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
     risk_assessment?: { taskKind?: string; riskLevel?: string };
-    session_execution?: {
-      executionPath?: string;
-      trigger?: string;
-      workflowTaskId?: string;
-      workflowRunId?: string;
-    };
   };
   assert.equal(metadata.risk_assessment?.taskKind, 'frontend_change');
   assert.equal(metadata.risk_assessment?.riskLevel, 'low');
-  assert.equal(metadata.session_execution?.executionPath, 'workflow_graph');
-  assert.equal(metadata.session_execution?.trigger, 'low_risk_auto');
-  assert.equal(metadata.session_execution?.workflowTaskId, workflowTasks[0]?.id);
-  assert.equal(metadata.session_execution?.workflowRunId, workflowRuns[0]?.id);
 });
 
 test('dispatchSessionUserMessage keeps bare fix without context on planner path', async () => {
@@ -799,6 +760,54 @@ test('dispatchSessionUserMessage keeps bare fix without context on planner path'
   assert.equal(metadata.session_execution, undefined);
 });
 
+test('dispatchSessionUserMessage treats continue-fix as new workflow even with stale pending approval', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Session Stale Pending Continue Fix',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-stale-pending-continue-fix-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Session Stale Pending Continue Fix',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async () => ({ exitCode: 0, sessionId: 'codex-stale-pending-continue-fix', stderr: '' }),
+  });
+  const staleApproval = createPendingSessionApprovalMessage({
+    sessionId: session.id,
+    content: GIT_STATUS_BAR_TASK,
+    taskKind: 'fullstack_change',
+    riskLevel: 'medium',
+  });
+  sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: 'user',
+    content: '分析一下右侧栏的会话变更为什么所有会话的变更数量都是一样的',
+    message_type: 'text',
+  });
+
+  const followUp = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '继续修复',
+  });
+
+  const staleMetadata = JSON.parse(sessionMessageRepo.get(staleApproval.id)?.metadata ?? '{}') as {
+    session_approval?: { status?: string; workflowTaskId?: string };
+  };
+  assert.equal(staleMetadata.session_approval?.status, 'pending');
+  assert.equal(staleMetadata.session_approval?.workflowTaskId, undefined);
+  assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: followUp.id,
+  });
+});
+
 test('dispatchSessionUserMessage keeps analysis-only implementation questions on planner path', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Session Analysis Only Implementation Question',
@@ -839,7 +848,7 @@ test('dispatchSessionUserMessage keeps analysis-only implementation questions on
   assert.equal(metadata.session_execution, undefined);
 });
 
-test('dispatchSessionUserMessage gates analysis-framed follow-up implementation actions', async () => {
+test('dispatchSessionUserMessage routes analysis-framed follow-up implementation actions through intake', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Session Analysis Framed Action',
     path: mkdtempSync(join(tmpdir(), 'session-dispatch-analysis-framed-action-')),
@@ -872,27 +881,26 @@ test('dispatchSessionUserMessage gates analysis-framed follow-up implementation 
 
   const messages = sessionMessageRepo.listBySession(session.id);
   const gateMessage = messages.find((item) => item.sender_id === 'risk-gate');
-  assert.ok(gateMessage);
-  assert.match(gateMessage.content, /风险确认/);
+  assert.equal(gateMessage, undefined);
+
+  assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
 
   const metadata = JSON.parse(sessionMessageRepo.get(message.id)?.metadata ?? '{}') as {
     risk_assessment?: { riskLevel?: string; requiresApproval?: boolean };
-    approval_card?: { taskKind?: string; agents?: string[] };
-    session_approval?: { status?: string; originalContent?: string };
+    approval_card?: unknown;
+    session_approval?: unknown;
   };
   assert.equal(metadata.risk_assessment?.riskLevel, 'medium');
   assert.equal(metadata.risk_assessment?.requiresApproval, true);
-  assert.ok(['bug_fix', 'fullstack_change'].includes(metadata.approval_card?.taskKind ?? ''));
-  const agents = metadata.approval_card?.agents ?? [];
-  assert.ok(agents.includes('planner'));
-  assert.ok(agents.includes('backend-executor') || agents.includes('frontend-executor'));
-  assert.ok(agents.includes('reviewer'));
-  assert.ok(agents.includes('acceptor'));
-  assert.equal(metadata.session_approval?.status, 'pending');
-  assert.equal(metadata.session_approval?.originalContent, content);
+  assert.equal(metadata.approval_card, undefined);
+  assert.equal(metadata.session_approval, undefined);
 });
 
-test('dispatchSessionUserMessage records low-risk workflow run before background graph planning completes', async () => {
+test('dispatchSessionUserMessage records low-risk Superpowers intake workflow immediately', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Session Low Risk Background Run',
     path: mkdtempSync(join(tmpdir(), 'session-dispatch-low-risk-background-')),
@@ -915,7 +923,7 @@ test('dispatchSessionUserMessage records low-risk workflow run before background
     stdout: 'background workflow verification passed',
     stderr: '',
   }));
-  setWorkflowOrchestratorGraphDeps({
+  setWorkflowGraphDepsForTests({
     supervisor: async () => new Promise(() => {}),
     planner: async () => {
       return {
@@ -973,27 +981,16 @@ test('dispatchSessionUserMessage records low-risk workflow run before background
     sessionId: session.id,
     content: LOW_RISK_FRONTEND_TASK,
   });
-  await waitFor(() => {
-    const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
-    if (workflowTasks.length !== 1) return false;
-    const workflowRuns = workflowRepo.listByTask(workflowTasks[0]!.id);
-    if (workflowRuns.length !== 1) return false;
-    const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
-    const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
-      session_execution?: { workflowRunId?: string };
-    };
-    return metadata.session_execution?.workflowRunId === workflowRuns[0]?.id;
-  });
 
   assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
 
   const messages = sessionMessageRepo.listBySession(session.id);
   const workflowMessage = messages.find((item) =>
-    item.sender_id === 'workflow' && /已进入自动工作流/.test(item.content)
+    item.sender_id === 'workflow' && /已进入 Superpowers 工作流/.test(item.content)
   );
   assert.ok(workflowMessage);
   assert.equal(workflowMessage.message_type, 'system');
-  assert.match(workflowMessage.content, /已进入自动工作流/);
+  assert.match(workflowMessage.content, /已进入 Superpowers 工作流/);
   assert.match(workflowMessage.content, /当前阶段：planning/);
 
   const workflowMessageMetadata = JSON.parse(workflowMessage.metadata ?? '{}') as {
@@ -1005,18 +1002,25 @@ test('dispatchSessionUserMessage records low-risk workflow run before background
       workflowRunId?: string;
       workflowStatus?: string;
       workflowStage?: string | null;
+      graphVersion?: string;
+      activeSuperpowersStage?: string;
       sourceMessageId?: string;
     };
   };
-  const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
-  const workflowRuns = workflowTasks.flatMap((task) => workflowRepo.listByTask(task.id));
+  const { task, run } = assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: taskMessage.id,
+  });
   assert.equal(workflowMessageMetadata.session_workflow?.executionPath, 'workflow_graph');
-  assert.equal(workflowMessageMetadata.session_workflow?.trigger, 'low_risk_auto');
-  assert.equal(workflowMessageMetadata.session_workflow?.workflowRoomId, workflowTasks[0]?.room_id);
-  assert.equal(workflowMessageMetadata.session_workflow?.workflowTaskId, workflowTasks[0]?.id);
-  assert.equal(workflowMessageMetadata.session_workflow?.workflowRunId, workflowRuns[0]?.id);
-  assert.equal(workflowMessageMetadata.session_workflow?.workflowStatus, workflowRuns[0]?.status);
-  assert.equal(workflowMessageMetadata.session_workflow?.workflowStage, workflowRuns[0]?.current_stage);
+  assert.equal(workflowMessageMetadata.session_workflow?.trigger, 'workflow_intake');
+  assert.equal(workflowMessageMetadata.session_workflow?.workflowRoomId, task.room_id);
+  assert.equal(workflowMessageMetadata.session_workflow?.workflowTaskId, task.id);
+  assert.equal(workflowMessageMetadata.session_workflow?.workflowRunId, run.id);
+  assert.equal(workflowMessageMetadata.session_workflow?.workflowStatus, run.status);
+  assert.equal(workflowMessageMetadata.session_workflow?.workflowStage, run.current_stage);
+  assert.equal(workflowMessageMetadata.session_workflow?.graphVersion, SUPERPOWERS_V2_GRAPH_VERSION);
+  assert.equal(workflowMessageMetadata.session_workflow?.activeSuperpowersStage, 'intake');
   assert.equal(workflowMessageMetadata.session_workflow?.sourceMessageId, taskMessage.id);
 });
 
@@ -1037,9 +1041,11 @@ test('dispatchSessionUserMessage does not auto-approve escalated graph workflow 
     invoke: async () => ({ exitCode: 0, sessionId: 'codex-risk-escalated', stderr: '' }),
   });
 
-  const taskMessage = await dispatchSessionUserMessage({
+  const taskMessage = createPendingSessionApprovalMessage({
     sessionId: session.id,
     content: GIT_STATUS_BAR_TASK,
+    taskKind: 'fullstack_change',
+    riskLevel: 'medium',
   });
 
   const originalStartInBackground = workflowOrchestrator.startInBackground;
@@ -1124,9 +1130,11 @@ test('dispatchSessionUserMessage keeps workflow room and task metadata when work
     invoke: async () => ({ exitCode: 0, sessionId: 'codex-risk-start-failure', stderr: '' }),
   });
 
-  const taskMessage = await dispatchSessionUserMessage({
+  const taskMessage = createPendingSessionApprovalMessage({
     sessionId: session.id,
     content: GIT_STATUS_BAR_TASK,
+    taskKind: 'fullstack_change',
+    riskLevel: 'medium',
   });
 
   const originalStartInBackground = workflowOrchestrator.startInBackground;
@@ -1191,9 +1199,11 @@ test('dispatchSessionUserMessage records workflow run id before auto-approval fi
     invoke: async () => ({ exitCode: 0, sessionId: 'codex-risk-run-id-before-approval', stderr: '' }),
   });
 
-  const taskMessage = await dispatchSessionUserMessage({
+  const taskMessage = createPendingSessionApprovalMessage({
     sessionId: session.id,
     content: GIT_STATUS_BAR_TASK,
+    taskKind: 'fullstack_change',
+    riskLevel: 'medium',
   });
 
   const originalStartInBackground = workflowOrchestrator.startInBackground;
@@ -1283,9 +1293,11 @@ test('dispatchSessionUserMessage records approved workflow run id without waitin
     invoke: async () => ({ exitCode: 0, sessionId: 'codex-risk-background', stderr: '' }),
   });
 
-  const taskMessage = await dispatchSessionUserMessage({
+  const taskMessage = createPendingSessionApprovalMessage({
     sessionId: session.id,
     content: GIT_STATUS_BAR_TASK,
+    taskKind: 'fullstack_change',
+    riskLevel: 'medium',
   });
 
   const originalStart = workflowOrchestrator.start;
@@ -1334,7 +1346,7 @@ test('dispatchSessionUserMessage records approved workflow run id without waitin
   }
 });
 
-test('dispatchSessionUserMessage gates high-risk referenced files for edit requests', async () => {
+test('dispatchSessionUserMessage routes high-risk referenced files through intake', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Session Referenced Risk',
     path: mkdtempSync(join(tmpdir(), 'session-dispatch-referenced-risk-')),
@@ -1365,16 +1377,21 @@ test('dispatchSessionUserMessage gates high-risk referenced files for edit reque
 
   assert.equal(prompts.length, 0);
   assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
 
   const updatedMessage = sessionMessageRepo.get(message.id);
   const metadata = JSON.parse(updatedMessage?.metadata ?? '{}') as {
     risk_assessment?: { riskLevel?: string; approvalReason?: string; scopeWrite?: string[] };
-    approval_card?: { riskLevel?: string; scopeWrite?: string[] };
+    approval_card?: unknown;
   };
   assert.equal(metadata.risk_assessment?.riskLevel, 'high');
   assert.equal(metadata.risk_assessment?.approvalReason, 'dependency/root config changes require approval');
   assert.deepEqual(metadata.risk_assessment?.scopeWrite, ['package.json']);
-  assert.deepEqual(metadata.approval_card?.scopeWrite, ['package.json']);
+  assert.equal(metadata.approval_card, undefined);
 });
 
 test('dispatchSessionUserMessage treats edit wording as referenced file write intent', async () => {
@@ -1408,6 +1425,11 @@ test('dispatchSessionUserMessage treats edit wording as referenced file write in
 
   assert.equal(prompts.length, 0);
   assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
 
   const updatedMessage = sessionMessageRepo.get(message.id);
   const metadata = JSON.parse(updatedMessage?.metadata ?? '{}') as {
@@ -1438,9 +1460,11 @@ test('dispatchSessionUserMessage cancels pending session approval without starti
     },
   });
 
-  const taskMessage = await dispatchSessionUserMessage({
+  const taskMessage = createPendingSessionApprovalMessage({
     sessionId: session.id,
     content: GIT_STATUS_BAR_TASK,
+    taskKind: 'fullstack_change',
+    riskLevel: 'medium',
   });
   await dispatchSessionUserMessage({
     sessionId: session.id,
@@ -2049,6 +2073,82 @@ function createPlatformSkill(provider: 'codex' | 'claudecode' | 'opencode', name
 const GIT_STATUS_BAR_TASK = '请实现一个开发任务：在会话页面底部状态栏显示当前项目的 Git 分支、未提交改动数量和最后一次提交摘要。后端需要提供读取 Git 状态的接口，前端需要展示并在状态变化后刷新。';
 const LOW_RISK_FRONTEND_TASK = '去掉底部状态栏的项目路径';
 
+function createPendingSessionApprovalMessage(input: {
+  sessionId: string;
+  content: string;
+  contextContent?: string;
+  taskKind?: 'fullstack_change' | 'frontend_change' | 'backend_change' | 'bug_fix' | 'test_only' | 'ops_or_config';
+  riskLevel?: 'medium' | 'high';
+  scopeRead?: string[];
+  scopeWrite?: string[];
+}) {
+  const taskKind = input.taskKind ?? 'fullstack_change';
+  const riskLevel = input.riskLevel ?? 'medium';
+  const scopeRead = input.scopeRead ?? [];
+  const scopeWrite = input.scopeWrite ?? [];
+  const approvalReason = riskLevel === 'high'
+    ? 'dependency/root config changes require approval'
+    : 'development task requires approval';
+  const riskAssessment = {
+    taskKind,
+    riskLevel,
+    requiresApproval: true,
+    approvalReason,
+    confidence: 0.9,
+    reasons: [approvalReason],
+    scopeRead,
+    scopeWrite,
+    verificationCommands: [],
+  };
+  const approvalCard = {
+    riskLevel,
+    taskKind,
+    summary: input.content,
+    approvalReason,
+    agents: pendingApprovalAgentsForTaskKind(taskKind),
+    executionMode: taskKind === 'fullstack_change' ? 'hybrid' : 'serial',
+    scopeRead,
+    scopeWrite,
+    verification: [{ command: 'npm run build', reason: '验证开发任务构建通过', required: true }],
+    risks: ['历史风险门禁兼容路径。'],
+    assumptions: ['该 pending approval 来自旧版本会话。'],
+  };
+  const message = sessionMessageRepo.create({
+    session_id: input.sessionId,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: 'user',
+    content: input.content,
+    message_type: 'text',
+    metadata: {},
+  });
+  return sessionMessageRepo.updateMetadata(message.id, {
+    risk_assessment: riskAssessment,
+    approval_card: approvalCard,
+    session_approval: {
+      status: 'pending',
+      sourceMessageId: message.id,
+      originalContent: input.content,
+      ...(input.contextContent ? { contextContent: input.contextContent } : {}),
+      riskAssessment,
+      approvalCard,
+      workspaceFileRefs: scopeRead,
+      libraryFileRefs: [],
+      platformSkillRefs: [],
+      createdAt: Date.now(),
+    },
+  }) ?? message;
+}
+
+function pendingApprovalAgentsForTaskKind(
+  taskKind: 'fullstack_change' | 'frontend_change' | 'backend_change' | 'bug_fix' | 'test_only' | 'ops_or_config',
+): string[] {
+  if (taskKind === 'fullstack_change') return ['planner', 'frontend-executor', 'backend-executor', 'reviewer', 'acceptor'];
+  if (taskKind === 'frontend_change') return ['planner', 'frontend-executor', 'reviewer', 'acceptor'];
+  if (taskKind === 'backend_change' || taskKind === 'bug_fix') return ['planner', 'backend-executor', 'reviewer', 'acceptor'];
+  return ['planner', 'reviewer', 'acceptor'];
+}
+
 async function waitFor(predicate: () => boolean, timeoutMs = 1000, describe?: () => string): Promise<void> {
   const start = Date.now();
   while (!predicate()) {
@@ -2057,6 +2157,79 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000, describe?: ()
     }
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+}
+
+function assertSuperpowersIntakeForMessage(input: {
+  projectId: string;
+  sessionId: string;
+  messageId: string;
+}) {
+  const workflowTasks = taskRepo.listByProject(input.projectId).filter((task) => task.source_message_id === input.messageId);
+  assert.equal(workflowTasks.length, 1);
+  const workflowRuns = workflowRepo.listByTask(workflowTasks[0]!.id);
+  assert.equal(workflowRuns.length, 1);
+  assert.equal(workflowRuns[0]?.graph_version, SUPERPOWERS_V2_GRAPH_VERSION);
+  assert.ok(workflowRuns[0]?.workflow_definition_id);
+  assert.equal(workflowRuns[0]?.workflow_definition_version, 1);
+  const snapshot = JSON.parse(workflowRuns[0]?.workflow_definition_snapshot ?? '{}') as {
+    builtinKey?: string;
+    definition?: { metadata?: { runtime_profile?: string; gate_policy?: string } };
+  };
+  assert.equal(snapshot.builtinKey, 'superpowers-development');
+  assert.equal(snapshot.definition?.metadata?.runtime_profile, 'superpowers');
+  assert.equal(workflowRuns[0]?.current_stage, 'planning');
+  assert.equal(parseGraphState(workflowRuns[0]?.graph_state ?? null)?.activeSuperpowersStage, 'intake');
+  assert.equal(
+    taskEventRepo.listByTask(workflowTasks[0]!.id).filter((event) => event.type === 'workflow_started').length,
+    1,
+  );
+
+  const updatedTaskMessage = sessionMessageRepo.get(input.messageId);
+  const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
+    session_execution?: {
+      executionPath?: string;
+      trigger?: string;
+      workflowTaskId?: string;
+      workflowRunId?: string;
+      graphVersion?: string;
+      activeSuperpowersStage?: string;
+    };
+  };
+  assert.equal(metadata.session_execution?.executionPath, 'workflow_graph');
+  assert.equal(metadata.session_execution?.trigger, 'workflow_intake');
+  assert.equal(metadata.session_execution?.workflowTaskId, workflowTasks[0]?.id);
+  assert.equal(metadata.session_execution?.workflowRunId, workflowRuns[0]?.id);
+  assert.equal(metadata.session_execution?.graphVersion, SUPERPOWERS_V2_GRAPH_VERSION);
+  assert.equal(metadata.session_execution?.activeSuperpowersStage, 'intake');
+  assert.doesNotMatch(JSON.stringify(metadata), /low_risk_auto/);
+
+  const messages = sessionMessageRepo.listBySession(input.sessionId);
+  const workflowMessage = messages.find((item) =>
+    item.sender_id === 'workflow' && /已进入 Superpowers 工作流/.test(item.content)
+  );
+  assert.ok(workflowMessage);
+  const workflowMessageMetadata = JSON.parse(workflowMessage.metadata ?? '{}') as {
+    session_workflow?: {
+      trigger?: string;
+      graphVersion?: string;
+      activeSuperpowersStage?: string;
+      workflowRunId?: string;
+      sourceMessageId?: string;
+    };
+  };
+  assert.equal(workflowMessageMetadata.session_workflow?.trigger, 'workflow_intake');
+  assert.equal(workflowMessageMetadata.session_workflow?.graphVersion, SUPERPOWERS_V2_GRAPH_VERSION);
+  assert.equal(workflowMessageMetadata.session_workflow?.activeSuperpowersStage, 'intake');
+  assert.equal(workflowMessageMetadata.session_workflow?.workflowRunId, workflowRuns[0]?.id);
+  assert.equal(workflowMessageMetadata.session_workflow?.sourceMessageId, input.messageId);
+
+  const evidence = sessionEvidenceRepo.listBySession(input.sessionId).filter((item) => item.source_message_id === input.messageId);
+  assert.ok(evidence.some((item) => {
+    const payload = item.payload as { trigger?: string; graph_version?: string };
+    return payload.trigger === 'workflow_intake' && payload.graph_version === SUPERPOWERS_V2_GRAPH_VERSION;
+  }));
+
+  return { task: workflowTasks[0]!, run: workflowRuns[0]! };
 }
 
 function outputForWorkflowStage(stage: string | null | undefined): string {

@@ -19,7 +19,9 @@ import { buildSessionPlannerRuntimeSnapshot, resolveSessionPlannerRuntime } from
 import { runSessionAgent } from './session-runtime.js';
 import { recordTaskCreatedEvent } from './task-conversation.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
-import { assessTaskRisk, buildApprovalCard, type ApprovalCard, type TaskRiskAssessment } from './workflows/task-risk.js';
+import { createSessionWorkflowIntake } from './workflows/session-workflow-intake.js';
+import { SUPERPOWERS_V2_GRAPH_VERSION } from './workflows/superpowers-stage-registry.js';
+import { assessTaskRisk, type ApprovalCard, type TaskRiskAssessment } from './workflows/task-risk.js';
 import { wsHub } from './ws-hub.js';
 import { getPlatformSkill } from './platform-skills/service.js';
 import { isIgnoredWorkspacePath, normalizeWorkspacePath, resolveWorkspacePath } from './workspace-files.js';
@@ -76,11 +78,13 @@ interface SessionApprovalMetadata {
 
 interface SessionExecutionMetadata {
   executionPath: 'workflow_graph';
-  trigger: 'low_risk_auto';
+  trigger: 'workflow_intake';
   riskAssessment: TaskRiskAssessment;
   workflowRoomId?: string;
   workflowTaskId?: string;
   workflowRunId?: string;
+  graphVersion?: string;
+  activeSuperpowersStage?: string;
 }
 
 interface SessionWorkflowRequest {
@@ -182,28 +186,16 @@ export async function dispatchSessionUserMessage(input: {
     workspaceFileRefs,
     platformSkillRefs,
   });
-  if (riskGate.requiresApproval && riskGate.approvalCard) {
-    recordSessionApprovalRequest({
-      session: runtimeSession,
-      sourceMessage: message,
-      assessment: riskGate.assessment,
-      approvalCard: riskGate.approvalCard,
-      contextContent: riskGate.contextContent,
-      workspaceFileRefs,
-      libraryFileRefs,
-      platformSkillRefs,
-    });
-    return message;
-  }
-
-  if (riskGate.applies && shouldStartAutomaticWorkflow(riskGate.assessment)) {
-    startAutomaticSessionWorkflow({
+  if (riskGate.applies) {
+    startSessionWorkflowIntake({
       project,
       session: runtimeSession,
       sourceMessage: message,
       assessment: riskGate.assessment,
       contextContent: riskGate.contextContent,
       workspaceFileRefs,
+      libraryFileRefs,
+      platformSkillRefs,
     });
     return message;
   }
@@ -265,104 +257,106 @@ async function startSessionPlannerRun(input: {
   });
 }
 
-function startAutomaticSessionWorkflow(input: {
+function startSessionWorkflowIntake(input: {
   project: Project;
   session: Session;
   sourceMessage: SessionMessage;
   assessment: TaskRiskAssessment;
   contextContent: string | null;
   workspaceFileRefs: string[];
+  libraryFileRefs: string[];
+  platformSkillRefs: ResolvedPlatformSkillRef[];
 }): void {
-  void runAutomaticSessionWorkflow(input).catch((error) => {
-    const event = sessionEvidenceRepo.create({
-      session_id: input.session.id,
-      event_type: 'blocker',
-      severity: 'error',
-      source_message_id: input.sourceMessage.id,
-      title: 'Automatic session workflow failed',
-      summary: (error as Error).message,
-      payload: {
-        execution_path: 'workflow_graph',
-        trigger: 'low_risk_auto',
-        risk_assessment: input.assessment,
-        source_message_id: input.sourceMessage.id,
-      },
-    });
-    wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
-    broadcastActiveSessionUpsert(input.session.id);
+  const room = roomRepo.create({
+    project_id: input.project.id,
+    name: buildSessionWorkflowRoomName(input.session),
+    description: `SessionOS workflow intake for session ${input.session.id}`,
   });
-}
-
-async function runAutomaticSessionWorkflow(input: {
-  project: Project;
-  session: Session;
-  sourceMessage: SessionMessage;
-  assessment: TaskRiskAssessment;
-  contextContent: string | null;
-  workspaceFileRefs: string[];
-}): Promise<void> {
-  const request = buildAutomaticSessionWorkflowRequest(input);
-  const { room, task } = createSessionWorkflowBridgeTask({
+  const { task, workflow } = createSessionWorkflowIntake({
     project: input.project,
     session: input.session,
-    sourceMessageId: input.sourceMessage.id,
-    request,
-    trigger: 'low_risk_auto',
+    sourceMessage: input.sourceMessage,
+    room,
+    contextContent: input.contextContent,
+    workspaceFileRefs: input.workspaceFileRefs,
+    libraryFileRefs: input.libraryFileRefs,
+    platformSkillRefs: input.platformSkillRefs,
   });
   mergeSessionExecutionMetadata({
     sessionId: input.session.id,
     sourceMessageId: input.sourceMessage.id,
     patch: {
       executionPath: 'workflow_graph',
-      trigger: 'low_risk_auto',
+      trigger: 'workflow_intake',
       riskAssessment: input.assessment,
       workflowRoomId: room.id,
       workflowTaskId: task.id,
-    },
-  });
-
-  const run = await workflowOrchestrator.startInBackground(task.id);
-  mergeSessionExecutionMetadata({
-    sessionId: input.session.id,
-    sourceMessageId: input.sourceMessage.id,
-    patch: {
-      executionPath: 'workflow_graph',
-      trigger: 'low_risk_auto',
-      riskAssessment: input.assessment,
-      workflowRoomId: room.id,
-      workflowTaskId: task.id,
-      workflowRunId: run.id,
+      workflowRunId: workflow.id,
+      graphVersion: workflow.graph_version ?? SUPERPOWERS_V2_GRAPH_VERSION,
+      activeSuperpowersStage: 'intake',
     },
   });
   const event = sessionEvidenceRepo.create({
     session_id: input.session.id,
     event_type: 'status',
     source_message_id: input.sourceMessage.id,
-    title: 'Automatic workflow started',
-    summary: `低风险实现任务已自动启动 workflow：${task.title}`,
+    title: 'Workflow intake started',
+    summary: `已进入 Superpowers workflow intake：${task.title}`,
     payload: {
       execution_path: 'workflow_graph',
-      trigger: 'low_risk_auto',
+      trigger: 'workflow_intake',
       room_id: room.id,
       task_id: task.id,
-      workflow_run_id: run.id,
-      workflow_status: run.status,
-      workflow_stage: run.current_stage,
+      workflow_run_id: workflow.id,
+      workflow_status: workflow.status,
+      workflow_stage: workflow.current_stage,
+      graph_version: workflow.graph_version ?? SUPERPOWERS_V2_GRAPH_VERSION,
+      active_superpowers_stage: 'intake',
     },
   });
-  recordAutomaticWorkflowStartedMessage({
+  recordWorkflowIntakeStartedMessage({
     session: input.session,
     sourceMessage: input.sourceMessage,
     assessment: input.assessment,
     room,
     task,
-    run,
+    run: workflow,
+  });
+  enqueueSessionWorkflowIntake({
+    session: input.session,
+    sourceMessage: input.sourceMessage,
+    workflow,
   });
   wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
   broadcastActiveSessionUpsert(input.session.id);
 }
 
-function recordAutomaticWorkflowStartedMessage(input: {
+function enqueueSessionWorkflowIntake(input: {
+  session: Session;
+  sourceMessage: SessionMessage;
+  workflow: WorkflowRun;
+}): void {
+  try {
+    workflowOrchestrator.enqueueExistingGraphRun(input.workflow.id);
+  } catch (error) {
+    const event = sessionEvidenceRepo.create({
+      session_id: input.session.id,
+      event_type: 'blocker',
+      severity: 'error',
+      source_message_id: input.sourceMessage.id,
+      title: 'Workflow intake enqueue failed',
+      summary: (error as Error).message,
+      payload: {
+        execution_path: 'workflow_graph',
+        trigger: 'workflow_intake',
+        workflow_run_id: input.workflow.id,
+      },
+    });
+    wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
+  }
+}
+
+function recordWorkflowIntakeStartedMessage(input: {
   session: Session;
   sourceMessage: SessionMessage;
   assessment: TaskRiskAssessment;
@@ -372,13 +366,15 @@ function recordAutomaticWorkflowStartedMessage(input: {
 }): void {
   const sessionWorkflow = {
     executionPath: 'workflow_graph',
-    trigger: 'low_risk_auto',
+    trigger: 'workflow_intake',
     riskAssessment: input.assessment,
     workflowRoomId: input.room.id,
     workflowTaskId: input.task.id,
     workflowRunId: input.run.id,
     workflowStatus: input.run.status,
     workflowStage: input.run.current_stage,
+    graphVersion: input.run.graph_version ?? SUPERPOWERS_V2_GRAPH_VERSION,
+    activeSuperpowersStage: 'intake',
     sourceMessageId: input.sourceMessage.id,
     createdAt: Date.now(),
   };
@@ -386,9 +382,9 @@ function recordAutomaticWorkflowStartedMessage(input: {
     session_id: input.session.id,
     role: 'system',
     sender_id: 'workflow',
-    sender_name: '自动工作流',
+    sender_name: '工作流',
     content: [
-      `已进入自动工作流：${input.task.title}`,
+      `已进入 Superpowers 工作流：${input.task.title}`,
       `当前阶段：${input.run.current_stage ?? '启动中'}`,
       '执行方式：workflow_graph',
     ].join('\n'),
@@ -404,39 +400,6 @@ function recordAutomaticWorkflowStartedMessage(input: {
     sessionId: input.session.id,
     message,
   });
-}
-
-function buildAutomaticSessionWorkflowRequest(input: {
-  sourceMessage: SessionMessage;
-  assessment: TaskRiskAssessment;
-  contextContent: string | null;
-  workspaceFileRefs: string[];
-}): SessionWorkflowRequest {
-  return {
-    originalContent: input.sourceMessage.content,
-    ...(input.contextContent ? { contextContent: input.contextContent } : {}),
-    riskAssessment: input.assessment,
-    agents: approvalAgentsForAssessment(input.assessment),
-    executionMode: approvalExecutionModeForAssessment(input.assessment),
-    scopeRead: input.assessment.scopeRead,
-    scopeWrite: input.assessment.scopeWrite,
-    verification: input.assessment.verificationCommands,
-    risks: input.assessment.reasons,
-    assumptions: ['低风险实现任务无需用户确认，由系统自动分派专项智能体执行。'],
-    workspaceFileRefs: input.workspaceFileRefs,
-  };
-}
-
-function shouldStartAutomaticWorkflow(assessment: TaskRiskAssessment): boolean {
-  if (assessment.requiresApproval || assessment.riskLevel !== 'low') return false;
-  return [
-    'fullstack_change',
-    'frontend_change',
-    'backend_change',
-    'bug_fix',
-    'test_only',
-    'ops_or_config',
-  ].includes(assessment.taskKind);
 }
 
 export function assertSessionCanReceiveImageGenerationJob(
@@ -513,8 +476,6 @@ function assessSessionMessageRisk(input: {
   platformSkillRefs: ResolvedPlatformSkillRef[];
 }): {
   assessment: TaskRiskAssessment;
-  requiresApproval: boolean;
-  approvalCard: ApprovalCard | null;
   contextContent: string | null;
   applies: boolean;
 } {
@@ -535,8 +496,6 @@ function assessSessionMessageRisk(input: {
     if (!contextContent) {
       return {
         assessment,
-        requiresApproval: false,
-        approvalCard: null,
         contextContent,
         applies: false,
       };
@@ -553,95 +512,7 @@ function assessSessionMessageRisk(input: {
       verificationCommands: [],
     });
   }
-  const lowConfidenceOnly = assessment.approvalReason === 'low-confidence task profile requires approval';
-  const requiresApproval = applies &&
-    assessment.requiresApproval &&
-    assessment.riskLevel !== 'low' &&
-    !lowConfidenceOnly;
-  const approvalCard = requiresApproval
-    ? buildApprovalCard({
-        assessment,
-        agents: approvalAgentsForAssessment(assessment),
-        executionMode: approvalExecutionModeForAssessment(assessment),
-        risks: ['中高风险开发任务在用户确认前不会启动 planner 或执行代码改动。'],
-        assumptions: ['确认后将使用原始任务内容和原始引用上下文继续执行。'],
-      })
-    : null;
-  return { assessment, requiresApproval, approvalCard, contextContent, applies };
-}
-
-function recordSessionApprovalRequest(input: {
-  session: Session;
-  sourceMessage: SessionMessage;
-  assessment: TaskRiskAssessment;
-  approvalCard: ApprovalCard;
-  contextContent: string | null;
-  workspaceFileRefs: string[];
-  libraryFileRefs: string[];
-  platformSkillRefs: ResolvedPlatformSkillRef[];
-}): void {
-  const existingMetadata = parseSessionMessageMetadata(input.sourceMessage.metadata);
-  const sessionApproval: SessionApprovalMetadata = {
-    status: 'pending',
-    sourceMessageId: input.sourceMessage.id,
-    originalContent: input.sourceMessage.content,
-    ...(input.contextContent ? { contextContent: input.contextContent } : {}),
-    riskAssessment: input.assessment,
-    approvalCard: input.approvalCard,
-    workspaceFileRefs: input.workspaceFileRefs,
-    libraryFileRefs: input.libraryFileRefs,
-    platformSkillRefs: input.platformSkillRefs,
-    createdAt: Date.now(),
-  };
-  const updatedSourceMessage = sessionMessageRepo.updateMetadata(input.sourceMessage.id, {
-    ...existingMetadata,
-    risk_assessment: input.assessment,
-    approval_card: input.approvalCard,
-    session_approval: sessionApproval,
-  }) ?? input.sourceMessage;
-  wsHub.broadcastSession(input.session.id, {
-    type: 'session_message:new',
-    sessionId: input.session.id,
-    message: updatedSourceMessage,
-  });
-
-  const gateMessage = sessionMessageRepo.create({
-    session_id: input.session.id,
-    role: 'system',
-    sender_id: 'risk-gate',
-    sender_name: '风险门禁',
-    content: buildSessionApprovalRequestContent(input.approvalCard),
-    message_type: 'system',
-    metadata: {
-      risk_assessment: input.assessment,
-      approval_card: input.approvalCard,
-      session_approval: sessionApproval,
-    },
-  });
-  const event = sessionEvidenceRepo.create({
-    session_id: input.session.id,
-    event_type: 'status',
-    source_message_id: input.sourceMessage.id,
-    title: '风险确认待处理',
-    summary: input.approvalCard.summary,
-    payload: {
-      risk_assessment: input.assessment,
-      approval_card: input.approvalCard,
-      session_approval: sessionApproval,
-      gate_message_id: gateMessage.id,
-    },
-  });
-  wsHub.broadcastSession(input.session.id, {
-    type: 'session_message:new',
-    sessionId: input.session.id,
-    message: gateMessage,
-  });
-  wsHub.broadcastSession(input.session.id, {
-    type: 'session_evidence:new',
-    sessionId: input.session.id,
-    event,
-  });
-  broadcastActiveSessionUpsert(input.session.id);
+  return { assessment, contextContent, applies };
 }
 
 async function handleSessionApprovalDecision(input: {
@@ -914,7 +785,7 @@ function createSessionWorkflowBridgeTask(input: {
   session: Session;
   sourceMessageId: string;
   request: SessionWorkflowRequest;
-  trigger: 'approved' | 'low_risk_auto';
+  trigger: 'approved';
   approvalDecisionMessageId?: string;
 }) {
   const room = roomRepo.create({
@@ -1283,7 +1154,7 @@ function parseSessionApprovalMetadata(message: SessionMessage): SessionApprovalM
 function getSessionApprovalDecision(content: string): 'approved' | 'rejected' | null {
   const normalized = normalizeSessionApprovalDecisionText(content);
   if (!normalized) return null;
-  if (/^(确认|同意|批准|继续|可以|执行|yes|y|approve|approved|ok|okay)$/i.test(normalized)) {
+  if (/^(确认|同意|批准|yes|y|approve|approved|ok|okay)$/i.test(normalized)) {
     return 'approved';
   }
   if (/^(取消|拒绝|不要执行|停止|终止|否|不|no|n|reject|rejected|cancel|cancelled)$/i.test(normalized)) {
@@ -1297,21 +1168,6 @@ function normalizeSessionApprovalDecisionText(content: string): string {
     .trim()
     .toLowerCase()
     .replace(/^[`"'“”‘’\s]+|[`"'“”‘’。，、；;：:！？!,?\s]+$/g, '');
-}
-
-function buildSessionApprovalRequestContent(approvalCard: ApprovalCard): string {
-  const scope = [
-    ...approvalCard.scopeRead.map((item) => `读：${item}`),
-    ...approvalCard.scopeWrite.map((item) => `写：${item}`),
-  ];
-  return [
-    `风险确认：该任务被判定为 ${approvalCard.riskLevel} 风险，需要确认后再启动执行流程。`,
-    `任务类型：${approvalCard.taskKind}`,
-    `原因：${approvalCard.approvalReason}`,
-    `执行方式：${approvalCard.executionMode}`,
-    scope.length > 0 ? `范围：${scope.join('；')}` : null,
-    '请回复“确认”继续执行，或回复“取消”放弃本次执行。',
-  ].filter(Boolean).join('\n');
 }
 
 function shouldApplySessionRiskGate(content: string, platformSkillRefs: ResolvedPlatformSkillRef[]): boolean {
@@ -1404,24 +1260,6 @@ function dedupeStringList(values: string[]): string[] {
     seen.add(value);
   }
   return result;
-}
-
-function approvalAgentsForAssessment(assessment: TaskRiskAssessment): string[] {
-  switch (assessment.taskKind) {
-    case 'fullstack_change':
-      return ['planner', 'frontend-executor', 'backend-executor', 'reviewer', 'acceptor'];
-    case 'frontend_change':
-      return ['planner', 'frontend-executor', 'reviewer', 'acceptor'];
-    case 'backend_change':
-    case 'bug_fix':
-      return ['planner', 'backend-executor', 'reviewer', 'acceptor'];
-    default:
-      return ['planner', 'reviewer'];
-  }
-}
-
-function approvalExecutionModeForAssessment(assessment: TaskRiskAssessment): 'serial' | 'parallel' | 'hybrid' {
-  return assessment.taskKind === 'fullstack_change' ? 'hybrid' : 'serial';
 }
 
 function isPathLikeScope(value: string): boolean {
