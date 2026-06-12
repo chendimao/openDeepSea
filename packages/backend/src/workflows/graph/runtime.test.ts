@@ -24,6 +24,7 @@ const { createGraphTools } = await import('./tools.js');
 const { approveGraphWorkflow, continueGraphWorkflow, createGraphWorkflowRun, enqueueGraphWorkflow, retryGraphWorkflow, startGraphWorkflow } = await import('./runtime.js');
 const { SUPERPOWERS_GRAPH_VERSION } = await import('./superpowers-runtime.js');
 const { setVerificationCommandRunnerForTests } = await import('./verification.js');
+const { parsePlanArtifact } = await import('../plan-parser.js');
 import type { RespondAsAgentInput } from '../../dispatcher.js';
 import type { ParsedPlan } from '../plan-parser.js';
 import type { RoomAgent, WorkflowDefinitionGraph, WorkflowRun, WorkflowStage } from '../../types.js';
@@ -190,7 +191,7 @@ test('enqueueGraphWorkflow blocks background errors after retry backoff is exhau
   assert.equal(workflowRepo.listSteps(run.id).some((step) => step.status === 'running'), false);
 });
 
-test('startGraphWorkflow runs context and planning nodes into awaiting approval', async () => {
+test('startGraphWorkflow runs context and planning nodes into spec artifact approval gate', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Runtime', path: projectPath });
@@ -230,12 +231,14 @@ test('startGraphWorkflow runs context and planning nodes into awaiting approval'
   });
 
   const detail = workflowRepo.detail(run.id);
-  assert.equal(detail?.run.status, 'awaiting_approval');
+  assert.equal(detail?.run.status, 'blocked');
+  assert.match(detail?.run.error ?? '', /approved spec artifact/i);
   assert.equal(detail?.run.graph_version, SUPERPOWERS_GRAPH_VERSION);
   assert.ok(detail?.run.graph_state);
-  assert.ok(detail?.artifacts.some((artifact) => artifact.artifact_type === 'plan'));
+  assert.ok(workflowArtifactVersionRepo.listByRun(run.id).some((artifact) => artifact.artifact_type === 'spec'));
   assert.ok(detail?.steps.some((step) => step.node_name === 'context'));
-  assert.ok(listRawStepNodeNames(run.id).includes('writing_plans'));
+  assert.ok(listRawStepNodeNames(run.id).includes('brainstorming'));
+  assert.equal(listRawStepNodeNames(run.id).includes('writing_plans'), false);
 });
 
 test('planning node omits legacy skill context for graph planner', async () => {
@@ -352,7 +355,7 @@ test('medium-risk workflow plan waits for approval with approval card and decisi
   });
   const agentRunStages: Array<WorkflowStage | null | undefined> = [];
 
-  const run = await startGraphWorkflow(task.id, {
+  const run = await startGraphWorkflowAfterArtifactApprovals(task.id, {
     supervisor: lowConfidenceSupervisor,
     planner: async () => ({
       goal: task.title,
@@ -526,6 +529,121 @@ test('Superpowers run records planning gate steps before dispatch', async () => 
     'tdd_execute',
   ]);
   assert.equal(nodeNames.includes('execute'), false);
+});
+
+test('Superpowers planning route requires approved spec and invokes planner phases once', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-single-planner-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers Single Planner', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Single Planner Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Run Superpowers planner phases once',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const planningCalls: string[] = [];
+
+  const latest = await continueGraphWorkflow(run.id, {
+    planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => {
+      if (input.workflowStage === 'planning') {
+        planningCalls.push(input.prompt);
+      }
+      return createCompletedAgentRun(room.id, input);
+    },
+  });
+
+  assert.equal(latest.status, 'blocked');
+  assert.match(latest.error ?? '', /approved spec artifact/i);
+  assert.equal(planningCalls.length, 1);
+  assert.match(planningCalls[0] ?? '', /当前 Superpowers 阶段：brainstorming/);
+  const state = parseGraphState(latest.graph_state);
+  assert.ok(state?.draftSpecArtifactVersionId);
+  assert.equal(state?.draftPlanArtifactVersionId, null);
+
+  const approvedSpec = workflowArtifactVersionRepo.approve(state.draftSpecArtifactVersionId, { approved_by: 'test' });
+  assert.ok(approvedSpec);
+  workflowRepo.updateRun(run.id, { status: 'running', error: null });
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...state,
+    approvedSpecArtifactVersionId: approvedSpec.id,
+    draftSpecArtifactVersionId: null,
+    status: 'running',
+    error: null,
+  }));
+
+  const resumed = await continueGraphWorkflow(run.id, {
+    planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => {
+      if (input.workflowStage === 'planning') {
+        planningCalls.push(input.prompt);
+      }
+      return createCompletedAgentRun(room.id, input);
+    },
+  });
+
+  assert.equal(resumed.status, 'blocked');
+  assert.match(resumed.error ?? '', /approved plan artifact/i);
+  assert.equal(planningCalls.length, 2);
+  assert.match(planningCalls[1] ?? '', /当前 Superpowers 阶段：writing_plans/);
+  assert.ok(parseGraphState(resumed.graph_state)?.draftPlanArtifactVersionId);
+});
+
+test('Superpowers writing plans canonicalizes fallback planner output back into the draft artifact', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-canonical-plan-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers Canonical Plan', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Canonical Plan Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Canonicalize fallback plan artifact',
+  });
+  const run = createGraphWorkflowRun(task.id);
+
+  const specBlockedRun = await continueGraphWorkflow(run.id, {
+    planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+  const specBlockedState = parseGraphState(specBlockedRun.graph_state);
+  assert.ok(specBlockedState?.draftSpecArtifactVersionId);
+  const approvedSpec = workflowArtifactVersionRepo.approve(specBlockedState.draftSpecArtifactVersionId, {
+    approved_by: 'test',
+  });
+  assert.ok(approvedSpec);
+  workflowRepo.updateRun(run.id, { status: 'running', error: null });
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...specBlockedState,
+    approvedSpecArtifactVersionId: approvedSpec.id,
+    draftSpecArtifactVersionId: null,
+    status: 'running',
+    error: null,
+  }));
+
+  const planBlockedRun = await continueGraphWorkflow(run.id, {
+    planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+  const planBlockedState = parseGraphState(planBlockedRun.graph_state);
+  assert.ok(planBlockedState?.plan);
+  assert.ok(planBlockedState.draftPlanArtifactVersionId);
+  const draftPlan = workflowArtifactVersionRepo.get(planBlockedState.draftPlanArtifactVersionId);
+  assert.equal(draftPlan?.status, 'draft');
+  const parsedArtifactPlan = parsePlanArtifact(draftPlan?.content ?? '');
+  assert.equal(parsedArtifactPlan.summary, planBlockedState.plan.summary);
+  assert.deepEqual(
+    parsedArtifactPlan.tasks.map((item) => item.title),
+    planBlockedState.plan.tasks.map((item) => item.title),
+  );
+  const structuredData = JSON.parse(draftPlan?.structured_data ?? '{}') as {
+    canonicalized?: boolean;
+    canonicalized_from?: string;
+    plan?: { summary?: string };
+  };
+  assert.equal(structuredData.canonicalized, true);
+  assert.equal(structuredData.canonicalized_from, 'planner');
+  assert.equal(structuredData.plan?.summary, planBlockedState.plan.summary);
 });
 
 test('Superpowers dispatch blocks when implementation plan is missing or unapproved', async () => {
@@ -2238,7 +2356,7 @@ test('startGraphWorkflow blocks workflow and fails running graph step when plann
   });
 
   await assert.rejects(
-    () => startGraphWorkflow(task.id, {
+    () => startGraphWorkflowAfterArtifactApprovals(task.id, {
       supervisor: lowConfidenceSupervisor,
       runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
       planner: async () => {
@@ -3370,19 +3488,42 @@ async function startGraphWorkflowAfterApproval(
   taskId: string,
   deps: Parameters<typeof startGraphWorkflow>[1] = {},
 ): Promise<WorkflowRun> {
-  const run = await startGraphWorkflow(taskId, deps);
-  if (run.status !== 'awaiting_approval') return continueAfterApprovedPlanArtifactIfNeeded(
-    ensureApprovedPlanArtifactForRun(run),
-    deps,
-  );
-  const withApprovedPlan = ensureApprovedPlanArtifactForRun(run);
-  return approveGraphWorkflow(withApprovedPlan.id, 'test', deps);
+  let run = await startGraphWorkflowAfterArtifactApprovals(taskId, deps);
+  if (run.status !== 'awaiting_approval') return run;
+  run = ensureApprovedPlanArtifactForRun(run);
+  return approveGraphWorkflow(run.id, 'test', deps);
+}
+
+async function startGraphWorkflowAfterArtifactApprovals(
+  taskId: string,
+  deps: Parameters<typeof startGraphWorkflow>[1] = {},
+): Promise<WorkflowRun> {
+  let run = await startGraphWorkflow(taskId, deps);
+  run = await continueAfterApprovedSpecArtifactIfNeeded(ensureApprovedSpecArtifactForRun(run), deps);
+  run = await continueAfterApprovedPlanArtifactIfNeeded(ensureApprovedPlanArtifactForRun(run), deps);
+  return run;
+}
+
+function ensureApprovedSpecArtifactForRun(run: WorkflowRun): WorkflowRun {
+  const state = parseGraphState(run.graph_state);
+  if (!state || state.approvedSpecArtifactVersionId) return run;
+  const approved = approveDraftArtifactVersion(state.draftSpecArtifactVersionId)
+    ?? createApprovedSpecArtifactVersion(run.id, state.userGoal);
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...state,
+    approvedSpecArtifactVersionId: approved.id,
+    draftSpecArtifactVersionId: state.draftSpecArtifactVersionId === approved.id
+      ? null
+      : state.draftSpecArtifactVersionId,
+  }));
+  return workflowRepo.getRun(run.id) ?? run;
 }
 
 function ensureApprovedPlanArtifactForRun(run: WorkflowRun): WorkflowRun {
   const state = parseGraphState(run.graph_state);
   if (!state || state.approvedPlanArtifactVersionId) return run;
-  const approved = createApprovedPlanArtifactVersion(run.id, state.userGoal);
+  const approved = approveDraftArtifactVersion(state.draftPlanArtifactVersionId)
+    ?? createApprovedPlanArtifactVersion(run.id, state.userGoal);
   workflowRepo.updateGraphState(run.id, serializeGraphState({
     ...state,
     approvedPlanArtifactVersionId: approved.id,
@@ -3391,6 +3532,24 @@ function ensureApprovedPlanArtifactForRun(run: WorkflowRun): WorkflowRun {
       : state.draftPlanArtifactVersionId,
   }));
   return workflowRepo.getRun(run.id) ?? run;
+}
+
+async function continueAfterApprovedSpecArtifactIfNeeded(
+  run: WorkflowRun,
+  deps: Parameters<typeof startGraphWorkflow>[1],
+): Promise<WorkflowRun> {
+  if (run.status !== 'blocked' || !/approved spec artifact/i.test(run.error ?? '')) return run;
+  const state = parseGraphState(run.graph_state);
+  if (!state?.approvedSpecArtifactVersionId) return run;
+  workflowRepo.updateRun(run.id, { status: 'running', error: null });
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...state,
+    currentNode: 'planning',
+    superpowersPhase: 'spec_review',
+    status: 'running',
+    error: null,
+  }));
+  return continueGraphWorkflow(run.id, deps);
 }
 
 async function continueAfterApprovedPlanArtifactIfNeeded(
@@ -3403,11 +3562,22 @@ async function continueAfterApprovedPlanArtifactIfNeeded(
   workflowRepo.updateRun(run.id, { status: 'running', error: null });
   workflowRepo.updateGraphState(run.id, serializeGraphState({
     ...state,
-    currentNode: 'approval',
+    currentNode: 'planning',
+    superpowersPhase: 'plan_review',
     status: 'running',
     error: null,
   }));
   return continueGraphWorkflow(run.id, deps);
+}
+
+function approveDraftArtifactVersion(artifactVersionId: string | null | undefined) {
+  if (!artifactVersionId) return null;
+  const artifact = workflowArtifactVersionRepo.get(artifactVersionId);
+  if (!artifact || artifact.status === 'approved') return artifact;
+  return workflowArtifactVersionRepo.approve(artifact.id, {
+    approved_by: 'test',
+    approval_message_id: null,
+  });
 }
 
 function addAcpWorkflowAgent(roomId: string, role: 'executor' | 'reviewer' | 'acceptor'): RoomAgent {
@@ -3546,6 +3716,23 @@ function createApprovedPlanArtifactVersion(workflowRunId: string, title: string)
     title: 'Runtime Test Plan',
     content: `# Plan\n\n${title}`,
     structured_data: { tasks: [] },
+    created_by_agent_id: 'planner',
+  });
+  const approved = workflowArtifactVersionRepo.approve(draft.id, {
+    approved_by: 'test',
+    approval_message_id: null,
+  });
+  assert.ok(approved);
+  return approved;
+}
+
+function createApprovedSpecArtifactVersion(workflowRunId: string, title: string) {
+  const draft = workflowArtifactVersionRepo.createDraft({
+    workflow_run_id: workflowRunId,
+    artifact_type: 'spec',
+    title: 'Runtime Test Spec',
+    content: `# Spec\n\n${title}`,
+    structured_data: { summary: title },
     created_by_agent_id: 'planner',
   });
   const approved = workflowArtifactVersionRepo.approve(draft.id, {
@@ -3703,7 +3890,11 @@ function createCompletedAgentRun(
   input: RespondAsAgentInput,
   options: { includeTddEvidence?: boolean; codeReviewOutput?: string } = {},
 ) {
-  const content = outputForStage(input.workflowStage, options);
+  const content = outputForStage(
+    input.workflowStage,
+    options,
+    input.prompt,
+  );
   const run = agentRunRepo.create({
     room_id: roomId,
     room_agent_id: input.agent.id,
@@ -3730,14 +3921,29 @@ function createCompletedAgentRun(
 function outputForStage(
   stage: WorkflowStage | null | undefined,
   options: { includeTddEvidence?: boolean; codeReviewOutput?: string } = {},
+  prompt = '',
 ): string {
   if (stage === 'planning') {
+    if (/当前 Superpowers 阶段：writing_plans/.test(prompt)) {
+      return JSON.stringify({
+        superpowers: {
+          implementationPlanPath: 'docs/superpowers/plans/runtime-test-plan.md',
+          planReviewVerdict: 'approved',
+        },
+      });
+    }
+    if (/当前 Superpowers 阶段：plan_review/.test(prompt)) {
+      return JSON.stringify({
+        superpowers: {
+          implementationPlanPath: 'docs/superpowers/plans/runtime-test-plan.md',
+          planReviewVerdict: 'approved',
+        },
+      });
+    }
     return JSON.stringify({
       superpowers: {
         designDocPath: 'docs/superpowers/specs/runtime-test-design.md',
         designReviewVerdict: 'approved',
-        implementationPlanPath: 'docs/superpowers/plans/runtime-test-plan.md',
-        planReviewVerdict: 'approved',
         worktree: {
           path: '/tmp/openclaw-room-graph-runtime',
           branchName: 'runtime-test',

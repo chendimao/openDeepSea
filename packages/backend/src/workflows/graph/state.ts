@@ -254,6 +254,7 @@ export const agentWorkflowStateSchema = z.object({
   approvedPlanArtifactVersionId: z.string().nullable().default(null),
   lightweightPlanArtifactVersionId: z.string().nullable().default(null),
   artifactChangeRequestMessageId: z.string().nullable().default(null),
+  artifactChangeRequestArtifactVersionId: z.string().nullable().default(null),
   agentAssignments: z.array(superpowersAgentAssignmentSchema).default([]),
   recoveryState: superpowersRecoveryStateSchema.nullable().default(null),
   designDocPath: z.string().nullable().default(null),
@@ -313,6 +314,7 @@ export type AgentWorkflowState = Omit<
   | 'approvedPlanArtifactVersionId'
   | 'lightweightPlanArtifactVersionId'
   | 'artifactChangeRequestMessageId'
+  | 'artifactChangeRequestArtifactVersionId'
   | 'agentAssignments'
   | 'recoveryState'
   | 'designDocPath'
@@ -345,6 +347,7 @@ export type AgentWorkflowState = Omit<
   approvedPlanArtifactVersionId?: string | null;
   lightweightPlanArtifactVersionId?: string | null;
   artifactChangeRequestMessageId?: string | null;
+  artifactChangeRequestArtifactVersionId?: string | null;
   agentAssignments?: SuperpowersAgentAssignment[];
   recoveryState?: SuperpowersRecoveryState | null;
   designDocPath?: string | null;
@@ -390,6 +393,7 @@ export function emptyAgentWorkflowState(input: {
     approvedPlanArtifactVersionId: null,
     lightweightPlanArtifactVersionId: null,
     artifactChangeRequestMessageId: null,
+    artifactChangeRequestArtifactVersionId: null,
     agentAssignments: [],
     recoveryState: null,
     designDocPath: null,

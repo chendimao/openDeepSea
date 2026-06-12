@@ -35,6 +35,11 @@ const platformSkillRefSchema = z.object({
   provider: z.enum(['codex', 'claudecode', 'opencode']),
   name: z.string().trim().min(1),
 });
+const workflowArtifactChangeRequestSchema = z.object({
+  workflowRunId: z.string().trim().min(1),
+  artifactVersionId: z.string().trim().min(1),
+  artifactType: z.enum(['spec', 'plan', 'lightweight_plan']),
+});
 
 const socketEventSchema = z.discriminatedUnion('type', [
   z.object({
@@ -51,6 +56,7 @@ const socketEventSchema = z.discriminatedUnion('type', [
     workspaceFileRefs: sessionFileRefListSchema,
     libraryFileRefs: sessionFileRefListSchema,
     platformSkillRefs: z.array(platformSkillRefSchema).max(8).optional(),
+    workflowArtifactChangeRequest: workflowArtifactChangeRequestSchema.optional(),
   }),
   z.object({
     type: z.literal('agent.run.pause'),
@@ -128,6 +134,7 @@ export function handleSessionSocketEvent(socket: WebSocket, event: WsClientEvent
         workspaceFileRefs: parsed.data.workspaceFileRefs,
         libraryFileRefs: parsed.data.libraryFileRefs,
         platformSkillRefs: parsed.data.platformSkillRefs,
+        workflowArtifactChangeRequest: parsed.data.workflowArtifactChangeRequest,
       }).catch((error) => {
         send(socket, { type: 'session_error', sessionId, error: (error as Error).message });
       });

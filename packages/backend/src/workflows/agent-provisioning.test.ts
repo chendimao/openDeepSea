@@ -68,7 +68,7 @@ test('ensureWorkflowAgentsForRun keeps specialist mappings for frontend backend 
   ]);
 });
 
-test('ensureWorkflowAgentsForRun provisions fullstack fallback for cross frontend backend tasks', () => {
+test('ensureWorkflowAgentsForRun provisions frontend and backend specialists for cross frontend backend tasks', () => {
   const projectPath = join(tmpdir(), `opendeepsea-provisioning-cross-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Project Cross', path: projectPath });
@@ -86,7 +86,10 @@ test('ensureWorkflowAgentsForRun provisions fullstack fallback for cross fronten
     ],
   });
 
-  assert.deepEqual(result.joinedAgents.map((agent) => agent.agent_id), ['fullstack-engineer']);
+  assert.deepEqual(result.joinedAgents.map((agent) => agent.agent_id).sort(), [
+    'backend-executor',
+    'frontend-executor',
+  ]);
 });
 
 test('ensureGlobalExecutorForRecovery falls back when requested template id is unknown', async () => {

@@ -14,7 +14,7 @@ import { messageRepo } from '../../repos/messages.js';
 import { projectRepo } from '../../repos/projects.js';
 import { roomAgentRepo, roomRepo } from '../../repos/rooms.js';
 import { taskRepo } from '../../repos/tasks.js';
-import { workflowRepo } from '../../repos/workflows.js';
+import { workflowArtifactVersionRepo, workflowRepo } from '../../repos/workflows.js';
 
 test('buildSuperpowersRuntimeGraph exposes Superpowers runtime profile metadata', () => {
   const graph = buildSuperpowersRuntimeGraph();
@@ -374,6 +374,174 @@ test('Superpowers brainstorming node invokes planner agent and records required 
   assert.equal(brainstormingStep?.status, 'completed');
   assert.ok(brainstormingStep?.agent_run_id);
   assert.equal(brainstormingStep?.result, planningOutput);
+  const draftSpec = workflowArtifactVersionRepo.get(latest.draftSpecArtifactVersionId ?? '');
+  assert.equal(draftSpec?.workflow_run_id, run.id);
+  assert.equal(draftSpec?.artifact_type, 'spec');
+  assert.equal(draftSpec?.status, 'draft');
+  assert.equal(draftSpec?.created_by_agent_id, calls[0]?.split(':')[1]);
+  assert.equal(draftSpec?.content, planningOutput);
+});
+
+test('Superpowers writing plans node creates draft plan artifact version for user approval', async () => {
+  const projectPath = `/tmp/superpowers-planner-plan-artifact-${Date.now()}`;
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Superpowers planner plan artifact project', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Superpowers planner plan artifact room' });
+  const planner = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'planner-agent-plan-artifact',
+    agent_name: 'Planner Agent Plan Artifact',
+  });
+  roomAgentRepo.setWorkflowRole(planner.id, 'planner');
+  roomAgentRepo.setAcp(planner.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'workspace-write',
+    acp_writable_dirs: [],
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Run planner writing plans artifact',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const planningOutput = [
+    'plan completed',
+    '',
+    '```json',
+    JSON.stringify({
+      superpowers: {
+        implementationPlanPath: 'docs/superpowers/plans/runtime-planner-plan.md',
+      },
+    }),
+    '```',
+  ].join('\n');
+  const calls: string[] = [];
+  const graph = buildSuperpowersRuntimeGraph({
+    runAcpAgent: async (input) => {
+      calls.push(`${input.workflowStage}:${input.agent.agent_id}`);
+      const runRecord = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        task_id: input.taskId ?? null,
+        workflow_run_id: input.workflowRunId ?? null,
+        workflow_step_id: input.workflowStepId ?? null,
+        workflow_stage: input.workflowStage ?? null,
+        prompt: input.prompt,
+      });
+      const completedRun = agentRunRepo.updateStatus(runRecord.id, 'completed', { stdout: planningOutput }) ?? runRecord;
+      const message = messageRepo.create({
+        room_id: room.id,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: planningOutput,
+        message_type: 'agent_stream',
+      });
+      return { run: completedRun, message, status: 'completed' };
+    },
+  });
+
+  const latest = await graph.nodes.writingPlans(emptyAgentWorkflowState({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+  }));
+
+  assert.equal(latest.implementationPlanPath, 'docs/superpowers/plans/runtime-planner-plan.md');
+  assert.equal(calls.length, 1);
+  assert.match(calls[0] ?? '', /^planning:/);
+  const draftPlan = workflowArtifactVersionRepo.get(latest.draftPlanArtifactVersionId ?? '');
+  assert.equal(draftPlan?.workflow_run_id, run.id);
+  assert.equal(draftPlan?.artifact_type, 'plan');
+  assert.equal(draftPlan?.status, 'draft');
+  assert.equal(draftPlan?.created_by_agent_id, calls[0]?.split(':')[1]);
+  assert.equal(draftPlan?.content, planningOutput);
+});
+
+test('Superpowers writing plans node links revision drafts to artifact change requests', async () => {
+  const projectPath = `/tmp/superpowers-planner-plan-revision-${Date.now()}`;
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Superpowers planner plan revision project', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Superpowers planner plan revision room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Revise planner writing plans artifact',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const previousDraft = workflowArtifactVersionRepo.createDraft({
+    workflow_run_id: run.id,
+    artifact_type: 'plan',
+    title: 'Plan',
+    content: '# Plan v1',
+    structured_data: { tasks: [] },
+    created_by_agent_id: 'planner',
+  });
+  const planningOutput = [
+    'plan revised',
+    '',
+    '```json',
+    JSON.stringify({
+      superpowers: {
+        implementationPlanPath: 'docs/superpowers/plans/runtime-planner-plan-v2.md',
+      },
+    }),
+    '```',
+  ].join('\n');
+  const graph = buildSuperpowersRuntimeGraph({
+    runAcpAgent: async (input) => {
+      const runRecord = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        task_id: input.taskId ?? null,
+        workflow_run_id: input.workflowRunId ?? null,
+        workflow_step_id: input.workflowStepId ?? null,
+        workflow_stage: input.workflowStage ?? null,
+        prompt: input.prompt,
+      });
+      const completedRun = agentRunRepo.updateStatus(runRecord.id, 'completed', { stdout: planningOutput }) ?? runRecord;
+      const message = messageRepo.create({
+        room_id: room.id,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: planningOutput,
+        message_type: 'agent_stream',
+      });
+      return { run: completedRun, message, status: 'completed' };
+    },
+  });
+
+  const latest = await graph.nodes.writingPlans({
+    ...emptyAgentWorkflowState({
+      workflowRunId: run.id,
+      projectId: project.id,
+      roomId: room.id,
+      taskId: task.id,
+      userGoal: task.title,
+      projectPath: project.path,
+    }),
+    draftPlanArtifactVersionId: previousDraft.id,
+    artifactChangeRequestMessageId: 'msg-change-plan',
+  });
+
+  const draftPlan = workflowArtifactVersionRepo.get(latest.draftPlanArtifactVersionId ?? '');
+  assert.notEqual(draftPlan?.id, previousDraft.id);
+  assert.equal(draftPlan?.version, 2);
+  assert.equal(draftPlan?.change_request_message_id, 'msg-change-plan');
+  assert.equal(draftPlan?.supersedes_artifact_version_id, previousDraft.id);
+  assert.equal(workflowArtifactVersionRepo.get(previousDraft.id)?.status, 'superseded');
+  assert.equal(latest.artifactChangeRequestMessageId, null);
 });
 
 test('Superpowers writing plans node blocks when planner omits required evidence', async () => {
@@ -487,13 +655,29 @@ test('Superpowers finish branch node records default keep branch decision and av
 
 test('Superpowers planning nodes record phase artifacts and review verdicts', async () => {
   const graph = buildSuperpowersRuntimeGraph();
+  const projectPath = `/tmp/open-deep-sea-superpowers-runtime-test-${Date.now()}`;
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({
+    name: 'Superpowers runtime planning project',
+    path: projectPath,
+  });
+  const room = roomRepo.create({
+    project_id: project.id,
+    name: 'Superpowers runtime planning room',
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Implement Superpowers planning gates',
+  });
+  const run = createGraphWorkflowRun(task.id);
   const state = emptyAgentWorkflowState({
-    workflowRunId: 'run-superpowers-runtime-test',
-    projectId: 'project-superpowers-runtime-test',
-    roomId: 'room-superpowers-runtime-test',
-    taskId: 'task-superpowers-runtime-test',
-    userGoal: 'Implement Superpowers planning gates',
-    projectPath: '/tmp/open-deep-sea-superpowers-runtime-test',
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath,
   });
 
   const afterBrainstorming = await graph.nodes.brainstorming(state);
@@ -506,7 +690,7 @@ test('Superpowers planning nodes record phase artifacts and review verdicts', as
 
   const afterWorktree = await graph.nodes.worktree(afterSpecReview);
   assert.equal(afterWorktree.superpowersPhase, 'worktree');
-  assert.equal(afterWorktree.worktree?.path, '/tmp/open-deep-sea-superpowers-runtime-test');
+  assert.equal(afterWorktree.worktree?.path, projectPath);
   assert.equal(afterWorktree.worktree?.branchName, 'not_available');
   assert.match(afterWorktree.worktree?.baseRef ?? '', /skipped/);
 
@@ -517,7 +701,20 @@ test('Superpowers planning nodes record phase artifacts and review verdicts', as
   const afterPlanReview = await graph.nodes.planReview(afterWritingPlans);
   assert.equal(afterPlanReview.superpowersPhase, 'plan_review');
   assert.equal(afterPlanReview.planReviewVerdict, 'approved');
-  assert.equal(graph.canDispatch(afterPlanReview), true);
+  const draft = workflowArtifactVersionRepo.createDraft({
+    workflow_run_id: afterPlanReview.workflowRunId,
+    artifact_type: 'plan',
+    title: 'Runtime Test Plan',
+    content: '# Runtime Test Plan',
+    structured_data: { tasks: [] },
+    created_by_agent_id: 'planner',
+  });
+  const approved = workflowArtifactVersionRepo.approve(draft.id, { approved_by: 'superpowers-runtime-test' });
+  assert.ok(approved);
+  assert.equal(graph.canDispatch({
+    ...afterPlanReview,
+    approvedPlanArtifactVersionId: approved.id,
+  }), true);
 });
 
 test('Superpowers runtime blocks dispatch when implementation plan path is missing', async () => {

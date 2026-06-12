@@ -13,14 +13,18 @@ import type {
   WorkflowDefinition,
   WorkflowDefinitionGraph,
   WorkflowDefinitionNodeType,
+  WorkflowArtifactVersion,
   WorkflowRole,
   WorkflowRun,
   WorkflowStage,
 } from '../../types.js';
 import type { WorkflowSupervisorDecision } from '../supervisor.js';
 import { buildSuperpowersPhasePrompt } from '../prompts.js';
+import { normalizeParsedPlanTaskTitles, parsePlanArtifact, type ParsedPlan } from '../plan-parser.js';
 import { generateWorkflowSupervisorDecision } from '../supervisor.js';
+import { assessTaskRisk, buildApprovalCard } from '../task-risk.js';
 import { createGraphNodes } from './nodes.js';
+import { buildCoordinatorWorkflowPlan, deriveCoordinatorPlanFromProductManagerBackground } from './coordinator-plan.js';
 import { routeAfterApproval, routeAfterExecute, routeAfterRepairDecision, routeAfterReview } from './router.js';
 import { emptyAgentWorkflowState, parseGraphState, serializeGraphState, type AgentWorkflowState } from './state.js';
 import {
@@ -60,6 +64,7 @@ const GraphState = Annotation.Root({
   approvedPlanArtifactVersionId: Annotation<AgentWorkflowState['approvedPlanArtifactVersionId']>(),
   lightweightPlanArtifactVersionId: Annotation<AgentWorkflowState['lightweightPlanArtifactVersionId']>(),
   artifactChangeRequestMessageId: Annotation<AgentWorkflowState['artifactChangeRequestMessageId']>(),
+  artifactChangeRequestArtifactVersionId: Annotation<AgentWorkflowState['artifactChangeRequestArtifactVersionId']>(),
   agentAssignments: Annotation<AgentWorkflowState['agentAssignments']>(),
   recoveryState: Annotation<AgentWorkflowState['recoveryState']>(),
   designDocPath: Annotation<AgentWorkflowState['designDocPath']>(),
@@ -909,6 +914,14 @@ async function resumeGraphWorkflowFromState(
       continue;
     }
 
+    if (nodeToRun === 'worktree' && runtimeGraph && !hasApprovedSuperpowersSpecArtifact(nextState)) {
+      return blockSuperpowersSpecConfirm(nextState);
+    }
+
+    if (nodeToRun === 'approval' && runtimeGraph && !hasApprovedSuperpowersPlanArtifact(nextState)) {
+      return blockSuperpowersPlanConfirm(nextState);
+    }
+
     if (nodeToRun === 'dispatch' && runtimeGraph && !runtimeGraph.canDispatch(nextState)) {
       return blockSuperpowersDispatch(nextState);
     }
@@ -972,11 +985,14 @@ async function runSuperpowersPlanningNode(
   nodeToRun: SuperpowersPlanningNodeName,
   state: AgentWorkflowState,
   tools: ReturnType<typeof createGraphTools>,
-  nodes: ReturnType<typeof createGraphNodes>,
+  _nodes: ReturnType<typeof createGraphNodes>,
   runtimeGraph: SuperpowersRuntimeGraph,
 ): Promise<AgentWorkflowState> {
+  if (nodeToRun === 'brainstorming') {
+    return runSuperpowersPlannerRouteNode(nodeToRun, state, tools, runtimeGraph);
+  }
   if (nodeToRun === 'writing_plans') {
-    return runSuperpowersWritingPlansNode(state, tools, nodes, runtimeGraph);
+    return runSuperpowersWritingPlansNode(state, tools, runtimeGraph);
   }
 
   const context = tools.readWorkflowContext(state.workflowRunId);
@@ -1021,63 +1037,271 @@ async function runSuperpowersPlanningNode(
   return nextState;
 }
 
-async function runSuperpowersWritingPlansNode(
+async function runSuperpowersPlannerRouteNode(
+  nodeToRun: 'brainstorming',
   state: AgentWorkflowState,
   tools: ReturnType<typeof createGraphTools>,
-  nodes: ReturnType<typeof createGraphNodes>,
   runtimeGraph: SuperpowersRuntimeGraph,
 ): Promise<AgentWorkflowState> {
   const context = tools.readWorkflowContext(state.workflowRunId);
-  const beforeStepIds = new Set(tools.listSteps(context.run.id).map((step) => step.id));
-  let plannedState: AgentWorkflowState;
+  const phaseStep = runtimeGraph.phaseSteps.find((step) => step.nodeName === nodeToRun);
+  if (!phaseStep) throw new Error(`unknown Superpowers planning node: ${nodeToRun}`);
 
-  try {
-    plannedState = await nodes.planningNode(state);
-  } catch (err) {
-    const planningStep = findCreatedPlanningStep(tools, context.run.id, beforeStepIds);
-    if (planningStep) {
-      tools.updateGraphStep(planningStep.id, {
-        node_name: 'writing_plans' as never,
-        status: 'failed',
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    throw err;
-  }
-
-  const planningStep = findCreatedPlanningStep(tools, context.run.id, beforeStepIds);
-  if (planningStep) {
-    tools.updateGraphStep(planningStep.id, { node_name: 'writing_plans' as never });
-  }
-
-  const rawNextState = await runtimeGraph.nodes.writingPlans(plannedState);
-  const promptedState = planningStep
-    ? await runSuperpowersPhaseAgentIfAvailable({
-      phase: 'writing_plans',
-      state: rawNextState,
-      tools,
-      stage: 'planning',
-      role: 'planner',
-      stepId: planningStep.id,
-    })
-    : rawNextState;
+  const rawNextState = await callSuperpowersNode(nodeToRun, state, runtimeGraph);
   const nextState: AgentWorkflowState = {
-    ...promptedState,
+    ...rawNextState,
     currentNode: 'planning',
-    currentStepId: planningStep?.id ?? plannedState.currentStepId,
   };
+  const blocked = nextState.status === 'blocked';
+  const updatedRun = tools.updateRun(context.run.id, {
+    status: blocked ? 'blocked' : 'running',
+    current_stage: phaseStep.stage,
+    error: blocked ? nextState.error : null,
+  });
+  if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
   tools.updateGraphState(context.run.id, serializeGraphState(nextState));
   return nextState;
 }
 
-function findCreatedPlanningStep(
+async function runSuperpowersWritingPlansNode(
+  state: AgentWorkflowState,
   tools: ReturnType<typeof createGraphTools>,
-  workflowRunId: string,
-  beforeStepIds: Set<string>,
-) {
-  return tools.listSteps(workflowRunId)
-    .filter((step) => !beforeStepIds.has(step.id) && step.node_name === 'planning')
-    .at(-1);
+  runtimeGraph: SuperpowersRuntimeGraph,
+): Promise<AgentWorkflowState> {
+  const context = tools.readWorkflowContext(state.workflowRunId);
+  const rawNextState = await runtimeGraph.nodes.writingPlans(state);
+  let plannedState: AgentWorkflowState;
+  try {
+    plannedState = await hydratePlanStateFromWritingPlansArtifact(rawNextState, tools);
+  } catch (err) {
+    if (rawNextState.currentStepId) {
+      const failedStep = tools.updateGraphStep(rawNextState.currentStepId, {
+        status: 'failed',
+        error: err instanceof Error ? err.message : String(err),
+      });
+      if (failedStep) tools.broadcastStepUpdated(context.room.id, failedStep);
+    }
+    throw err;
+  }
+  const nextState: AgentWorkflowState = {
+    ...plannedState,
+    currentNode: 'planning',
+  };
+  const blocked = nextState.status === 'blocked';
+  const updatedRun = tools.updateRun(context.run.id, {
+    status: blocked ? 'blocked' : 'running',
+    current_stage: 'planning',
+    error: blocked ? nextState.error : null,
+  });
+  if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+  tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+  return nextState;
+}
+
+async function hydratePlanStateFromWritingPlansArtifact(
+  state: AgentWorkflowState,
+  tools: ReturnType<typeof createGraphTools>,
+): Promise<AgentWorkflowState> {
+  const draftPlanId = state.draftPlanArtifactVersionId;
+  const draftPlan = typeof draftPlanId === 'string' ? workflowArtifactVersionRepo.get(draftPlanId) : null;
+  if (!draftPlan || draftPlan.workflow_run_id !== state.workflowRunId || draftPlan.artifact_type !== 'plan') {
+    return state;
+  }
+
+  const context = tools.readWorkflowContext(state.workflowRunId);
+  const planRead = await readPlanFromWritingPlansArtifactOrPlanner(draftPlan.content, tools, context);
+  const workflowPlan = planRead.plan.tasks.length > 0
+    ? buildCoordinatorWorkflowPlan({
+      workflowName: context.task.title,
+      sourceMessageId: context.task.source_message_id ?? context.task.id,
+      workflowPlan: state.workflowPlan,
+      parsedPlan: planRead.plan,
+    })
+    : null;
+  const riskAssessment = assessTaskRisk({
+    title: context.task.title,
+    description: context.task.description ?? '',
+    scopeRead: Array.from(new Set(planRead.plan.tasks.flatMap((task) => task.scopeRead))),
+    scopeWrite: Array.from(new Set(planRead.plan.tasks.flatMap((task) => task.scopeWrite))),
+    acceptance: planRead.plan.tasks.flatMap((task) => task.acceptance),
+    verificationCommands: planRead.plan.verificationCommands,
+  });
+  const approvalCard = riskAssessment.requiresApproval && riskAssessment.riskLevel !== 'low'
+    ? buildApprovalCard({
+      assessment: riskAssessment,
+      agents: context.agents.map((agent) => agent.agent_id),
+      executionMode: workflowPlan?.tasks.some((task) => task.mode === 'parallel') ? 'hybrid' : 'serial',
+      risks: planRead.plan.risks,
+      assumptions: planRead.plan.assumptions,
+    })
+    : null;
+  const planWithRisk = {
+    ...planRead.plan,
+    taskKind: planRead.plan.taskKind ?? riskAssessment.taskKind,
+    riskLevel: planRead.plan.riskLevel ?? riskAssessment.riskLevel,
+    approvalReason: planRead.plan.approvalReason ?? riskAssessment.approvalReason,
+    needsApproval: planRead.plan.needsApproval || riskAssessment.requiresApproval,
+  };
+  if (planRead.canonicalizeArtifact) {
+    persistCanonicalWritingPlansDraftArtifact(draftPlan, {
+      plan: planWithRisk,
+      workflowPlan,
+      riskAssessment,
+      approvalCard,
+      canonicalizedFrom: planRead.source === 'artifact' ? 'planner' : planRead.source,
+      parseError: planRead.parseError,
+    });
+  }
+  persistWritingPlansTaskArtifactMetadata(state, {
+    plan: planWithRisk,
+    workflowPlan,
+    riskAssessment,
+    approvalCard,
+  });
+
+  return {
+    ...state,
+    plan: planWithRisk,
+    workflowPlan,
+    riskAssessment,
+    approvalCard,
+  };
+}
+
+function persistCanonicalWritingPlansDraftArtifact(
+  artifact: WorkflowArtifactVersion,
+  metadata: {
+    plan: NonNullable<AgentWorkflowState['plan']>;
+    workflowPlan: AgentWorkflowState['workflowPlan'];
+    riskAssessment: NonNullable<AgentWorkflowState['riskAssessment']>;
+    approvalCard: AgentWorkflowState['approvalCard'];
+    canonicalizedFrom: 'background' | 'planner';
+    parseError: string;
+  },
+): void {
+  workflowArtifactVersionRepo.updateDraftContent(artifact.id, {
+    content: formatHydratedPlanArtifact(metadata.plan),
+    structured_data: {
+      plan: metadata.plan,
+      workflow_plan_json: metadata.workflowPlan,
+      risk_assessment: metadata.riskAssessment,
+      approval_card: metadata.approvalCard,
+      canonicalized: true,
+      canonicalized_from: metadata.canonicalizedFrom,
+      canonicalized_at: new Date().toISOString(),
+      original_parse_error: metadata.parseError,
+    },
+  });
+}
+
+function persistWritingPlansTaskArtifactMetadata(
+  state: AgentWorkflowState,
+  metadata: {
+    plan: NonNullable<AgentWorkflowState['plan']>;
+    workflowPlan: AgentWorkflowState['workflowPlan'];
+    riskAssessment: NonNullable<AgentWorkflowState['riskAssessment']>;
+    approvalCard: AgentWorkflowState['approvalCard'];
+  },
+): void {
+  if (!state.currentStepId) return;
+  db.prepare(
+    `UPDATE task_artifacts
+     SET metadata = ?
+     WHERE workflow_run_id = ?
+       AND workflow_step_id = ?
+       AND artifact_type = 'plan'`,
+  ).run(JSON.stringify({
+    ...metadata.plan,
+    workflow_plan_json: metadata.workflowPlan,
+    risk_assessment: metadata.riskAssessment,
+    approval_card: metadata.approvalCard,
+  }), state.workflowRunId, state.currentStepId);
+}
+
+async function readPlanFromWritingPlansArtifactOrPlanner(
+  content: string,
+  tools: ReturnType<typeof createGraphTools>,
+  context: ReturnType<ReturnType<typeof createGraphTools>['readWorkflowContext']>,
+): Promise<{
+  plan: ParsedPlan;
+  canonicalizeArtifact: boolean;
+  source: 'artifact' | 'background' | 'planner';
+  parseError: string;
+}> {
+  try {
+    return {
+      plan: normalizeParsedPlanTaskTitles(parsePlanArtifact(content), {
+        parentTitle: context.task.title,
+      }),
+      canonicalizeArtifact: false,
+      source: 'artifact',
+      parseError: '',
+    };
+  } catch (err) {
+    const parseError = err instanceof Error ? err.message : String(err);
+    const backgroundPlan = deriveCoordinatorPlanFromProductManagerBackground({
+      taskTitle: context.task.title,
+      taskDescription: context.task.description,
+    });
+    if (backgroundPlan) {
+      return {
+        plan: normalizeParsedPlanTaskTitles(backgroundPlan, {
+          parentTitle: context.task.title,
+        }),
+        canonicalizeArtifact: true,
+        source: 'background',
+        parseError,
+      };
+    }
+    return {
+      plan: normalizeParsedPlanTaskTitles(await tools.generatePlan({
+        projectName: context.project.name,
+        projectPath: context.project.path,
+        room: context.room,
+        task: context.task,
+        agents: context.agents,
+        memories: context.memories ? [context.memories] : [],
+        recentMessages: context.recentMessages,
+      }), {
+        parentTitle: context.task.title,
+      }),
+      canonicalizeArtifact: true,
+      source: 'planner',
+      parseError,
+    };
+  }
+}
+
+function formatHydratedPlanArtifact(plan: ParsedPlan): string {
+  const verificationCommands = plan.verificationCommands.length > 0
+    ? plan.verificationCommands
+    : plan.verification.map((command) => ({
+      command,
+      reason: '',
+      required: true,
+    }));
+  const artifact = {
+    goal: plan.goal ?? plan.summary,
+    summary: plan.summary,
+    ...(plan.taskKind ? { taskKind: plan.taskKind } : {}),
+    ...(plan.riskLevel ? { riskLevel: plan.riskLevel } : {}),
+    ...(plan.approvalReason ? { approvalReason: plan.approvalReason } : {}),
+    assumptions: plan.assumptions,
+    steps: plan.tasks.map((task) => ({
+      title: task.title,
+      intent: task.description,
+      assigneeRole: task.suggestedRole,
+      ...(task.preferredBackend ? { preferredBackend: task.preferredBackend } : {}),
+      scopeRead: task.scopeRead,
+      scopeWrite: task.scopeWrite,
+      acceptance: task.acceptance,
+      dependsOn: task.dependsOn,
+    })),
+    risks: plan.risks,
+    verification: verificationCommands,
+    needsApproval: plan.needsApproval,
+  };
+  return `\`\`\`json\n${JSON.stringify(artifact, null, 2)}\n\`\`\``;
 }
 
 async function runSuperpowersPhaseAgentIfAvailable(input: {
@@ -1371,6 +1595,32 @@ function blockSuperpowersDispatch(state: AgentWorkflowState): AgentWorkflowState
   };
 }
 
+function blockSuperpowersSpecConfirm(state: AgentWorkflowState): AgentWorkflowState {
+  const error = 'Superpowers planning requires approved spec artifact version';
+  const blockedState = blockGraphWorkflowRun(state.workflowRunId, state, error);
+  if (!blockedState) {
+    throw new Error(error);
+  }
+  return {
+    ...blockedState,
+    currentNode: 'planning',
+    superpowersPhase: 'spec_review',
+  };
+}
+
+function blockSuperpowersPlanConfirm(state: AgentWorkflowState): AgentWorkflowState {
+  const error = 'Superpowers planning requires approved plan artifact version';
+  const blockedState = blockGraphWorkflowRun(state.workflowRunId, state, error);
+  if (!blockedState) {
+    throw new Error(error);
+  }
+  return {
+    ...blockedState,
+    currentNode: 'planning',
+    superpowersPhase: 'plan_review',
+  };
+}
+
 function blockSuperpowersTddExecute(state: AgentWorkflowState): AgentWorkflowState {
   const error = state.error
     ?? 'Superpowers TDD evidence gate requires RED failed and GREEN passed records or an explicit exemption';
@@ -1426,10 +1676,22 @@ function hasApprovedSuperpowersPlanArtifact(state: AgentWorkflowState): boolean 
     isApprovedSuperpowersPlanArtifact(state.lightweightPlanArtifactVersionId, state.workflowRunId, 'lightweight_plan');
 }
 
+function hasApprovedSuperpowersSpecArtifact(state: AgentWorkflowState): boolean {
+  return isApprovedSuperpowersArtifact(state.approvedSpecArtifactVersionId, state.workflowRunId, 'spec');
+}
+
 function isApprovedSuperpowersPlanArtifact(
   artifactVersionId: string | null | undefined,
   workflowRunId: string,
   artifactType: 'plan' | 'lightweight_plan',
+): boolean {
+  return isApprovedSuperpowersArtifact(artifactVersionId, workflowRunId, artifactType);
+}
+
+function isApprovedSuperpowersArtifact(
+  artifactVersionId: string | null | undefined,
+  workflowRunId: string,
+  artifactType: 'spec' | 'plan' | 'lightweight_plan',
 ): boolean {
   if (typeof artifactVersionId !== 'string' || artifactVersionId.trim().length === 0) return false;
   const artifact = workflowArtifactVersionRepo.get(artifactVersionId.trim());

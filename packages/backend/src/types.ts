@@ -1518,6 +1518,11 @@ export type WsClientEvent =
       workspaceFileRefs?: string[];
       libraryFileRefs?: string[];
       platformSkillRefs?: PlatformSkillRef[];
+      workflowArtifactChangeRequest?: {
+        workflowRunId: string;
+        artifactVersionId: string;
+        artifactType: WorkflowArtifactVersionType;
+      };
     }
   | { type: 'agent.run.pause'; sessionId: string; agentId: string; runId: string }
   | { type: 'agent.run.resume'; sessionId: string; agentId: string; runId: string; content?: string }

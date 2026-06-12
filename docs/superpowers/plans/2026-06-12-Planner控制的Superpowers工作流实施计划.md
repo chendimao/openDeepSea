@@ -1472,7 +1472,7 @@ git commit -m "feat(workflow): 执行阶段只消费已确认计划"
 **Files:**
 - No production file changes expected. Test edits are limited to exact assertion-name or fixture-shape adjustments caused by Tasks 1-8, and each test diff must preserve the same behavior being asserted.
 
-- [ ] **Step 1: Run backend targeted suite**
+- [x] **Step 1: Run backend targeted suite**
 
 ```bash
 node --import tsx --test packages/backend/src/workflows/artifact-versions.test.ts
@@ -1489,7 +1489,7 @@ node --import tsx --test packages/backend/src/workflows/graph/runtime.test.ts
 
 Expected: all listed tests PASS.
 
-- [ ] **Step 2: Run frontend targeted suite**
+- [x] **Step 2: Run frontend targeted suite**
 
 ```bash
 node --import tsx --test packages/frontend/src/session-ui/SessionShell.test.tsx
@@ -1498,7 +1498,7 @@ node --import tsx --test packages/frontend/src/pages/SessionWorkspacePage.test.t
 
 Expected: both tests PASS.
 
-- [ ] **Step 3: Run build**
+- [x] **Step 3: Run build**
 
 ```bash
 npm run build
@@ -1506,7 +1506,7 @@ npm run build
 
 Expected: TypeScript compilation and frontend build complete with exit 0.
 
-- [ ] **Step 4: Completion verification audit**
+- [x] **Step 4: Completion verification audit**
 
 Use `superpowers:verification-before-completion`. Check requirements from `docs/superpowers/specs/2026-06-12-Planner控制的Superpowers工作流设计.md`:
 
@@ -1521,7 +1521,7 @@ Use `superpowers:verification-before-completion`. Check requirements from `docs/
 9. missing evidence blocks workflow.
 10. targeted tests and build pass.
 
-- [ ] **Step 5: Final code review**
+- [x] **Step 5: Final code review**
 
 Use `superpowers:requesting-code-review` for the full branch diff:
 
@@ -1538,7 +1538,9 @@ Dispatch reviewer with:
 
 Fix Critical and Important findings before completing.
 
-- [ ] **Step 6: Commit verification fixes if any**
+Review note: attempted delegated reviewer `019ebc89-c6d5-7352-a1c3-12e46c127935`, but the agent was no longer available after the interrupted wait. Completed local code-review pass against the full branch diff plus uncommitted diff. Important finding fixed: artifact change requests now interrupt/cancel active agent runs for the superseded workflow before clearing child tasks and execution steps.
+
+- [x] **Step 6: Commit verification fixes if any**
 
 If review or verification required fixes:
 
@@ -1548,6 +1550,8 @@ git commit -m "fix(workflow): 修复Superpowers工作流收尾问题"
 ```
 
 If no changes were needed, do not create an empty commit.
+
+Verification fix staged for commit: `fix(workflow): 修复Superpowers工作流收尾问题`.
 
 ## Execution Handoff
 

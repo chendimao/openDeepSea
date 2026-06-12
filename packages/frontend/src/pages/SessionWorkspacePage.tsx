@@ -919,6 +919,7 @@ export function runSessionCommand(
       workspaceFileRefs?: string[];
       libraryFileRefs?: string[];
       platformSkillRefs?: PlatformSkillRef[];
+      workflowArtifactChangeRequest?: SessionComposerSubmit['workflowArtifactChangeRequest'];
     }) => void;
     runCommand: (message: { sessionId: string; command: string }) => void;
   },
@@ -939,6 +940,7 @@ export function runSessionCommand(
     ...(message.workspaceFileRefs && message.workspaceFileRefs.length > 0 ? { workspaceFileRefs: message.workspaceFileRefs } : {}),
     ...(message.libraryFileRefs && message.libraryFileRefs.length > 0 ? { libraryFileRefs: message.libraryFileRefs } : {}),
     ...(message.platformSkillRefs && message.platformSkillRefs.length > 0 ? { platformSkillRefs: message.platformSkillRefs } : {}),
+    ...(message.workflowArtifactChangeRequest ? { workflowArtifactChangeRequest: message.workflowArtifactChangeRequest } : {}),
   });
   return null;
 }

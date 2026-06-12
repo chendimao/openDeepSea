@@ -521,8 +521,23 @@ async function runSuperpowersPlannerPhase(input: {
     error: null,
   });
   if (completedStep) input.tools.broadcastStepUpdated(context.room.id, completedStep);
+  const draftVersion = createPlannerArtifactVersionDraft({
+    workflowRunId: context.run.id,
+    nodeName: input.nodeName,
+    plannerAgentId: planner.agent_id,
+    artifactTitle: input.artifactTitle,
+    content: output,
+    evidence: parsed.evidence,
+    changeRequestMessageId: input.state.artifactChangeRequestMessageId,
+    supersedesArtifactVersionId: input.nodeName === 'brainstorming'
+      ? input.state.artifactChangeRequestArtifactVersionId ?? input.state.draftSpecArtifactVersionId
+      : input.state.artifactChangeRequestArtifactVersionId ?? input.state.draftPlanArtifactVersionId,
+  });
   return {
     ...applySuperpowersEvidencePatch(input.state, parsed.evidence),
+    ...(input.nodeName === 'brainstorming'
+      ? { draftSpecArtifactVersionId: draftVersion.id }
+      : { draftPlanArtifactVersionId: draftVersion.id }),
     activeAgentRunId: runResult.run.id,
     currentStepId: step.id,
     superpowersPhase: input.nodeName,
@@ -530,7 +545,31 @@ async function runSuperpowersPlannerPhase(input: {
     status: input.state.status === 'blocked' ? 'running' : input.state.status,
     error: null,
     recoveryState: null,
+    artifactChangeRequestMessageId: null,
+    artifactChangeRequestArtifactVersionId: null,
   };
+}
+
+function createPlannerArtifactVersionDraft(input: {
+  workflowRunId: string;
+  nodeName: 'brainstorming' | 'writing_plans';
+  plannerAgentId: string;
+  artifactTitle: string;
+  content: string;
+  evidence: Record<string, unknown>;
+  changeRequestMessageId?: string | null;
+  supersedesArtifactVersionId?: string | null;
+}) {
+  return workflowArtifactVersionRepo.createDraft({
+    workflow_run_id: input.workflowRunId,
+    artifact_type: input.nodeName === 'brainstorming' ? 'spec' : 'plan',
+    title: input.artifactTitle,
+    content: input.content,
+    structured_data: input.evidence,
+    created_by_agent_id: input.plannerAgentId,
+    change_request_message_id: input.changeRequestMessageId ?? null,
+    supersedes_artifact_version_id: input.supersedesArtifactVersionId ?? null,
+  });
 }
 
 async function runSuperpowersReview(

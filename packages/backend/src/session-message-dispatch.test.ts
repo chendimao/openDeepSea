@@ -14,12 +14,12 @@ const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { fileRepo } = await import('./repos/files.js');
 const { messageRepo } = await import('./repos/messages.js');
 const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
-const { roomAgentRepo } = await import('./repos/rooms.js');
+const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
 const { settingsRepo } = await import('./repos/settings.js');
 const { sessionMessageRepo, sessionRepo, sessionRunRepo } = await import('./repos/sessions.js');
 const { taskEventRepo } = await import('./repos/task-events.js');
 const { taskRepo } = await import('./repos/tasks.js');
-const { workflowRepo } = await import('./repos/workflows.js');
+const { workflowArtifactVersionRepo, workflowRepo } = await import('./repos/workflows.js');
 const {
   dispatchSessionUserMessage,
   recordSessionImageGenerationJobMessage,
@@ -29,7 +29,7 @@ const { setSessionRuntimeAdapterForTest } = await import('./session-runtime.js')
 const { recordTaskEvent } = await import('./task-conversation.js');
 const { setWorkflowOrchestratorGraphDeps, workflowOrchestrator } = await import('./workflows/orchestrator.js');
 const { setVerificationCommandRunnerForTests } = await import('./workflows/graph/verification.js');
-const { parseGraphState } = await import('./workflows/graph/state.js');
+const { emptyAgentWorkflowState, parseGraphState, serializeGraphState } = await import('./workflows/graph/state.js');
 const { SUPERPOWERS_V2_GRAPH_VERSION } = await import('./workflows/superpowers-stage-registry.js');
 
 type WorkflowGraphDepsForTest = Parameters<typeof setWorkflowOrchestratorGraphDeps>[0];
@@ -280,7 +280,13 @@ test('dispatchSessionUserMessage starts graph workflow for approved fullstack se
     content: '确认',
   });
   await waitFor(
-    () => workflowAgentCalls.some((call) => call.stage === 'acceptance'),
+    () => {
+      const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
+      const runs = workflowTasks.flatMap((task) => workflowRepo.listByTask(task.id));
+      return runs.some((run) =>
+        run.status === 'blocked' && /approved spec artifact/i.test(run.error ?? '')
+      );
+    },
     1000,
     () => {
       const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
@@ -292,20 +298,16 @@ test('dispatchSessionUserMessage starts graph workflow for approved fullstack se
       })))}`;
     },
   );
+  const workflowTasksAfterGate = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
+  const [blockedRun] = workflowTasksAfterGate.flatMap((task) => workflowRepo.listByTask(task.id));
+  assert.ok(blockedRun);
+  const stateAtSpecGate = parseGraphState(blockedRun.graph_state);
+  assert.ok(stateAtSpecGate?.draftSpecArtifactVersionId);
+  assert.equal(stateAtSpecGate?.draftPlanArtifactVersionId, null);
+  assert.equal(workflowArtifactVersionRepo.get(stateAtSpecGate.draftSpecArtifactVersionId)?.artifact_type, 'spec');
 
   assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
-  assert.deepEqual(
-    workflowAgentCalls
-      .filter((call) => call.stage !== 'planning')
-      .map((call) => `${call.stage}:${call.agentId}`),
-    [
-      'implementation:backend-executor',
-      'implementation:frontend-executor',
-      'code_review:reviewer',
-      'code_review:reviewer',
-      'acceptance:acceptor',
-    ],
-  );
+  assert.equal(workflowAgentCalls.every((call) => call.stage === 'planning'), true);
 
   const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
   assert.equal(workflowTasks.length, 1);
@@ -315,10 +317,10 @@ test('dispatchSessionUserMessage starts graph workflow for approved fullstack se
   const workflowRuns = workflowRepo.listByTask(workflowTasks[0]!.id);
   assert.equal(workflowRuns.length, 1);
   assert.equal(typeof workflowRuns[0]?.graph_version, 'string');
-  assert.equal(workflowRuns[0]?.approved_by, 'session-risk-gate');
+  assert.equal(workflowRuns[0]?.approved_by, null);
 
   const agents = roomAgentRepo.listByRoom(workflowTasks[0]!.room_id).map((agent) => agent.agent_id);
-  assert.deepEqual(agents, ['planner', 'backend-executor', 'frontend-executor', 'reviewer', 'acceptor']);
+  assert.deepEqual(agents, ['planner']);
 
   const updatedTaskMessage = sessionMessageRepo.get(taskMessage.id);
   const metadata = JSON.parse(updatedTaskMessage?.metadata ?? '{}') as {
@@ -2051,6 +2053,335 @@ test('recordSessionImageGenerationToolResultEvidence stores generated outputs as
   });
 });
 
+test('dispatchSessionUserMessage routes workflow artifact change request into existing run', async () => {
+  const project = projectRepo.create({
+    name: 'workflow artifact change request project',
+    path: mkdtempSync(join(tmpdir(), 'session-artifact-change-request-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Artifact Change Request Room' });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Artifact Change Request Session',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const sourceMessage = sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: null,
+    content: '实现 workflow-first',
+    metadata: {},
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Artifact change request workflow',
+    source_message_id: sourceMessage.id,
+    created_from: 'chat_plan',
+  });
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: sourceMessage.content,
+    projectPath: project.path,
+  });
+  const workflow = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'awaiting_approval',
+    current_stage: 'planning',
+    approval_required: true,
+    graph_version: SUPERPOWERS_V2_GRAPH_VERSION,
+    graph_state: serializeGraphState({
+      ...state,
+      workflowRunId: 'pending',
+      currentNode: 'planning',
+      superpowersPhase: 'plan_review',
+      activeSuperpowersStage: 'plan_review',
+      status: 'awaiting_approval',
+    }),
+  });
+  const draft = workflowArtifactVersionRepo.createDraft({
+    workflow_run_id: workflow.id,
+    artifact_type: 'plan',
+    title: 'Plan',
+    content: '# Plan v1',
+    structured_data: { tasks: [] },
+    created_by_agent_id: 'planner',
+  });
+  const approved = workflowArtifactVersionRepo.approve(draft.id, {
+    approved_by: 'test',
+    approval_message_id: null,
+  });
+  assert.ok(approved);
+  workflowRepo.updateGraphState(workflow.id, serializeGraphState({
+    ...state,
+    workflowRunId: workflow.id,
+    currentNode: 'planning',
+    draftPlanArtifactVersionId: null,
+    approvedPlanArtifactVersionId: approved.id,
+    implementationPlanPath: 'docs/superpowers/plans/test.md',
+    planReviewVerdict: 'approved',
+    superpowersPhase: 'plan_review',
+    activeSuperpowersStage: 'plan_review',
+    plan: {
+      goal: sourceMessage.content,
+      summary: 'Old approved plan',
+      assumptions: [],
+      tasks: [
+        {
+          title: 'Old child task',
+          description: 'Old implementation task',
+          suggestedRole: 'executor',
+          priority: 'normal',
+          acceptance: ['Old behavior is implemented'],
+          scopeRead: [],
+          scopeWrite: ['packages/backend/src/old.ts'],
+          dependsOn: [],
+        },
+      ],
+      reviewFocus: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'Old verification', required: true },
+      ],
+      risks: [],
+      needsApproval: true,
+    },
+    workflowPlan: {
+      workflow_name: 'Old workflow',
+      source_message_id: sourceMessage.id,
+      goal: sourceMessage.content,
+      summary: 'Old approved plan',
+      tasks: [
+        {
+          id: 'old-task',
+          title: 'Old child task',
+          description: 'Old implementation task',
+          role: 'executor',
+          agent_id: null,
+          mode: 'serial',
+          depends_on: [],
+          status: 'completed',
+          progress: 100,
+          result_refs: [],
+        },
+      ],
+    },
+    status: 'awaiting_approval',
+  }));
+  const child = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: task.id,
+    title: 'Old child task',
+  });
+  const dispatchStep = workflowRepo.createStep({
+    workflow_run_id: workflow.id,
+    task_id: task.id,
+    stage: 'assignment',
+    node_name: 'dispatch',
+    status: 'completed',
+    sort_order: 1,
+  });
+  const verifyStep = workflowRepo.createStep({
+    workflow_run_id: workflow.id,
+    task_id: child.id,
+    stage: 'acceptance',
+    node_name: 'verify',
+    status: 'completed',
+    sort_order: 2,
+  });
+  const oldExecutor = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'old-executor',
+    agent_name: 'Old Executor',
+  });
+  const activeRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: oldExecutor.id,
+    agent_id: 'old-executor',
+    backend: 'codex',
+    task_id: child.id,
+    workflow_run_id: workflow.id,
+    workflow_step_id: verifyStep.id,
+    workflow_stage: 'implementation',
+    prompt: 'old execution still running',
+  });
+  const stateWithExecution = parseGraphState(workflowRepo.getRun(workflow.id)?.graph_state ?? null);
+  assert.ok(stateWithExecution);
+  workflowRepo.updateGraphState(workflow.id, serializeGraphState({
+    ...stateWithExecution,
+    childTaskIds: [child.id],
+    childTaskPlanIndexes: { [child.id]: 0 },
+  }));
+  const enqueued: string[] = [];
+  const originalEnqueue = workflowOrchestrator.enqueueExistingGraphRun;
+  workflowOrchestrator.enqueueExistingGraphRun = (runId) => {
+    enqueued.push(runId);
+    const run = workflowRepo.getRun(runId);
+    assert.ok(run);
+    return { run, enqueued: true };
+  };
+  try {
+    const requestMessage = await dispatchSessionUserMessage({
+      sessionId: session.id,
+      content: '请修改 plan v1：增加测试步骤。',
+      workflowArtifactChangeRequest: {
+        workflowRunId: workflow.id,
+        artifactVersionId: approved.id,
+        artifactType: 'plan',
+      },
+    });
+
+    assert.deepEqual(enqueued, [workflow.id]);
+    assert.equal(taskRepo.listByProject(project.id).filter((item) => item.source_message_id === requestMessage.id).length, 0);
+    const updatedRun = workflowRepo.getRun(workflow.id);
+    assert.equal(updatedRun?.status, 'running');
+    const updatedState = parseGraphState(updatedRun?.graph_state ?? null);
+    assert.equal(updatedState?.artifactChangeRequestMessageId, requestMessage.id);
+    assert.equal(updatedState?.artifactChangeRequestArtifactVersionId, approved.id);
+    assert.equal(updatedState?.draftPlanArtifactVersionId, null);
+    assert.equal(updatedState?.approvedPlanArtifactVersionId, null);
+    assert.equal(updatedState?.planReviewVerdict, null);
+    assert.equal(updatedState?.plan, null);
+    assert.equal(updatedState?.workflowPlan, null);
+    assert.deepEqual(updatedState?.childTaskIds, []);
+    assert.deepEqual(updatedState?.childTaskPlanIndexes, {});
+    assert.equal(taskRepo.get(child.id), undefined);
+    assert.ok(taskRepo.getIncludingDeleted(child.id)?.deleted_at);
+    assert.equal(workflowRepo.getStep(dispatchStep.id)?.status, 'skipped');
+    assert.equal(workflowRepo.getStep(verifyStep.id)?.status, 'skipped');
+    assert.equal(agentRunRepo.get(activeRun.id)?.status, 'interrupted');
+    assert.match(agentRunRepo.get(activeRun.id)?.error ?? '', /Superseded by artifact change request/);
+    const metadata = JSON.parse(sessionMessageRepo.get(requestMessage.id)?.metadata ?? '{}') as {
+      workflow_artifact_change_request?: {
+        workflowRunId?: string;
+        artifactVersionId?: string;
+        artifactType?: string;
+      };
+    };
+    assert.equal(metadata.workflow_artifact_change_request?.workflowRunId, workflow.id);
+    assert.equal(metadata.workflow_artifact_change_request?.artifactVersionId, approved.id);
+    assert.equal(metadata.workflow_artifact_change_request?.artifactType, 'plan');
+  } finally {
+    workflowOrchestrator.enqueueExistingGraphRun = originalEnqueue;
+    setWorkflowOrchestratorGraphDeps({});
+  }
+});
+
+test('dispatchSessionUserMessage rejects invalid workflow artifact change requests without starting planner or workflow', async () => {
+  const project = projectRepo.create({
+    name: 'Invalid Artifact Change Request Project',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-invalid-artifact-change-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Invalid Artifact Change Request Session',
+    workspace_path: project.path,
+  });
+
+  await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '请修改这个不存在的计划。',
+    workflowArtifactChangeRequest: {
+      workflowRunId: 'missing-run',
+      artifactVersionId: 'missing-artifact',
+      artifactType: 'plan',
+    },
+  });
+
+  assert.equal(taskRepo.listByProject(project.id).length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  const blocker = sessionEvidenceRepo.listBySession(session.id).find((event) =>
+    event.event_type === 'blocker' && /artifact change request rejected/i.test(event.title)
+  );
+  assert.ok(blocker);
+  assert.match(blocker.summary ?? '', /不会启动新的 planner 或 workflow/);
+});
+
+test('dispatchSessionUserMessage blocks lightweight plan revisions instead of converting them into normal plans', async () => {
+  const project = projectRepo.create({
+    name: 'Lightweight Artifact Change Request Project',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-lightweight-artifact-change-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Lightweight Artifact Change Request Session',
+    workspace_path: project.path,
+  });
+  const sourceMessage = sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    content: '实现一个轻量修复',
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Lightweight artifact room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Lightweight artifact workflow',
+    source_message_id: sourceMessage.id,
+    created_from: 'chat_plan',
+  });
+  const workflow = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'blocked',
+    current_stage: 'planning',
+    approval_required: true,
+    graph_version: SUPERPOWERS_V2_GRAPH_VERSION,
+    graph_state: serializeGraphState({
+      ...emptyAgentWorkflowState({
+        workflowRunId: 'pending',
+        projectId: project.id,
+        roomId: room.id,
+        taskId: task.id,
+        userGoal: sourceMessage.content,
+        projectPath: project.path,
+      }),
+      workflowRunId: 'pending',
+      currentNode: 'approval',
+      status: 'blocked',
+      error: 'Superpowers dispatch requires approved plan artifact version',
+    }),
+  });
+  const draft = workflowArtifactVersionRepo.createDraft({
+    workflow_run_id: workflow.id,
+    artifact_type: 'lightweight_plan',
+    title: 'Lightweight Plan',
+    content: '# Lightweight plan',
+    structured_data: { tasks: [] },
+    created_by_agent_id: 'planner',
+  });
+  const enqueuedBefore = [...workflowIntakeEnqueueCalls];
+
+  await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '请修改轻量计划。',
+    workflowArtifactChangeRequest: {
+      workflowRunId: workflow.id,
+      artifactVersionId: draft.id,
+      artifactType: 'lightweight_plan',
+    },
+  });
+
+  assert.deepEqual(workflowIntakeEnqueueCalls, enqueuedBefore);
+  const blocker = sessionEvidenceRepo.listBySession(session.id).find((event) =>
+    event.event_type === 'blocker' &&
+    (event.payload as { reason?: string }).reason === 'lightweight_plan_revision_not_implemented'
+  );
+  assert.ok(blocker);
+  const updatedState = parseGraphState(workflowRepo.getRun(workflow.id)?.graph_state ?? null);
+  assert.equal(updatedState?.draftPlanArtifactVersionId, null);
+});
+
 function createPlatformSkill(provider: 'codex' | 'claudecode' | 'opencode', name: string, description: string): void {
   const root = provider === 'codex'
     ? join(process.env.CODEX_HOME!, 'skills')
@@ -2149,9 +2480,9 @@ function pendingApprovalAgentsForTaskKind(
   return ['planner', 'reviewer', 'acceptor'];
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs = 1000, describe?: () => string): Promise<void> {
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 1000, describe?: () => string): Promise<void> {
   const start = Date.now();
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() - start > timeoutMs) {
       throw new Error(`timed out waiting for condition${describe ? `: ${describe()}` : ''}`);
     }
@@ -2250,16 +2581,35 @@ function outputForWorkflowStage(stage: string | null | undefined): string {
     });
   }
   if (stage === 'implementation') {
+    return JSON.stringify({
+      tddEvidence: [
+        { stage: 'RED', command: 'node --test session-dispatch', passed: false, summary: 'failed as expected' },
+        { stage: 'GREEN', command: 'node --test session-dispatch', passed: true, summary: 'passed' },
+      ],
+      superpowers: {
+        tddEvidence: [
+          { stage: 'RED', command: 'node --test session-dispatch', passed: false, summary: 'failed as expected' },
+          { stage: 'GREEN', command: 'node --test session-dispatch', passed: true, summary: 'passed' },
+        ],
+      },
+    });
+  }
+  if (stage === 'planning') {
     return [
-      'implementation completed',
+      'planning completed',
       '',
       '```json',
       JSON.stringify({
         superpowers: {
-          tddEvidence: [
-            { stage: 'RED', command: 'node --test session-dispatch', passed: false, summary: 'failed as expected' },
-            { stage: 'GREEN', command: 'node --test session-dispatch', passed: true, summary: 'passed' },
-          ],
+          designDocPath: 'docs/superpowers/specs/session-dispatch-design.md',
+          designReviewVerdict: 'approved',
+          worktree: {
+            path: '/tmp/open-deep-sea-session-dispatch-test',
+            branchName: 'session-dispatch-test',
+            baseRef: 'test',
+          },
+          implementationPlanPath: 'docs/superpowers/plans/session-dispatch-plan.md',
+          planReviewVerdict: 'approved',
         },
       }),
       '```',

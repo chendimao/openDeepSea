@@ -1,6 +1,6 @@
 import { File, FileText, Folder } from 'lucide-react';
 import React from 'react';
-import type { PlatformSkill, PlatformSkillRef, ProjectFile, WorkspaceSearchResult } from '../lib/types';
+import type { PlatformSkill, PlatformSkillRef, ProjectFile, WorkflowArtifactVersionType, WorkspaceSearchResult } from '../lib/types';
 import { formatFileSize } from '../lib/composerModel';
 import type { Segment, TriggerSuggestion } from '../components/prompt-area/types';
 import { segmentsToPlainText } from '../components/prompt-area/prompt-area-engine';
@@ -12,6 +12,11 @@ export type SessionComposerSubmit = {
   workspaceFileRefs?: string[];
   libraryFileRefs?: string[];
   platformSkillRefs?: PlatformSkillRef[];
+  workflowArtifactChangeRequest?: {
+    workflowRunId: string;
+    artifactVersionId: string;
+    artifactType: WorkflowArtifactVersionType;
+  };
 };
 
 export type ComposerAttachmentPreviewKind = 'image' | 'text' | 'file';

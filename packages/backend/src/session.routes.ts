@@ -54,6 +54,7 @@ import type {
   WorkflowRun,
 } from './types.js';
 import { parseGraphState, serializeGraphState, type AgentWorkflowState } from './workflows/graph/state.js';
+import { workflowOrchestrator } from './workflows/orchestrator.js';
 
 export const sessionRouter = Router();
 
@@ -198,7 +199,9 @@ function approveSessionWorkflowArtifact(req: { params: { sessionId: string; arti
     res.status(409).json({ error: 'workflow artifact version cannot be approved' });
     return;
   }
-  updateApprovedArtifactGraphState(linked.run, approved);
+  const shouldResume = shouldResumeAfterArtifactApproval(linked.run, artifact.artifact_type);
+  const updatedRun = updateApprovedArtifactGraphState(linked.run, approved, shouldResume);
+  resumeWorkflowAfterArtifactApproval(updatedRun ?? linked.run, shouldResume);
   broadcastSessionWorkspaceSnapshot(session);
   const view = toWorkflowArtifactVersionView(approved);
   res.json(view);
@@ -344,22 +347,35 @@ function buildWorkflowGates(
   const gates: WorkflowGateView[] = [];
   for (const run of runs) {
     const runArtifacts = artifacts.filter((artifact) => artifact.workflow_run_id === run.id);
-    for (const artifactType of ['spec', 'plan'] as const) {
+    for (const artifactType of ['spec', 'plan', 'lightweight_plan'] as const) {
       const latestDraft = latestArtifactByStatus(runArtifacts, artifactType, ['draft', 'reviewing']);
       const approved = latestArtifactByStatus(runArtifacts, artifactType, ['approved']);
-      if (!latestDraft || approved) continue;
+      const artifact = latestDraft ?? approved;
+      if (!artifact) continue;
       gates.push({
         kind: artifactType === 'spec' ? 'spec_confirm' : 'plan_confirm',
         workflow_run_id: run.id,
-        artifact_version_id: latestDraft.id,
-        status: 'pending',
-        reason: artifactType === 'spec'
-          ? '等待用户确认 planner 生成的需求/设计规格。'
-          : '等待用户确认 planner 生成的执行计划。',
+        artifact_version_id: artifact.id,
+        status: artifact.status === 'approved' ? 'approved' : 'pending',
+        reason: buildWorkflowGateReason(artifactType, artifact.status === 'approved' ? 'approved' : 'pending'),
       });
     }
   }
   return gates;
+}
+
+function buildWorkflowGateReason(
+  artifactType: Extract<WorkflowArtifactVersionType, 'spec' | 'plan' | 'lightweight_plan'>,
+  status: 'pending' | 'approved',
+): string {
+  if (status === 'approved') {
+    if (artifactType === 'spec') return '已确认的需求/设计规格；如需调整，请请求 planner 修改。';
+    if (artifactType === 'lightweight_plan') return '已确认的轻量执行计划；如需调整，请请求 planner 修改。';
+    return '已确认的执行计划；如需调整，请请求 planner 修改。';
+  }
+  if (artifactType === 'spec') return '等待用户确认 planner 生成的需求/设计规格。';
+  if (artifactType === 'lightweight_plan') return '等待用户确认 planner 生成的轻量执行计划。';
+  return '等待用户确认 planner 生成的执行计划。';
 }
 
 function latestArtifactByStatus(
@@ -372,9 +388,13 @@ function latestArtifactByStatus(
     .sort((a, b) => b.version - a.version)[0] ?? null;
 }
 
-function updateApprovedArtifactGraphState(run: WorkflowRun, artifact: WorkflowArtifactVersion): void {
+function updateApprovedArtifactGraphState(
+  run: WorkflowRun,
+  artifact: WorkflowArtifactVersion,
+  shouldResume = shouldResumeAfterArtifactApproval(run, artifact.artifact_type),
+): WorkflowRun | null {
   const state = parseGraphState(run.graph_state);
-  if (!state) return;
+  if (!state) return null;
   const nextState: AgentWorkflowState = {
     ...state,
     ...(artifact.artifact_type === 'spec'
@@ -393,8 +413,35 @@ function updateApprovedArtifactGraphState(run: WorkflowRun, artifact: WorkflowAr
           : state.draftPlanArtifactVersionId,
       }
       : {}),
+    ...(artifact.artifact_type === 'lightweight_plan'
+      ? {
+        lightweightPlanArtifactVersionId: artifact.id,
+      }
+      : {}),
+    ...(shouldResume
+      ? {
+        status: 'running',
+        error: null,
+      }
+      : {}),
   };
-  workflowRepo.updateGraphState(run.id, serializeGraphState(nextState));
+  const graphStateUpdated = workflowRepo.updateGraphState(run.id, serializeGraphState(nextState));
+  if (!shouldResume) return graphStateUpdated ?? null;
+  return workflowRepo.updateRun(run.id, { status: 'running', error: null }) ?? graphStateUpdated ?? null;
+}
+
+function shouldResumeAfterArtifactApproval(run: WorkflowRun, artifactType: WorkflowArtifactVersionType): boolean {
+  if (artifactType !== 'spec' && artifactType !== 'plan' && artifactType !== 'lightweight_plan') return false;
+  if (run.status !== 'blocked') return false;
+  const state = parseGraphState(run.graph_state);
+  const error = [run.error, state?.error].filter(Boolean).join('\n');
+  if (artifactType === 'spec') return /approved spec artifact/i.test(error);
+  return /approved plan artifact/i.test(error);
+}
+
+function resumeWorkflowAfterArtifactApproval(run: WorkflowRun, shouldResume: boolean): void {
+  if (!shouldResume) return;
+  workflowOrchestrator.enqueueExistingGraphRun(run.id);
 }
 
 function parseStructuredData(value: string): unknown {

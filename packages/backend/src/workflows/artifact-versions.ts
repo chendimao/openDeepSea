@@ -136,6 +136,23 @@ export const workflowArtifactVersionRepo = {
       .get(workflowRunId, artifactType) as WorkflowArtifactVersionRow | undefined ?? null;
   },
 
+  updateDraftContent(
+    id: string,
+    input: {
+      content: string;
+      structured_data?: unknown;
+    },
+  ): WorkflowArtifactVersion | null {
+    const existing = this.get(id);
+    if (!existing || (existing.status !== 'draft' && existing.status !== 'reviewing')) return null;
+    db.prepare(
+      `UPDATE workflow_artifact_versions
+       SET content = ?, structured_data = ?, updated_at = ?
+       WHERE id = ?`,
+    ).run(input.content, stringifyStructuredData(input.structured_data), now(), id);
+    return this.get(id);
+  },
+
   approve(id: string, input: ApproveInput): WorkflowArtifactVersion | null {
     const existing = this.get(id);
     if (!existing) return null;

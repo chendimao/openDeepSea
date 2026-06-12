@@ -219,6 +219,11 @@ test('sessionSocket queues session messages until websocket opens', async () => 
       workspaceFileRefs: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
       libraryFileRefs: ['asset:doc-1'],
       platformSkillRefs: [{ provider: 'codex', name: 'frontend-design' }],
+      workflowArtifactChangeRequest: {
+        workflowRunId: 'workflow-1',
+        artifactVersionId: 'artifact-1',
+        artifactType: 'plan',
+      },
     });
     await new Promise((resolve) => setTimeout(resolve, 5));
     const socket = FakeWebSocket.instances[0]!;
@@ -235,6 +240,11 @@ test('sessionSocket queues session messages until websocket opens', async () => 
         workspaceFileRefs: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
         libraryFileRefs: ['asset:doc-1'],
         platformSkillRefs: [{ provider: 'codex', name: 'frontend-design' }],
+        workflowArtifactChangeRequest: {
+          workflowRunId: 'workflow-1',
+          artifactVersionId: 'artifact-1',
+          artifactType: 'plan',
+        },
       },
     ]);
     sessionSocket.destroy();

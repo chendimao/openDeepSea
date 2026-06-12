@@ -141,17 +141,8 @@ function rankCandidates(
     const fallbackAgents = agents.filter(isFullstackFallbackAgent);
     if (fallbackAgents.length > 0) {
       const specialistAgents = agents.filter((agent) => !isFullstackFallbackAgent(agent));
-      const coverage = inferDomainCoverage(context);
-      if (coverage.frontend && coverage.backend) {
-        return [
-          ...sortByScore(fallbackAgents, role, context, domain),
-          ...sortByScore(specialistAgents, role, context, domain),
-        ];
-      }
       if (domain) {
-        const domainSpecialists = specialistAgents.filter((agent) =>
-          scoreCapability(agent, domain) > 0 || scoreDomain(agent, domain) > 0,
-        );
+        const domainSpecialists = specialistAgents.filter((agent) => matchesDomainSpecialist(agent, domain));
         if (domainSpecialists.length > 0) {
           const domainSpecialistIds = new Set(domainSpecialists.map((agent) => agent.id));
           return [
@@ -174,6 +165,16 @@ function rankCandidates(
     }
   }
   return sortByScore(agents, role, context, domain);
+}
+
+function matchesDomainSpecialist(agent: RoomAgent, domain: Exclude<DomainHint, null>): boolean {
+  if (domain === 'fullstack') {
+    return scoreCapability(agent, 'frontend') > 0 ||
+      scoreCapability(agent, 'backend') > 0 ||
+      scoreDomain(agent, 'frontend') > 0 ||
+      scoreDomain(agent, 'backend') > 0;
+  }
+  return scoreCapability(agent, domain) > 0 || scoreDomain(agent, domain) > 0;
 }
 
 function sortByScore(
@@ -267,14 +268,6 @@ function inferDomainHint(context: WorkflowAgentSelectionContext): DomainHint {
   if (frontendScore > 0 && backendScore > 0) return 'fullstack';
   if (frontendScore === 0 && backendScore === 0) return null;
   return frontendScore > backendScore ? 'frontend' : 'backend';
-}
-
-function inferDomainCoverage(context: WorkflowAgentSelectionContext): { frontend: boolean; backend: boolean } {
-  const { frontendScore, backendScore } = inferDomainScores(context);
-  return {
-    frontend: frontendScore > 0,
-    backend: backendScore > 0,
-  };
 }
 
 function inferDomainScores(context: WorkflowAgentSelectionContext): {

@@ -33,7 +33,9 @@ export function ensureWorkflowAgentsForRun(input: WorkflowAgentProvisioningInput
   }
   for (const task of input.planTasks ?? []) {
     if (task.suggestedRole !== 'executor') continue;
-    templateIds.add(templateIdForPlanTask(task));
+    for (const templateId of templateIdsForPlanTask(task)) {
+      templateIds.add(templateId);
+    }
   }
 
   let agents = input.agents;
@@ -59,8 +61,11 @@ export function ensureGlobalExecutorForRecovery(input: {
   return roomAgentRepo.ensureBuiltInAgent(input.roomId, templateId);
 }
 
-function templateIdForPlanTask(task: ParsedPlanTask): string {
+function templateIdsForPlanTask(task: ParsedPlanTask): string[] {
   const domain = inferTaskDomain(task);
+  if (domain === 'fullstack') {
+    return ['frontend-executor', 'backend-executor'];
+  }
   const assignment = assignPlanTaskAgent({
     taskId: task.title,
     title: task.title,
@@ -68,7 +73,7 @@ function templateIdForPlanTask(task: ParsedPlanTask): string {
     scopeWrite: task.scopeWrite,
     agents: builtInExecutorCandidates(),
   });
-  return assignment.assignedAgentId ?? FULLSTACK_ENGINEER_AGENT_ID;
+  return [assignment.assignedAgentId ?? FULLSTACK_ENGINEER_AGENT_ID];
 }
 
 function templateIdForRecoveryContext(context: Record<string, unknown>): string {
@@ -84,7 +89,7 @@ function templateIdForRecoveryContext(context: Record<string, unknown>): string 
     acceptance: [],
     dependsOn: [],
   };
-  return templateIdForPlanTask(task);
+  return templateIdsForPlanTask(task)[0] ?? FULLSTACK_ENGINEER_AGENT_ID;
 }
 
 function inferTaskDomain(task: ParsedPlanTask): TaskDomain {

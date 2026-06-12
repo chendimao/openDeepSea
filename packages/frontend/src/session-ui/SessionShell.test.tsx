@@ -219,6 +219,46 @@ test('SessionShell renders workflow spec and plan gates as read-only artifacts',
   assert.match(html, /请求 planner 修改/);
   assert.match(html, /确认 plan/);
   assert.doesNotMatch(panel, /<textarea\b/);
+  assert.match(sessionShellViewSource, /workflowArtifactChangeRequest:\s*\{/);
+  assert.match(sessionShellViewSource, /workflowRunId:\s*artifact\.workflow_run_id/);
+  assert.match(sessionShellViewSource, /artifactVersionId:\s*artifact\.id/);
+});
+
+test('SessionShell hides artifact confirm action after approval while keeping change request action', () => {
+  const payload = createPayload();
+  payload.activeSession.workflowArtifacts = [
+    {
+      id: 'artifact-plan-approved-1',
+      workflow_run_id: 'workflow-run-approved-1',
+      artifact_type: 'plan',
+      version: 1,
+      status: 'approved',
+      title: '已确认执行计划',
+      content: '已确认计划\n\n1. 执行已确认的任务拆解',
+      structured_data: null,
+      created_by_agent_id: 'planner',
+      change_request_message_id: null,
+      approved_by: 'user',
+      approved_at: Date.now(),
+      created_at: Date.now(),
+    },
+  ];
+  payload.activeSession.workflowGates = [{
+    kind: 'plan_confirm',
+    workflow_run_id: 'workflow-run-approved-1',
+    artifact_version_id: 'artifact-plan-approved-1',
+    status: 'approved',
+    reason: '已确认的执行计划；如需调整，请请求 planner 修改。',
+  }];
+
+  const html = renderSessionShell(payload);
+  const panel = html.match(/<section[^>]+data-workflow-artifact-panel="true"[\s\S]*?<\/section>/)?.[0] ?? '';
+
+  assert.match(panel, /已确认产物/);
+  assert.match(panel, /Plan v1/);
+  assert.match(panel, /请求 planner 修改/);
+  assert.match(panel, /已确认/);
+  assert.doesNotMatch(panel, /确认 plan/);
 });
 
 test('SessionShell renders local git state in the bottom path area', () => {

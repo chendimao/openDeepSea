@@ -89,6 +89,7 @@ test('SessionWorkspacePage wires workflow artifact approval through the API and 
 
 test('SessionWorkspacePage keeps workflow artifact edits routed through normal planner messages', () => {
   assert.match(sessionWorkspacePageSource, /onSendMessage=\{\(message\) => runSessionCommand\(message,\s*workspacePayload,\s*\{/);
+  assert.match(sessionWorkspacePageSource, /workflowArtifactChangeRequest:\s*message\.workflowArtifactChangeRequest/);
   assert.doesNotMatch(sessionWorkspacePageSource, /updateWorkflowArtifactVersion|patchWorkflowArtifactVersion|saveWorkflowArtifactVersion/);
 });
 

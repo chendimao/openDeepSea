@@ -1,5 +1,6 @@
 import { lstat } from 'node:fs/promises';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
+import { agentRunRepo } from './repos/agent-runs.js';
 import { fileRepo } from './repos/files.js';
 import { projectRepo } from './repos/projects.js';
 import { roomRepo } from './repos/rooms.js';
@@ -10,16 +11,18 @@ import {
   sessionRepo,
 } from './repos/sessions.js';
 import { taskRepo } from './repos/tasks.js';
-import { workflowRepo } from './repos/workflows.js';
+import { workflowArtifactVersionRepo, workflowRepo } from './repos/workflows.js';
 import { createContextManifest } from './session.routes.js';
 import { buildKnowledgeAgentToolPrompt } from './knowledge-rag.js';
 import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
 import { buildSessionFileReferenceContext } from './session-file-reference-context.js';
 import { buildSessionPlannerRuntimeSnapshot, resolveSessionPlannerRuntime } from './session-planner-runtime.js';
 import { runSessionAgent } from './session-runtime.js';
+import { runRegistry } from './run-registry.js';
 import { recordTaskCreatedEvent } from './task-conversation.js';
 import { workflowOrchestrator } from './workflows/orchestrator.js';
 import { createSessionWorkflowIntake } from './workflows/session-workflow-intake.js';
+import { parseGraphState, serializeGraphState, type AgentWorkflowState } from './workflows/graph/state.js';
 import { SUPERPOWERS_V2_GRAPH_VERSION } from './workflows/superpowers-stage-registry.js';
 import { assessTaskRisk, type ApprovalCard, type TaskRiskAssessment } from './workflows/task-risk.js';
 import { wsHub } from './ws-hub.js';
@@ -39,6 +42,8 @@ import type {
   SessionMode,
   Task,
   WorkflowRun,
+  WorkflowArtifactVersion,
+  WorkflowArtifactVersionType,
 } from './types.js';
 
 const DEFAULT_SESSION_TITLE = 'New Session';
@@ -101,6 +106,12 @@ interface SessionWorkflowRequest {
   workspaceFileRefs: string[];
 }
 
+interface WorkflowArtifactChangeRequestPayload {
+  workflowRunId: string;
+  artifactVersionId: string;
+  artifactType: WorkflowArtifactVersionType;
+}
+
 export async function dispatchSessionUserMessage(input: {
   sessionId: string;
   content: string;
@@ -111,6 +122,7 @@ export async function dispatchSessionUserMessage(input: {
   workspaceFileRefs?: string[];
   libraryFileRefs?: string[];
   platformSkillRefs?: PlatformSkillRef[];
+  workflowArtifactChangeRequest?: WorkflowArtifactChangeRequestPayload;
 }): Promise<SessionMessage> {
   const session = sessionRepo.get(input.sessionId);
   if (!session) throw new Error('session not found');
@@ -135,7 +147,13 @@ export async function dispatchSessionUserMessage(input: {
     sender_id: input.senderId ?? 'user',
     sender_name: input.senderName ?? null,
     content: input.content,
-    metadata: buildUserMessageMetadata({ agentId, workspaceFileRefs, libraryFileRefs, platformSkillRefs }),
+    metadata: buildUserMessageMetadata({
+      agentId,
+      workspaceFileRefs,
+      libraryFileRefs,
+      platformSkillRefs,
+      workflowArtifactChangeRequest: input.workflowArtifactChangeRequest,
+    }),
   });
   const runtimeSession = shouldRenameSession
     ? sessionRepo.update(updatedSession.id, { title: buildSessionTitleFromMessage(input.content) }) ?? updatedSession
@@ -176,6 +194,23 @@ export async function dispatchSessionUserMessage(input: {
       libraryFileRefs,
       platformSkillRefs,
     });
+    return message;
+  }
+
+  if (input.workflowArtifactChangeRequest) {
+    const handled = handleWorkflowArtifactChangeRequest({
+      project,
+      session: runtimeSession,
+      sourceMessage: message,
+      request: input.workflowArtifactChangeRequest,
+    });
+    if (!handled) {
+      recordInvalidWorkflowArtifactChangeRequest({
+        session: runtimeSession,
+        sourceMessage: message,
+        request: input.workflowArtifactChangeRequest,
+      });
+    }
     return message;
   }
 
@@ -354,6 +389,228 @@ function enqueueSessionWorkflowIntake(input: {
     });
     wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
   }
+}
+
+function handleWorkflowArtifactChangeRequest(input: {
+  project: Project;
+  session: Session;
+  sourceMessage: SessionMessage;
+  request: WorkflowArtifactChangeRequestPayload;
+}): boolean {
+  const artifact = workflowArtifactVersionRepo.get(input.request.artifactVersionId);
+  if (!artifact || !workflowArtifactChangeRequestMatchesArtifact(input.request, artifact)) return false;
+  if (artifact.status !== 'draft' && artifact.status !== 'reviewing' && artifact.status !== 'approved') return false;
+  if (artifact.artifact_type !== 'spec' && artifact.artifact_type !== 'plan' && artifact.artifact_type !== 'lightweight_plan') return false;
+
+  const run = workflowRepo.getRun(input.request.workflowRunId);
+  if (!run || run.project_id !== input.project.id || run.graph_version !== SUPERPOWERS_V2_GRAPH_VERSION) return false;
+  if (!sessionOwnsWorkflowRun(input.session, run)) return false;
+
+  if (artifact.artifact_type === 'lightweight_plan') {
+    recordUnsupportedWorkflowArtifactChangeRequest({
+      session: input.session,
+      sourceMessage: input.sourceMessage,
+      run,
+      artifact,
+    });
+    return true;
+  }
+
+  const state = parseGraphState(run.graph_state);
+  if (!state) return false;
+  invalidateSupersededWorkflowExecution(run, state);
+  const nextState = buildWorkflowArtifactChangeRequestState({
+    state,
+    artifact,
+    sourceMessageId: input.sourceMessage.id,
+  });
+  const updatedRun = workflowRepo.updateRun(run.id, {
+    status: 'running',
+    current_stage: 'planning',
+    error: null,
+  });
+  workflowRepo.updateGraphState(run.id, serializeGraphState(nextState));
+  workflowOrchestrator.enqueueExistingGraphRun(run.id);
+  const event = sessionEvidenceRepo.create({
+    session_id: input.session.id,
+    event_type: 'status',
+    source_message_id: input.sourceMessage.id,
+    title: 'Workflow artifact change requested',
+    summary: `已请求 planner 修改 ${artifact.artifact_type} v${artifact.version}。`,
+    payload: {
+      workflow_run_id: run.id,
+      artifact_version_id: artifact.id,
+      artifact_type: artifact.artifact_type,
+      previous_status: artifact.status,
+    },
+  });
+  wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
+  if (updatedRun) wsHub.broadcast(run.room_id, { type: 'workflow:updated', roomId: run.room_id, workflow: updatedRun });
+  broadcastActiveSessionUpsert(input.session.id);
+  return true;
+}
+
+function recordInvalidWorkflowArtifactChangeRequest(input: {
+  session: Session;
+  sourceMessage: SessionMessage;
+  request: WorkflowArtifactChangeRequestPayload;
+}): void {
+  const event = sessionEvidenceRepo.create({
+    session_id: input.session.id,
+    event_type: 'blocker',
+    severity: 'warning',
+    source_message_id: input.sourceMessage.id,
+    title: 'Workflow artifact change request rejected',
+    summary: '无法匹配当前会话中的 workflow artifact，本次消息不会启动新的 planner 或 workflow。',
+    payload: {
+      workflow_artifact_change_request: input.request,
+      reason: 'invalid_or_foreign_artifact',
+    },
+  });
+  wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
+  broadcastActiveSessionUpsert(input.session.id);
+}
+
+function recordUnsupportedWorkflowArtifactChangeRequest(input: {
+  session: Session;
+  sourceMessage: SessionMessage;
+  run: WorkflowRun;
+  artifact: WorkflowArtifactVersion;
+}): void {
+  const event = sessionEvidenceRepo.create({
+    session_id: input.session.id,
+    event_type: 'blocker',
+    severity: 'warning',
+    source_message_id: input.sourceMessage.id,
+    title: 'Workflow artifact change request blocked',
+    summary: 'lightweight_plan 修订暂未接入可执行 graph 节点，本次请求未转换为普通 plan。',
+    payload: {
+      workflow_run_id: input.run.id,
+      artifact_version_id: input.artifact.id,
+      artifact_type: input.artifact.artifact_type,
+      reason: 'lightweight_plan_revision_not_implemented',
+    },
+  });
+  wsHub.broadcastSession(input.session.id, { type: 'session_evidence:new', sessionId: input.session.id, event });
+  broadcastActiveSessionUpsert(input.session.id);
+}
+
+function invalidateSupersededWorkflowExecution(run: WorkflowRun, state: AgentWorkflowState): void {
+  const supersededReason = 'Superseded by artifact change request';
+  const executionNodeNames = new Set([
+    'dispatch',
+    'tdd_execute',
+    'execute',
+    'spec_compliance_review',
+    'code_quality_review',
+    'verify',
+    'finish_branch',
+    'acceptance',
+    'memory',
+  ]);
+  const childTaskIds = new Set([
+    ...state.childTaskIds,
+    ...taskRepo.listChildren(run.task_id).map((task) => task.id),
+  ]);
+  for (const activeRun of agentRunRepo.listActiveByWorkflow(run.id)) {
+    runRegistry.cancel(activeRun.id);
+    agentRunRepo.interruptRun(activeRun.id, supersededReason);
+  }
+  for (const childTaskId of childTaskIds) {
+    taskRepo.delete(childTaskId);
+  }
+  for (const step of workflowRepo.listSteps(run.id)) {
+    if (!step.node_name || !executionNodeNames.has(step.node_name)) continue;
+    workflowRepo.updateStep(step.id, {
+      status: 'skipped',
+      error: step.error ?? supersededReason,
+    });
+  }
+}
+
+function workflowArtifactChangeRequestMatchesArtifact(
+  request: WorkflowArtifactChangeRequestPayload,
+  artifact: WorkflowArtifactVersion,
+): boolean {
+  return artifact.workflow_run_id === request.workflowRunId &&
+    artifact.id === request.artifactVersionId &&
+    artifact.artifact_type === request.artifactType;
+}
+
+function sessionOwnsWorkflowRun(session: Session, run: WorkflowRun): boolean {
+  const task = taskRepo.get(run.task_id);
+  if (!task || task.project_id !== session.project_id || !task.source_message_id) return false;
+  return sessionMessageRepo.listBySession(session.id).some((message) => message.id === task.source_message_id);
+}
+
+function buildWorkflowArtifactChangeRequestState(input: {
+  state: AgentWorkflowState;
+  artifact: WorkflowArtifactVersion;
+  sourceMessageId: string;
+}): AgentWorkflowState {
+  const common = {
+    artifactChangeRequestMessageId: input.sourceMessageId,
+    artifactChangeRequestArtifactVersionId: input.artifact.id,
+    status: 'running' as const,
+    error: null,
+    recoveryState: null,
+    currentStepId: null,
+    activeAgentRunId: null,
+    childTaskIds: [],
+    childTaskPlanIndexes: {},
+    agentAssignments: [],
+    tddEvidence: [],
+    tddExemption: null,
+    specComplianceReview: null,
+    codeQualityReview: null,
+    verificationEvidence: [],
+    finishBranchDecision: null,
+    riskAssessment: null,
+    approvalCard: null,
+    reviewFindings: [],
+    reviewVerdict: null,
+    verificationResults: [],
+    repairAttempts: 0,
+  };
+  if (input.artifact.artifact_type === 'spec') {
+    return {
+      ...input.state,
+      ...common,
+      currentNode: 'context',
+      superpowersPhase: null,
+      activeSuperpowersStage: 'brainstorming',
+      approvedSpecArtifactVersionId: null,
+      draftSpecArtifactVersionId: input.artifact.status === 'approved'
+        ? input.state.draftSpecArtifactVersionId
+        : input.artifact.id,
+      designReviewVerdict: null,
+      draftPlanArtifactVersionId: null,
+      approvedPlanArtifactVersionId: null,
+      lightweightPlanArtifactVersionId: null,
+      implementationPlanPath: null,
+      planReviewVerdict: null,
+      plan: null,
+      workflowPlan: null,
+      approval: 'pending',
+    };
+  }
+  return {
+    ...input.state,
+    ...common,
+    currentNode: 'planning',
+    superpowersPhase: 'worktree',
+    activeSuperpowersStage: input.artifact.artifact_type === 'lightweight_plan' ? 'lightweight_plan' : 'writing_plans',
+    draftPlanArtifactVersionId: input.artifact.artifact_type === 'plan' && input.artifact.status !== 'approved'
+      ? input.artifact.id
+      : input.state.draftPlanArtifactVersionId,
+    approvedPlanArtifactVersionId: null,
+    lightweightPlanArtifactVersionId: input.artifact.artifact_type === 'lightweight_plan' ? null : input.state.lightweightPlanArtifactVersionId,
+    implementationPlanPath: null,
+    planReviewVerdict: null,
+    plan: null,
+    workflowPlan: null,
+    approval: 'pending',
+  };
 }
 
 function recordWorkflowIntakeStartedMessage(input: {
@@ -1289,6 +1546,7 @@ function buildUserMessageMetadata(input: {
   workspaceFileRefs: string[];
   libraryFileRefs: string[];
   platformSkillRefs: ResolvedPlatformSkillRef[];
+  workflowArtifactChangeRequest?: WorkflowArtifactChangeRequestPayload;
 }): Record<string, unknown> {
   const attachments = buildLibraryAttachmentMetadata(input.libraryFileRefs);
   return {
@@ -1299,6 +1557,9 @@ function buildUserMessageMetadata(input: {
       ? {
           platform_skill_refs: input.platformSkillRefs.map(({ provider, name }) => ({ provider, name })),
         }
+      : {}),
+    ...(input.workflowArtifactChangeRequest
+      ? { workflow_artifact_change_request: input.workflowArtifactChangeRequest }
       : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
   };

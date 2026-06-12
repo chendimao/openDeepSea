@@ -18,6 +18,7 @@ import type {
   Task,
   TerminalProfile,
   TerminalStatus,
+  WorkflowArtifactVersionType,
 } from './types';
 
 type ImageGenerationJob = {
@@ -144,6 +145,11 @@ export type WsClientEvent =
       workspaceFileRefs?: string[];
       libraryFileRefs?: string[];
       platformSkillRefs?: PlatformSkillRef[];
+      workflowArtifactChangeRequest?: {
+        workflowRunId: string;
+        artifactVersionId: string;
+        artifactType: WorkflowArtifactVersionType;
+      };
     }
   | { type: 'agent.run.pause'; sessionId: string; agentId: string; runId: string }
   | { type: 'agent.run.resume'; sessionId: string; agentId: string; runId: string; content?: string }
@@ -357,6 +363,11 @@ class SessionSocket {
     workspaceFileRefs?: string[];
     libraryFileRefs?: string[];
     platformSkillRefs?: PlatformSkillRef[];
+    workflowArtifactChangeRequest?: {
+      workflowRunId: string;
+      artifactVersionId: string;
+      artifactType: WorkflowArtifactVersionType;
+    };
   }): void {
     this.sendOrQueue({
       type: 'session.message.send',
@@ -367,6 +378,7 @@ class SessionSocket {
       ...(input.workspaceFileRefs && input.workspaceFileRefs.length > 0 ? { workspaceFileRefs: input.workspaceFileRefs } : {}),
       ...(input.libraryFileRefs && input.libraryFileRefs.length > 0 ? { libraryFileRefs: input.libraryFileRefs } : {}),
       ...(input.platformSkillRefs && input.platformSkillRefs.length > 0 ? { platformSkillRefs: input.platformSkillRefs } : {}),
+      ...(input.workflowArtifactChangeRequest ? { workflowArtifactChangeRequest: input.workflowArtifactChangeRequest } : {}),
     });
   }
 

@@ -1428,6 +1428,11 @@ function TranscriptCanvas({
           onApprove={onApproveWorkflowArtifact}
           onRequestChange={(artifact) => onSendMessage({
             content: buildWorkflowArtifactChangeRequestContent(artifact),
+            workflowArtifactChangeRequest: {
+              workflowRunId: artifact.workflow_run_id,
+              artifactVersionId: artifact.id,
+              artifactType: artifact.artifact_type,
+            },
           })}
         />
         {timeline.length === 0 ? (
@@ -1594,26 +1599,27 @@ function WorkflowArtifactGatePanel({
   onRequestChange: (artifact: WorkflowArtifactVersionView) => void;
 }): JSX.Element | null {
   const artifactById = new Map(artifacts.map((artifact) => [artifact.id, artifact]));
-  const pendingGateItems = gates
-    .filter((gate) => gate.status !== 'approved' && gate.artifact_version_id)
+  const gateItems = gates
+    .filter((gate) => gate.artifact_version_id)
     .map((gate) => {
       const artifact = gate.artifact_version_id ? artifactById.get(gate.artifact_version_id) : undefined;
       return artifact ? { gate, artifact } : null;
     })
     .filter((item): item is { gate: WorkflowGateView; artifact: WorkflowArtifactVersionView } => Boolean(item));
-  if (pendingGateItems.length === 0) return null;
+  if (gateItems.length === 0) return null;
+  const pendingCount = gateItems.filter((item) => item.gate.status === 'pending').length;
 
   return (
     <section className="deepsea-workflow-artifacts" data-workflow-artifact-panel="true" aria-label="工作流产物确认">
       <div className="deepsea-workflow-artifacts__header">
         <div>
           <span className="deepsea-status-chip" data-tone="warn">Workflow Gate</span>
-          <h3>等待用户确认</h3>
+          <h3>{pendingCount > 0 ? '等待用户确认' : '已确认产物'}</h3>
         </div>
-        <span>{pendingGateItems.length} 个门禁</span>
+        <span>{pendingCount > 0 ? `${pendingCount} 个门禁` : `${gateItems.length} 个产物`}</span>
       </div>
       <div className="deepsea-workflow-artifacts__list">
-        {pendingGateItems.map(({ gate, artifact }) => (
+        {gateItems.map(({ gate, artifact }) => (
           <article className="deepsea-workflow-artifact" key={`${gate.kind}:${artifact.id}`}>
             <header className="deepsea-workflow-artifact__title">
               <FileText aria-hidden="true" />
@@ -1637,16 +1643,20 @@ function WorkflowArtifactGatePanel({
                   <Edit3 aria-hidden="true" />
                   请求 planner 修改
                 </button>
-                <button
-                  type="button"
-                  data-workflow-artifact-action="approve"
-                  aria-label={`确认 ${artifact.artifact_type} v${artifact.version}`}
-                  disabled={!onApprove}
-                  onClick={() => onApprove?.(artifact.id)}
-                >
-                  <Check aria-hidden="true" />
-                  确认 {formatWorkflowArtifactType(artifact.artifact_type)}
-                </button>
+                {gate.status === 'pending' ? (
+                  <button
+                    type="button"
+                    data-workflow-artifact-action="approve"
+                    aria-label={`确认 ${artifact.artifact_type} v${artifact.version}`}
+                    disabled={!onApprove}
+                    onClick={() => onApprove?.(artifact.id)}
+                  >
+                    <Check aria-hidden="true" />
+                    确认 {formatWorkflowArtifactType(artifact.artifact_type)}
+                  </button>
+                ) : (
+                  <span className="deepsea-status-chip" data-tone="success">已确认</span>
+                )}
               </div>
             </footer>
           </article>
