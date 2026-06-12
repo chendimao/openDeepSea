@@ -107,7 +107,7 @@
 - Modify: `packages/backend/src/workflows/graph/state.ts`
 - Test: `packages/backend/src/workflows/graph/state.test.ts`
 
-- [ ] **Step 1: Write failing backend state schema test**
+- [x] **Step 1: Write failing backend state schema test**
 
 Add this test to `packages/backend/src/workflows/graph/state.test.ts`:
 
@@ -148,7 +148,7 @@ test('agentWorkflowStateSchema preserves Superpowers routing fields', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -158,7 +158,7 @@ node --import tsx --test packages/backend/src/workflows/graph/state.test.ts
 
 Expected: FAIL with a Zod enum or property mismatch for `route_skills`, `selectedIntent`, or `worktreeDecision`.
 
-- [ ] **Step 3: Extend backend workflow node and artifact types**
+- [x] **Step 3: Extend backend workflow node and artifact types**
 
 In `packages/backend/src/types.ts`, extend `WorkflowDefinitionNodeType`:
 
@@ -212,7 +212,7 @@ export type WorkflowArtifactVersionType =
   | 'finish_branch_decision';
 ```
 
-- [ ] **Step 4: Mirror frontend types**
+- [x] **Step 4: Mirror frontend types**
 
 In `packages/frontend/src/lib/types.ts`, apply the same `WorkflowDefinitionNodeType` and `WorkflowArtifactVersionType` additions. Add these view types near `WorkflowGateView`:
 
@@ -247,7 +247,7 @@ export interface WorkflowAgentAssignmentView {
 }
 ```
 
-- [ ] **Step 5: Extend graph state schema**
+- [x] **Step 5: Extend graph state schema**
 
 In `packages/backend/src/workflows/graph/state.ts`, extend `workflowGraphNodeNameSchema` with:
 
@@ -300,7 +300,7 @@ worktreeDecision: superpowersWorktreeDecisionSchema.nullable().default(null),
 
 Add the same fields to the `AgentWorkflowState` override list and `emptyAgentWorkflowState()` defaults.
 
-- [ ] **Step 6: Run state tests**
+- [x] **Step 6: Run state tests**
 
 Run:
 
@@ -310,7 +310,7 @@ node --import tsx --test packages/backend/src/workflows/graph/state.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 1**
+- [x] **Step 7: Commit Task 1**
 
 ```bash
 git add packages/backend/src/types.ts packages/frontend/src/lib/types.ts packages/backend/src/workflows/graph/state.ts packages/backend/src/workflows/graph/state.test.ts

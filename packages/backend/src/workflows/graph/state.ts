@@ -10,6 +10,17 @@ import type { ApprovalCard, TaskRiskAssessment } from '../task-risk.js';
 
 export const workflowGraphNodeNameSchema = z.enum([
   'context',
+  'intake',
+  'route_skills',
+  'answer',
+  'analysis_plan',
+  'lightweight_plan',
+  'debug_plan',
+  'debug_plan_confirm',
+  'systematic_debugging',
+  'review_plan',
+  'reviewer_assignment',
+  'agent_assignment',
   'planning',
   'brainstorming',
   'spec_review',
@@ -119,6 +130,22 @@ export const superpowersRecoveryStateSchema = z.object({
   reason: z.string(),
   failedStage: z.string().nullable().default(null),
   retryable: z.boolean().default(true),
+});
+
+export const superpowersSelectedIntentSchema = z.enum([
+  'answer',
+  'analysis',
+  'lightweight_task',
+  'standard_development',
+  'debug',
+  'review_only',
+]);
+
+export const superpowersWorktreeDecisionSchema = z.object({
+  action: z.enum(['reuse', 'create', 'skip']),
+  path: z.string().nullable(),
+  branchName: z.string().nullable(),
+  reason: z.string(),
 });
 
 export const taskRiskAssessmentSchema = z.object({
@@ -256,6 +283,14 @@ export const agentWorkflowStateSchema = z.object({
   artifactChangeRequestMessageId: z.string().nullable().default(null),
   artifactChangeRequestArtifactVersionId: z.string().nullable().default(null),
   agentAssignments: z.array(superpowersAgentAssignmentSchema).default([]),
+  selectedIntent: superpowersSelectedIntentSchema.nullable().default(null),
+  selectedPath: z.array(z.string()).default([]),
+  routingArtifactVersionId: z.string().nullable().default(null),
+  analysisArtifactVersionId: z.string().nullable().default(null),
+  agentAssignmentArtifactVersionId: z.string().nullable().default(null),
+  approvedAgentAssignmentArtifactVersionId: z.string().nullable().default(null),
+  activeChangeRequestId: z.string().nullable().default(null),
+  worktreeDecision: superpowersWorktreeDecisionSchema.nullable().default(null),
   recoveryState: superpowersRecoveryStateSchema.nullable().default(null),
   designDocPath: z.string().nullable().default(null),
   designReviewVerdict: superpowersReviewVerdictSchema.nullable().default(null),
@@ -291,6 +326,8 @@ export type SuperpowersFinishBranchDecision = z.infer<typeof superpowersFinishBr
 export type StructuredAgentEvent = z.infer<typeof structuredAgentEventSchema>;
 export type SuperpowersAgentAssignment = z.infer<typeof superpowersAgentAssignmentSchema>;
 export type SuperpowersRecoveryState = z.infer<typeof superpowersRecoveryStateSchema>;
+export type SuperpowersSelectedIntent = z.infer<typeof superpowersSelectedIntentSchema>;
+export type SuperpowersWorktreeDecision = z.infer<typeof superpowersWorktreeDecisionSchema>;
 export interface SupervisorAssignmentHint {
   stage: WorkflowStage;
   role: WorkflowRole;
@@ -316,6 +353,14 @@ export type AgentWorkflowState = Omit<
   | 'artifactChangeRequestMessageId'
   | 'artifactChangeRequestArtifactVersionId'
   | 'agentAssignments'
+  | 'selectedIntent'
+  | 'selectedPath'
+  | 'routingArtifactVersionId'
+  | 'analysisArtifactVersionId'
+  | 'agentAssignmentArtifactVersionId'
+  | 'approvedAgentAssignmentArtifactVersionId'
+  | 'activeChangeRequestId'
+  | 'worktreeDecision'
   | 'recoveryState'
   | 'designDocPath'
   | 'designReviewVerdict'
@@ -349,6 +394,14 @@ export type AgentWorkflowState = Omit<
   artifactChangeRequestMessageId?: string | null;
   artifactChangeRequestArtifactVersionId?: string | null;
   agentAssignments?: SuperpowersAgentAssignment[];
+  selectedIntent?: SuperpowersSelectedIntent | null;
+  selectedPath?: string[];
+  routingArtifactVersionId?: string | null;
+  analysisArtifactVersionId?: string | null;
+  agentAssignmentArtifactVersionId?: string | null;
+  approvedAgentAssignmentArtifactVersionId?: string | null;
+  activeChangeRequestId?: string | null;
+  worktreeDecision?: SuperpowersWorktreeDecision | null;
   recoveryState?: SuperpowersRecoveryState | null;
   designDocPath?: string | null;
   designReviewVerdict?: SuperpowersReviewVerdict | null;
@@ -395,6 +448,14 @@ export function emptyAgentWorkflowState(input: {
     artifactChangeRequestMessageId: null,
     artifactChangeRequestArtifactVersionId: null,
     agentAssignments: [],
+    selectedIntent: null,
+    selectedPath: [],
+    routingArtifactVersionId: null,
+    analysisArtifactVersionId: null,
+    agentAssignmentArtifactVersionId: null,
+    approvedAgentAssignmentArtifactVersionId: null,
+    activeChangeRequestId: null,
+    worktreeDecision: null,
     recoveryState: null,
     designDocPath: null,
     designReviewVerdict: null,

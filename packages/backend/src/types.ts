@@ -221,6 +221,17 @@ export type WorkflowStatus =
 export type WorkflowStage = 'analysis' | 'planning' | 'assignment' | 'implementation' | 'code_review' | 'acceptance';
 export type GraphNodeName =
   | 'context'
+  | 'intake'
+  | 'route_skills'
+  | 'answer'
+  | 'analysis_plan'
+  | 'lightweight_plan'
+  | 'debug_plan'
+  | 'debug_plan_confirm'
+  | 'systematic_debugging'
+  | 'review_plan'
+  | 'reviewer_assignment'
+  | 'agent_assignment'
   | 'planning'
   | 'brainstorming'
   | 'spec_review'
@@ -243,6 +254,17 @@ export type WorkflowDefinitionScope = 'system' | 'project' | 'room';
 export type WorkflowDefinitionStatus = 'draft' | 'published' | 'archived';
 export type WorkflowDefinitionNodeType =
   | 'context'
+  | 'intake'
+  | 'route_skills'
+  | 'answer'
+  | 'analysis_plan'
+  | 'lightweight_plan'
+  | 'debug_plan'
+  | 'debug_plan_confirm'
+  | 'systematic_debugging'
+  | 'review_plan'
+  | 'reviewer_assignment'
+  | 'agent_assignment'
   | 'planning'
   | 'brainstorming'
   | 'spec_review'
@@ -1345,7 +1367,17 @@ export interface TaskArtifact {
   created_at: number;
 }
 
-export type WorkflowArtifactVersionType = 'spec' | 'plan' | 'lightweight_plan' | 'review' | 'verification';
+export type WorkflowArtifactVersionType =
+  | 'intent_routing'
+  | 'analysis'
+  | 'spec'
+  | 'plan'
+  | 'lightweight_plan'
+  | 'agent_assignment'
+  | 'change_request'
+  | 'review'
+  | 'verification'
+  | 'finish_branch_decision';
 export type WorkflowArtifactVersionStatus = 'draft' | 'reviewing' | 'approved' | 'superseded' | 'rejected';
 
 export interface WorkflowArtifactVersion {

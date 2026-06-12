@@ -161,6 +161,45 @@ test('parseGraphState preserves Superpowers v2 artifact and assignment fields', 
   });
 });
 
+test('agentWorkflowStateSchema preserves Superpowers routing fields', () => {
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'run-route-1',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-1',
+    userGoal: '解释这个模块',
+    projectPath: '/tmp/project',
+  });
+
+  const parsed = parseGraphState(serializeGraphState({
+    ...state,
+    currentNode: 'route_skills',
+    selectedIntent: 'answer',
+    selectedPath: ['intake', 'route_skills', 'answer'],
+    routingArtifactVersionId: 'artifact-routing-1',
+    analysisArtifactVersionId: 'artifact-analysis-1',
+    agentAssignmentArtifactVersionId: 'artifact-assignment-1',
+    approvedAgentAssignmentArtifactVersionId: 'artifact-assignment-approved-1',
+    activeChangeRequestId: 'change-request-1',
+    worktreeDecision: {
+      action: 'skip',
+      path: null,
+      branchName: null,
+      reason: '用户要求在当前工作区执行',
+    },
+  }));
+
+  assert.equal(parsed?.currentNode, 'route_skills');
+  assert.equal(parsed?.selectedIntent, 'answer');
+  assert.deepEqual(parsed?.selectedPath, ['intake', 'route_skills', 'answer']);
+  assert.equal(parsed?.routingArtifactVersionId, 'artifact-routing-1');
+  assert.equal(parsed?.analysisArtifactVersionId, 'artifact-analysis-1');
+  assert.equal(parsed?.agentAssignmentArtifactVersionId, 'artifact-assignment-1');
+  assert.equal(parsed?.approvedAgentAssignmentArtifactVersionId, 'artifact-assignment-approved-1');
+  assert.equal(parsed?.activeChangeRequestId, 'change-request-1');
+  assert.equal(parsed?.worktreeDecision?.action, 'skip');
+});
+
 test('parseGraphState preserves Superpowers TDD exemption fields', () => {
   const state = {
     ...emptyAgentWorkflowState({

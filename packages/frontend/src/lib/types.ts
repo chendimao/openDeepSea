@@ -102,6 +102,17 @@ export interface SuperpowersGraphStateSummary {
 }
 export type GraphNodeName =
   | 'context'
+  | 'intake'
+  | 'route_skills'
+  | 'answer'
+  | 'analysis_plan'
+  | 'lightweight_plan'
+  | 'debug_plan'
+  | 'debug_plan_confirm'
+  | 'systematic_debugging'
+  | 'review_plan'
+  | 'reviewer_assignment'
+  | 'agent_assignment'
   | 'planning'
   | 'brainstorming'
   | 'spec_review'
@@ -124,6 +135,17 @@ export type WorkflowDefinitionScope = 'system' | 'project' | 'room';
 export type WorkflowDefinitionStatus = 'draft' | 'published' | 'archived';
 export type WorkflowDefinitionNodeType =
   | 'context'
+  | 'intake'
+  | 'route_skills'
+  | 'answer'
+  | 'analysis_plan'
+  | 'lightweight_plan'
+  | 'debug_plan'
+  | 'debug_plan_confirm'
+  | 'systematic_debugging'
+  | 'review_plan'
+  | 'reviewer_assignment'
+  | 'agent_assignment'
   | 'planning'
   | 'brainstorming'
   | 'spec_review'
@@ -833,7 +855,17 @@ export interface HistoryRecord {
   updated_at: number;
 }
 
-export type WorkflowArtifactVersionType = 'spec' | 'plan' | 'lightweight_plan' | 'review' | 'verification';
+export type WorkflowArtifactVersionType =
+  | 'intent_routing'
+  | 'analysis'
+  | 'spec'
+  | 'plan'
+  | 'lightweight_plan'
+  | 'agent_assignment'
+  | 'change_request'
+  | 'review'
+  | 'verification'
+  | 'finish_branch_decision';
 export type WorkflowArtifactVersionStatus = 'draft' | 'reviewing' | 'approved' | 'superseded' | 'rejected';
 
 export interface WorkflowArtifactVersionView {
@@ -860,6 +892,35 @@ export interface WorkflowGateView {
   reason: string;
 }
 
+export type SuperpowersSelectedIntent =
+  | 'answer'
+  | 'analysis'
+  | 'lightweight_task'
+  | 'standard_development'
+  | 'debug'
+  | 'review_only';
+
+export interface WorkflowControllerView {
+  workflow_run_id: string;
+  selected_intent: SuperpowersSelectedIntent | null;
+  active_stage: string | null;
+  controller: 'planner' | 'worker' | 'reviewer' | 'verifier' | 'user' | null;
+  blocker: string | null;
+  next_action: string | null;
+}
+
+export interface WorkflowAgentAssignmentView {
+  task_id: string;
+  task_title: string;
+  role: 'executor' | 'reviewer' | 'verifier' | 'acceptor';
+  assigned_agent_id: string | null;
+  assigned_agent_name: string | null;
+  backend: string | null;
+  fallback_reason: string | null;
+  execution_mode: 'serial' | 'parallel' | 'hybrid';
+  scope_write: string[];
+}
+
 export interface SessionDetail {
   session: Session;
   messages: SessionMessage[];
@@ -871,6 +932,8 @@ export interface SessionDetail {
   evidence: SessionEvidenceEvent[];
   workflowArtifacts?: WorkflowArtifactVersionView[];
   workflowGates?: WorkflowGateView[];
+  workflowController?: WorkflowControllerView | null;
+  workflowAgentAssignments?: WorkflowAgentAssignmentView[];
 }
 
 export interface StatusSnapshot {
