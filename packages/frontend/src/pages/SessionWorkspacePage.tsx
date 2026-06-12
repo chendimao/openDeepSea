@@ -495,6 +495,41 @@ export function SessionWorkspacePage({
     },
   });
 
+  const approveWorkflowArtifactMutation = useMutation({
+    mutationFn: (artifactVersionId: string) => {
+      if (!workspacePayload) throw new Error('Session 未加载');
+      return api.approveWorkflowArtifactVersion(workspacePayload.activeSession.session.id, artifactVersionId);
+    },
+    onSuccess: (artifact) => {
+      const payloadSnapshot = workspacePayload;
+      setWorkspacePayload((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          activeSession: {
+            ...current.activeSession,
+            workflowArtifacts: (current.activeSession.workflowArtifacts ?? []).map((item) =>
+              item.id === artifact.id ? artifact : item
+            ),
+            workflowGates: (current.activeSession.workflowGates ?? []).map((gate) =>
+              gate.artifact_version_id === artifact.id ? { ...gate, status: 'approved' } : gate
+            ),
+          },
+        };
+      });
+      if (payloadSnapshot) {
+        sessionSocket.requestSessionWorkspace({
+          projectId: payloadSnapshot.activeSession.session.project_id,
+          sessionId: payloadSnapshot.activeSession.session.id,
+        });
+      }
+      toast.success('工作流产物已确认');
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : '确认工作流产物失败');
+    },
+  });
+
   if (!activeProjectId) {
     return (
       <div className="session-shell session-shell--empty">
@@ -590,6 +625,7 @@ export function SessionWorkspacePage({
       onReorderProjects={(input) => reorderProjectsMutation.mutate(input)}
       onToggleSessionPin={(session) => toggleSessionPinMutation.mutate(session)}
       onSaveKnowledge={(input) => saveKnowledgeMutation.mutate(input)}
+      onApproveWorkflowArtifact={(artifactVersionId) => approveWorkflowArtifactMutation.mutate(artifactVersionId)}
       savingKnowledgeKey={saveKnowledgeMutation.isPending ? saveKnowledgeMutation.variables?.key ?? null : null}
       todoStats={sessionTodoStats}
     />

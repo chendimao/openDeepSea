@@ -20,6 +20,7 @@ export function SessionShell({
   onReorderProjects,
   onToggleSessionPin,
   onSaveKnowledge,
+  onApproveWorkflowArtifact,
   savingKnowledgeKey,
   todoStats,
 }: {
@@ -37,6 +38,7 @@ export function SessionShell({
   onReorderProjects?: (input: { ids: string[]; pinned: boolean }) => void;
   onToggleSessionPin?: (session: ActiveSessionSummary) => void;
   onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
+  onApproveWorkflowArtifact?: (artifactVersionId: string) => void;
   savingKnowledgeKey?: SessionKnowledgeActionKey | null;
   todoStats?: SessionTodoStats | null;
 }): JSX.Element {
@@ -56,6 +58,7 @@ export function SessionShell({
       onReorderProjects={onReorderProjects}
       onToggleSessionPin={onToggleSessionPin}
       onSaveKnowledge={onSaveKnowledge}
+      onApproveWorkflowArtifact={onApproveWorkflowArtifact}
       savingKnowledgeKey={savingKnowledgeKey}
       todoStats={todoStats}
     />

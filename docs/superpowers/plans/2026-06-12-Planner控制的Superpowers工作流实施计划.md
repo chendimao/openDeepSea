@@ -1263,7 +1263,7 @@ git commit -m "feat(session): 暴露工作流产物确认门禁"
 - Modify: `packages/frontend/src/session-ui/SessionShell.test.tsx`
 - Modify: `packages/frontend/src/pages/SessionWorkspacePage.test.tsx`
 
-- [ ] **Step 1: Write failing frontend render test**
+- [x] **Step 1: Write failing frontend render test**
 
 In `packages/frontend/src/session-ui/SessionShell.test.tsx`, add fixture data with `workflowArtifacts` and `workflowGates`. Assert:
 
@@ -1277,7 +1277,7 @@ assert.doesNotMatch(container.innerHTML, /textarea/);
 
 Use existing render helper in the test file.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 node --import tsx --test packages/frontend/src/session-ui/SessionShell.test.tsx
@@ -1285,7 +1285,7 @@ node --import tsx --test packages/frontend/src/session-ui/SessionShell.test.tsx
 
 Expected: FAIL because UI does not render workflow artifact gates.
 
-- [ ] **Step 3: Implement read-only artifact panel**
+- [x] **Step 3: Implement read-only artifact panel**
 
 In `SessionShellView.tsx`, add component:
 
@@ -1345,7 +1345,7 @@ Wire `onRequestChange` to prefill/send a normal session message template:
 
 Do not add a direct text editor for artifact content.
 
-- [ ] **Step 4: Add styles**
+- [x] **Step 4: Add styles**
 
 In `session-os.css`, add scoped styles:
 
@@ -1379,11 +1379,11 @@ In `session-os.css`, add scoped styles:
 
 Use the existing neutral session CSS variables already present in `session-os.css`: `--session-panel`, `--session-border`, `--session-muted`, and `--session-text`.
 
-- [ ] **Step 5: Wire approve mutation**
+- [x] **Step 5: Wire approve mutation**
 
 In the component/page layer that owns API calls, call `api.approveWorkflowArtifactVersion(sessionId, artifactVersionId)` and refresh session detail. Wire “请求 planner 修改” to the existing message send handler with content prefixed by `请修改 plan vN：` or `请修改 spec vN：`; do not add a second mutation endpoint for change requests in this task.
 
-- [ ] **Step 6: Run frontend tests**
+- [x] **Step 6: Run frontend tests**
 
 ```bash
 node --import tsx --test packages/frontend/src/session-ui/SessionShell.test.tsx
@@ -1392,7 +1392,7 @@ node --import tsx --test packages/frontend/src/pages/SessionWorkspacePage.test.t
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 7**
+- [x] **Step 7: Commit Task 7**
 
 ```bash
 git add packages/frontend/src/session-ui/SessionShellView.tsx packages/frontend/src/session-ui/session-os.css packages/frontend/src/session-ui/SessionShell.test.tsx packages/frontend/src/pages/SessionWorkspacePage.test.tsx

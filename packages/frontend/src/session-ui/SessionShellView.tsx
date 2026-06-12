@@ -54,6 +54,8 @@ import type {
   SessionTodoStats,
   SessionWorkspacePayload,
   StatusSnapshot,
+  WorkflowArtifactVersionView,
+  WorkflowGateView,
   WorkspaceFilePreview,
 } from '../lib/types';
 import { api } from '../lib/api';
@@ -163,6 +165,7 @@ export function SessionShellView({
   onReorderProjects,
   onToggleSessionPin,
   onSaveKnowledge,
+  onApproveWorkflowArtifact,
   savingKnowledgeKey,
   todoStats,
 }: {
@@ -180,6 +183,7 @@ export function SessionShellView({
   onReorderProjects?: (input: { ids: string[]; pinned: boolean }) => void;
   onToggleSessionPin?: (session: ActiveSessionSummary) => void;
   onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
+  onApproveWorkflowArtifact?: (artifactVersionId: string) => void;
   savingKnowledgeKey?: SessionKnowledgeActionKey | null;
   todoStats?: SessionTodoStats | null;
 }): JSX.Element {
@@ -219,6 +223,7 @@ export function SessionShellView({
               onSendMessage={onSendMessage}
               onRetryRun={onRetryRun}
               onSaveKnowledge={onSaveKnowledge}
+              onApproveWorkflowArtifact={onApproveWorkflowArtifact}
               savingKnowledgeKey={savingKnowledgeKey}
               todoStats={todoStats}
             />
@@ -1293,6 +1298,7 @@ function TranscriptCanvas({
   onSendMessage,
   onRetryRun,
   onSaveKnowledge,
+  onApproveWorkflowArtifact,
   savingKnowledgeKey,
   todoStats,
 }: {
@@ -1302,6 +1308,7 @@ function TranscriptCanvas({
   onSendMessage: (message: SessionComposerSubmit) => void;
   onRetryRun?: (runId: string) => void;
   onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
+  onApproveWorkflowArtifact?: (artifactVersionId: string) => void;
   savingKnowledgeKey?: SessionKnowledgeActionKey | null;
   todoStats?: SessionTodoStats | null;
 }): JSX.Element {
@@ -1415,6 +1422,14 @@ function TranscriptCanvas({
     <section className="deepsea-transcript" aria-label="Active Session">
       <SessionTitleBar detail={detail} todoStats={todoStats} />
       <div className="deepsea-transcript__scroll" data-transcript-scroll="true" ref={transcriptRef}>
+        <WorkflowArtifactGatePanel
+          artifacts={detail.workflowArtifacts ?? []}
+          gates={detail.workflowGates ?? []}
+          onApprove={onApproveWorkflowArtifact}
+          onRequestChange={(artifact) => onSendMessage({
+            content: buildWorkflowArtifactChangeRequestContent(artifact),
+          })}
+        />
         {timeline.length === 0 ? (
           <div className="deepsea-empty deepsea-empty--center">发送第一条消息开始当前会话。</div>
         ) : timeline.map((item) => {
@@ -1565,6 +1580,96 @@ function TranscriptCanvas({
       />
     </section>
   );
+}
+
+function WorkflowArtifactGatePanel({
+  artifacts,
+  gates,
+  onApprove,
+  onRequestChange,
+}: {
+  artifacts: WorkflowArtifactVersionView[];
+  gates: WorkflowGateView[];
+  onApprove?: (artifactVersionId: string) => void;
+  onRequestChange: (artifact: WorkflowArtifactVersionView) => void;
+}): JSX.Element | null {
+  const artifactById = new Map(artifacts.map((artifact) => [artifact.id, artifact]));
+  const pendingGateItems = gates
+    .filter((gate) => gate.status !== 'approved' && gate.artifact_version_id)
+    .map((gate) => {
+      const artifact = gate.artifact_version_id ? artifactById.get(gate.artifact_version_id) : undefined;
+      return artifact ? { gate, artifact } : null;
+    })
+    .filter((item): item is { gate: WorkflowGateView; artifact: WorkflowArtifactVersionView } => Boolean(item));
+  if (pendingGateItems.length === 0) return null;
+
+  return (
+    <section className="deepsea-workflow-artifacts" data-workflow-artifact-panel="true" aria-label="工作流产物确认">
+      <div className="deepsea-workflow-artifacts__header">
+        <div>
+          <span className="deepsea-status-chip" data-tone="warn">Workflow Gate</span>
+          <h3>等待用户确认</h3>
+        </div>
+        <span>{pendingGateItems.length} 个门禁</span>
+      </div>
+      <div className="deepsea-workflow-artifacts__list">
+        {pendingGateItems.map(({ gate, artifact }) => (
+          <article className="deepsea-workflow-artifact" key={`${gate.kind}:${artifact.id}`}>
+            <header className="deepsea-workflow-artifact__title">
+              <FileText aria-hidden="true" />
+              <div>
+                <strong>{formatWorkflowArtifactHeading(artifact)}</strong>
+                <span>{artifact.title}</span>
+              </div>
+            </header>
+            <div className="deepsea-workflow-artifact__body">
+              <MarkdownPreview content={artifact.content} />
+            </div>
+            <footer className="deepsea-workflow-artifact__footer">
+              <span>{gate.reason}</span>
+              <div className="deepsea-workflow-artifact__actions">
+                <button
+                  type="button"
+                  data-workflow-artifact-action="request-change"
+                  aria-label={`请求 planner 修改 ${formatWorkflowArtifactHeading(artifact)}`}
+                  onClick={() => onRequestChange(artifact)}
+                >
+                  <Edit3 aria-hidden="true" />
+                  请求 planner 修改
+                </button>
+                <button
+                  type="button"
+                  data-workflow-artifact-action="approve"
+                  aria-label={`确认 ${artifact.artifact_type} v${artifact.version}`}
+                  disabled={!onApprove}
+                  onClick={() => onApprove?.(artifact.id)}
+                >
+                  <Check aria-hidden="true" />
+                  确认 {formatWorkflowArtifactType(artifact.artifact_type)}
+                </button>
+              </div>
+            </footer>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function buildWorkflowArtifactChangeRequestContent(artifact: WorkflowArtifactVersionView): string {
+  return `请修改 ${formatWorkflowArtifactType(artifact.artifact_type)} v${artifact.version}：`;
+}
+
+function formatWorkflowArtifactHeading(artifact: WorkflowArtifactVersionView): string {
+  return `${formatWorkflowArtifactType(artifact.artifact_type, true)} v${artifact.version}`;
+}
+
+function formatWorkflowArtifactType(type: WorkflowArtifactVersionView['artifact_type'], titleCase = false): string {
+  if (type === 'spec') return titleCase ? 'Spec' : 'spec';
+  if (type === 'plan') return titleCase ? 'Plan' : 'plan';
+  if (type === 'lightweight_plan') return titleCase ? 'Lightweight Plan' : 'lightweight plan';
+  if (type === 'review') return titleCase ? 'Review' : 'review';
+  return titleCase ? 'Verification' : 'verification';
 }
 
 type TranscriptTimelineItem =

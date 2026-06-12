@@ -75,6 +75,23 @@ test('SessionWorkspacePage wires save knowledge note mutation to session message
   assert.match(source, /deduplicated\s*\?\s*'知识笔记已存在'\s*:\s*'已保存为知识笔记'/s);
 });
 
+test('SessionWorkspacePage wires workflow artifact approval through the API and refreshes workspace', () => {
+  const source = readFileSync(new URL('./SessionWorkspacePage.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /const approveWorkflowArtifactMutation = useMutation\(/);
+  assert.match(source, /api\.approveWorkflowArtifactVersion\(workspacePayload\.activeSession\.session\.id,\s*artifactVersionId\)/);
+  assert.match(source, /workflowArtifacts:\s*\(current\.activeSession\.workflowArtifacts \?\? \[\]\)\.map/);
+  assert.match(source, /workflowGates:\s*\(current\.activeSession\.workflowGates \?\? \[\]\)\.map/);
+  assert.match(source, /const payloadSnapshot = workspacePayload/);
+  assert.match(source, /sessionSocket\.requestSessionWorkspace\(\{\s*projectId:\s*payloadSnapshot\.activeSession\.session\.project_id,\s*sessionId:\s*payloadSnapshot\.activeSession\.session\.id,\s*\}\)/s);
+  assert.match(source, /onApproveWorkflowArtifact=\{\(artifactVersionId\) => approveWorkflowArtifactMutation\.mutate\(artifactVersionId\)\}/);
+});
+
+test('SessionWorkspacePage keeps workflow artifact edits routed through normal planner messages', () => {
+  assert.match(sessionWorkspacePageSource, /onSendMessage=\{\(message\) => runSessionCommand\(message,\s*workspacePayload,\s*\{/);
+  assert.doesNotMatch(sessionWorkspacePageSource, /updateWorkflowArtifactVersion|patchWorkflowArtifactVersion|saveWorkflowArtifactVersion/);
+});
+
 test('SessionWorkspacePage wires project creation dialog into SessionShell', () => {
   assert.match(sessionWorkspacePageSource, /const \[createProjectOpen,\s*setCreateProjectOpen\] = useState\(false\)/);
   assert.match(sessionWorkspacePageSource, /onCreateProject=\{\(\) => setCreateProjectOpen\(true\)\}/);

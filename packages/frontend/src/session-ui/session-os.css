@@ -3112,6 +3112,158 @@
   background: var(--deepsea-danger-soft);
   color: var(--deepsea-danger);
 }
+.deepsea-workflow-artifacts {
+  display: grid;
+  gap: 10px;
+  margin: 12px 14px 10px;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 16%, var(--deepsea-border-subtle));
+  border-radius: var(--deepsea-radius-lg);
+  background: color-mix(in srgb, var(--deepsea-surface) 88%, var(--deepsea-primary) 4%);
+  padding: 10px;
+}
+.deepsea-workflow-artifacts__header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.deepsea-workflow-artifacts__header > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.deepsea-workflow-artifacts__header h3 {
+  margin: 0;
+  color: var(--deepsea-text);
+  font-size: 13px;
+  font-weight: 860;
+  letter-spacing: 0;
+}
+.deepsea-workflow-artifacts__header > span {
+  color: var(--deepsea-muted);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.deepsea-workflow-artifacts__list {
+  display: grid;
+  gap: 8px;
+}
+.deepsea-workflow-artifact {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--deepsea-primary) 12%, var(--deepsea-border-subtle));
+  padding-top: 8px;
+}
+.deepsea-workflow-artifact__title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.deepsea-workflow-artifact__title svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  color: var(--deepsea-primary);
+}
+.deepsea-workflow-artifact__title > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.deepsea-workflow-artifact__title strong {
+  color: var(--deepsea-text);
+  font-size: 12px;
+  font-weight: 860;
+  line-height: 1.25;
+}
+.deepsea-workflow-artifact__title span {
+  color: var(--deepsea-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.deepsea-workflow-artifact__body {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 10%, var(--deepsea-border-subtle));
+  border-radius: var(--deepsea-radius);
+  background: color-mix(in srgb, var(--deepsea-surface) 96%, var(--deepsea-primary));
+  padding: 9px 10px;
+  color: var(--deepsea-text);
+  font-size: 12px;
+  line-height: 18px;
+}
+.deepsea-workflow-artifact__body .message-content {
+  max-width: none;
+}
+.deepsea-workflow-artifact__footer {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.deepsea-workflow-artifact__footer > span {
+  min-width: 160px;
+  flex: 1 1 220px;
+  color: var(--deepsea-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+.deepsea-workflow-artifact__actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.deepsea-workflow-artifact__actions button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(100, 116, 139, 0.18);
+  border-radius: 6px;
+  background: rgba(100, 116, 139, 0.09);
+  color: rgba(67, 70, 84, 0.86);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 860;
+  line-height: 1;
+  white-space: nowrap;
+}
+.deepsea-workflow-artifact__actions button[data-workflow-artifact-action="approve"] {
+  border-color: rgba(0, 108, 73, 0.2);
+  background: var(--deepsea-ok-soft);
+  color: var(--deepsea-ok);
+}
+.deepsea-workflow-artifact__actions button:hover:not(:disabled),
+.deepsea-workflow-artifact__actions button:focus-visible {
+  filter: saturate(1.1);
+  transform: translateY(-1px);
+}
+.deepsea-workflow-artifact__actions button:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.28);
+  outline-offset: 2px;
+}
+.deepsea-workflow-artifact__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+.deepsea-workflow-artifact__actions svg {
+  width: 13px;
+  height: 13px;
+}
 .deepsea-message-attachments {
   display: flex;
   flex-wrap: wrap;

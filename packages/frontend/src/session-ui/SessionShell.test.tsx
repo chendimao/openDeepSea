@@ -184,6 +184,43 @@ test('SessionShell renders current session todo count beside the session title',
   assert.match(html, /待办 <strong>2<\/strong>/);
 });
 
+test('SessionShell renders workflow spec and plan gates as read-only artifacts', () => {
+  const payload = createPayload();
+  payload.activeSession.workflowArtifacts = [
+    {
+      id: 'artifact-plan-1',
+      workflow_run_id: 'workflow-run-1',
+      artifact_type: 'plan',
+      version: 1,
+      status: 'reviewing',
+      title: 'Planner 控制的执行计划',
+      content: '只读计划\n\n1. 由 planner 分配任务\n2. 用户确认后执行',
+      structured_data: null,
+      created_by_agent_id: 'planner',
+      change_request_message_id: null,
+      approved_by: null,
+      approved_at: null,
+      created_at: Date.now(),
+    },
+  ];
+  payload.activeSession.workflowGates = [{
+    kind: 'plan_confirm',
+    workflow_run_id: 'workflow-run-1',
+    artifact_version_id: 'artifact-plan-1',
+    status: 'pending',
+    reason: '执行前必须确认 plan 版本',
+  }];
+
+  const html = renderSessionShell(payload);
+  const panel = html.match(/<section[^>]+data-workflow-artifact-panel="true"[\s\S]*?<\/section>/)?.[0] ?? '';
+
+  assert.match(html, /Plan v1/);
+  assert.match(html, /只读计划/);
+  assert.match(html, /请求 planner 修改/);
+  assert.match(html, /确认 plan/);
+  assert.doesNotMatch(panel, /<textarea\b/);
+});
+
 test('SessionShell renders local git state in the bottom path area', () => {
   const payload = createPayload();
   payload.status.git = {
