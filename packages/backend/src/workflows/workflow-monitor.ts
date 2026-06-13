@@ -354,6 +354,7 @@ function getChildTaskId(row: JoinedWorkflowRow): string | null {
 function classifyBlockedWorkflowError(error: string): WorkflowIncidentType {
   const normalized = error.toLowerCase();
   if (normalized.includes('no executor available')) return 'executor_unavailable';
+  if (normalized.includes('process exited with code 130')) return 'agent_run_stale';
   if (normalized.includes('prompt timed out') || normalized.includes('timed out')) return 'agent_run_stale';
   if (normalized.includes('runtime boundary') || normalized.includes('workspace') || normalized.includes('permission')) {
     return 'runtime_boundary_mismatch';

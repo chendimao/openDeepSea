@@ -1406,7 +1406,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         },
       });
 
-      const verificationCwd = getVerificationCwd();
+      const verificationCwd = context.project.path || state.projectPath || getVerificationCwd();
       const results = commands.length > 0
         ? await Promise.all(commands.map(async (command) => runVerificationCommand(command.command, verificationCwd)))
         : [{

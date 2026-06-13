@@ -228,6 +228,18 @@ test('scanWorkflowIncidents classifies ACP prompt timeout as stale agent run', (
   assert.match(incident?.error ?? '', /ACP prompt timed out/);
 });
 
+test('scanWorkflowIncidents classifies process exit 130 as retryable stale agent run', () => {
+  const fixture = createWorkflowFixture('process exit 130');
+  workflowRepo.blockRun(fixture.workflow.id, 'Process exited with code 130');
+
+  const incidents = scanWorkflowIncidents();
+  const incident = incidents.find((item) => item.workflow_run_id === fixture.workflow.id);
+
+  assert.equal(incident?.incident_type, 'agent_run_stale');
+  assert.equal(incident?.severity, 'warning');
+  assert.match(incident?.error ?? '', /code 130/);
+});
+
 function createWorkflowFixture(name: string) {
   const fixtureProjectDir = join(projectDir, name.replace(/\s+/g, '-'));
   mkdirSync(fixtureProjectDir, { recursive: true });

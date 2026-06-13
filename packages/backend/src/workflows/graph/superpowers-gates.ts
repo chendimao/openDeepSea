@@ -42,7 +42,19 @@ export function canLeaveTddExecute(state: AgentWorkflowState): boolean {
 export function canLeaveVerify(state: AgentWorkflowState): boolean {
   const evidence = state.verificationEvidence ?? [];
   const requiredEvidence = evidence.filter((record) => record.required);
+  if (requiredEvidence.length === 0 && canSkipRequiredVerification(state)) {
+    return true;
+  }
 
   return requiredEvidence.length > 0
     && requiredEvidence.every((record) => record.status === 'passed' && record.fresh === true);
+}
+
+function canSkipRequiredVerification(state: AgentWorkflowState): boolean {
+  if (state.selectedIntent !== 'review_only') return false;
+  const commands = state.plan?.verificationCommands ?? [];
+  const legacyCommands = state.plan?.verification ?? [];
+  const hasRequiredCommand = commands.some((command) => command.required !== false && command.command.trim().length > 0);
+  const hasLegacyCommand = legacyCommands.some((command) => command.trim().length > 0);
+  return !hasRequiredCommand && !hasLegacyCommand;
 }

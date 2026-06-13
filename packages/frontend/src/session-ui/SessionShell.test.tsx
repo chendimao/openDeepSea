@@ -292,6 +292,20 @@ test('SessionShell renders workflow controller and agent assignment table', () =
   assert.match(html, /未找到更匹配/);
 });
 
+test('SessionShell renders active session change summaries in the sidebar rows', () => {
+  const payload = createPayload();
+  payload.activeSessions = payload.activeSessions.map((session) =>
+    session.id === payload.activeSession.session.id
+      ? { ...session, latest_event_summary: '本会话 2 个文件变更' }
+      : session
+  );
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-session-change-summary="true"/);
+  assert.match(html, /本会话 2 个文件变更/);
+});
+
 test('SessionShell renders local git state in the bottom path area', () => {
   const payload = createPayload();
   payload.status.git = {

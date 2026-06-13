@@ -223,11 +223,6 @@ export function SessionWorkspacePage({
   }, []);
 
   useEffect(() => {
-    if (!activeProjectId) return;
-    sessionSocket.requestSessionWorkspace({ projectId: activeProjectId, sessionId });
-  }, [activeProjectId, sessionId]);
-
-  useEffect(() => {
     const activeSessionId = workspacePayload?.activeSession.session.id;
     activeSessionIdRef.current = activeSessionId ?? null;
     if (!activeSessionId) return;
@@ -341,6 +336,11 @@ export function SessionWorkspacePage({
       setWorkspacePayload((current) => current ? applySessionWorkspaceEvent(current, event) : current);
     });
   }, [activeProjectId, navigate, navigationEnabled, refreshSessionTodoStats, sessionId, workspacePayload?.project.id]);
+
+  useEffect(() => {
+    if (!activeProjectId) return;
+    sessionSocket.requestSessionWorkspace({ projectId: activeProjectId, sessionId });
+  }, [activeProjectId, sessionId]);
 
   useEffect(() => {
     const activeSessionId = workspacePayload?.activeSession.session.id;

@@ -91,8 +91,12 @@ export function applySessionWorkspaceEvent(
     };
   }
   if (event.type === 'session_inspector:snapshot') {
+    const changeSummary = formatSessionChangeSummary(event.diffRows.length);
     return {
       ...payload,
+      activeSessions: payload.activeSessions.map((session) =>
+        session.id === event.sessionId ? { ...session, latest_event_summary: changeSummary } : session
+      ),
       toolRows: event.toolRows,
       diffRows: event.diffRows,
       activeSession: {
@@ -102,6 +106,10 @@ export function applySessionWorkspaceEvent(
     };
   }
   return payload;
+}
+
+function formatSessionChangeSummary(changeCount: number): string | null {
+  return changeCount > 0 ? `本会话 ${changeCount} 个文件变更` : null;
 }
 
 export function isActiveSessionEvent(payload: SessionWorkspacePayload, event: WsServerEvent): boolean {

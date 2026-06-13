@@ -12,6 +12,7 @@ const ALLOWED_COMMANDS = new Set([
   'npm run build -w @openclaw-room/backend',
   'npm run build -w @openclaw-room/frontend',
   'npm run build',
+  'git status --short',
 ]);
 
 const EXECUTABLE_COMMAND_PATTERN = /^(?:\.{0,2}\/|npm\b|npx\b|pnpm\b|yarn\b|bun\b|node\b|tsx\b|vitest\b|jest\b|playwright\b|git\b|make\b|cargo\b|go\b|python\b|python3\b|pytest\b)/i;

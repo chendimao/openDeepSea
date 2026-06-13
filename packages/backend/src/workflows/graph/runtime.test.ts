@@ -232,8 +232,8 @@ test('startGraphWorkflow runs context and planning nodes into spec artifact appr
   });
 
   const detail = workflowRepo.detail(run.id);
-  assert.equal(detail?.run.status, 'blocked');
-  assert.match(detail?.run.error ?? '', /approved spec artifact/i);
+  assert.equal(detail?.run.status, 'awaiting_approval');
+  assert.equal(detail?.run.error, null);
   assert.equal(detail?.run.graph_version, SUPERPOWERS_GRAPH_VERSION);
   assert.ok(detail?.run.graph_state);
   assert.ok(workflowArtifactVersionRepo.listByRun(run.id).some((artifact) => artifact.artifact_type === 'spec'));
@@ -522,10 +522,8 @@ test('Superpowers run records planning gate steps before dispatch', async () => 
   assertOrderedSubsequence(nodeNames, [
     'context',
     'brainstorming',
-    'spec_review',
     'worktree',
     'writing_plans',
-    'plan_review',
     'dispatch',
     'tdd_execute',
   ]);
@@ -555,8 +553,8 @@ test('Superpowers planning route requires approved spec and invokes planner phas
     },
   });
 
-  assert.equal(latest.status, 'blocked');
-  assert.match(latest.error ?? '', /approved spec artifact/i);
+  assert.equal(latest.status, 'awaiting_approval');
+  assert.equal(latest.error, null);
   assert.equal(planningCalls.length, 1);
   assert.match(planningCalls[0] ?? '', /当前 Superpowers 阶段：brainstorming/);
   const state = parseGraphState(latest.graph_state);
@@ -584,8 +582,8 @@ test('Superpowers planning route requires approved spec and invokes planner phas
     },
   });
 
-  assert.equal(resumed.status, 'blocked');
-  assert.match(resumed.error ?? '', /approved plan artifact/i);
+  assert.equal(resumed.status, 'awaiting_approval');
+  assert.equal(resumed.error, null);
   assert.equal(planningCalls.length, 2);
   assert.match(planningCalls[1] ?? '', /当前 Superpowers 阶段：writing_plans/);
   assert.ok(parseGraphState(resumed.graph_state)?.draftPlanArtifactVersionId);
@@ -1052,6 +1050,172 @@ test('Superpowers lightweight README task verifies with git status instead of bu
   assert.equal(state?.verificationEvidence?.[0]?.command, 'git status --short');
   assert.equal(state?.verificationEvidence?.[0]?.status, 'passed');
   assert.match(verifyStep?.result ?? '', /git status --short: passed/);
+});
+
+test('Superpowers debug route dispatches and runs systematic debugging worker before verification', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-debug-route-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  writeFileSync(join(projectPath, 'package.json'), JSON.stringify({
+    scripts: {
+      build: 'node -e "process.exit(0)"',
+    },
+  }));
+  execFileSync('git', ['init'], { cwd: projectPath, stdio: 'ignore' });
+  execFileSync('git', ['config', 'user.email', 'debug@example.com'], { cwd: projectPath });
+  execFileSync('git', ['config', 'user.name', 'Debug Test'], { cwd: projectPath });
+  execFileSync('git', ['add', 'package.json'], { cwd: projectPath });
+  execFileSync('git', ['commit', '-m', 'chore: initial'], { cwd: projectPath, stdio: 'ignore' });
+
+  const project = projectRepo.create({ name: 'Graph Runtime Debug Route', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Debug Route Room' });
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(executor.id, {
+    capabilities: ['debugging'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['.'] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '修复 npm run build 失败',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const plan = createRunnableSuperpowersPlan(task.title);
+  plan.tasks = [{
+    title: '执行系统化调试',
+    description: task.title,
+    suggestedRole: 'executor',
+    priority: 'normal',
+    acceptance: ['完成用户请求并保持现有行为不回退。'],
+    scopeRead: [],
+    scopeWrite: [],
+    dependsOn: [],
+  }];
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    currentNode: 'agent_assignment',
+    selectedIntent: 'debug',
+    selectedPath: ['intake', 'route_skills', 'debug_plan'],
+    activeSuperpowersStage: 'agent_assignment',
+    plan,
+    agentAssignments: [{
+      taskId: 'task-1',
+      assignedAgentId: executor.id,
+      fallbackAgentIds: [],
+      fallbackReason: null,
+      executionMode: 'parallel',
+      scopeRead: [],
+      scopeWrite: [],
+    }],
+  }));
+
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input, {
+      implementationOutput: [
+        'rootCause: package build script is available after debugging.',
+        'verificationResult: npm run build can be checked by workflow verification.',
+      ].join('\n'),
+    }),
+  });
+  const state = parseGraphState(latest.graph_state);
+  const steps = workflowRepo.listSteps(run.id);
+
+  assert.equal(latest.status, 'awaiting_decision');
+  assert.ok(
+    steps.some((step) => step.node_name === 'dispatch'),
+    `steps: ${steps.map((step) => `${step.node_name}:${step.status}`).join(', ')}`,
+  );
+  assert.ok(
+    steps.some((step) => step.node_name === 'systematic_debugging'),
+    `steps: ${steps.map((step) => `${step.node_name}:${step.status}`).join(', ')}`,
+  );
+  const agentRunCount = db.prepare('SELECT COUNT(*) AS count FROM agent_runs WHERE workflow_run_id = ?').get(run.id) as
+    | { count: number }
+    | undefined;
+  assert.equal(agentRunCount?.count, 1);
+  assert.equal(state?.verificationEvidence?.[0]?.command, 'npm run build');
+  assert.equal(state?.verificationEvidence?.[0]?.status, 'passed');
+});
+
+test('Superpowers debug retry resumes systematic debugging before verification when child is runnable', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-debug-retry-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  writeFileSync(join(projectPath, 'package.json'), JSON.stringify({
+    scripts: { build: 'node -e "process.exit(0)"' },
+  }));
+  const project = projectRepo.create({ name: 'Graph Runtime Debug Retry', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Debug Retry Room' });
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setCapabilitiesAndRuntime(executor.id, {
+    capabilities: ['debugging'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files', 'write_files'] },
+    workspace_policy: { read: ['.'], write: ['.'] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '修复 npm run build 失败',
+  });
+  const child = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    parent_task_id: task.id,
+    title: '执行系统化调试',
+    description: task.title,
+    assigned_agent_id: executor.id,
+    created_from: 'workflow_assignment',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const plan = createRunnableSuperpowersPlan(task.title);
+  plan.tasks = [{
+    title: child.title,
+    description: child.description ?? child.title,
+    suggestedRole: 'executor',
+    priority: 'normal',
+    acceptance: ['完成用户请求并保持现有行为不回退。'],
+    scopeRead: [],
+    scopeWrite: [],
+    dependsOn: [],
+  }];
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    currentNode: 'execute',
+    currentStepId: 'previous-systematic-debugging-step',
+    selectedIntent: 'debug',
+    selectedPath: ['intake', 'route_skills', 'debug_plan'],
+    activeSuperpowersStage: 'agent_assignment',
+    superpowersPhase: 'systematic_debugging',
+    plan,
+    childTaskIds: [child.id],
+    childTaskPlanIndexes: { [child.id]: 0 },
+    agentAssignments: [{
+      taskId: 'task-1',
+      assignedAgentId: executor.id,
+      fallbackAgentIds: [],
+      fallbackReason: null,
+      executionMode: 'parallel',
+      scopeRead: [],
+      scopeWrite: [],
+    }],
+  }));
+
+  let calls = 0;
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => {
+      calls += 1;
+      return createCompletedAgentRun(room.id, input, {
+        implementationOutput: 'rootCause: retry resumed systematic debugging.',
+      });
+    },
+  });
+  const steps = workflowRepo.listSteps(run.id);
+
+  assert.equal(latest.status, 'awaiting_decision');
+  assert.equal(calls, 1);
+  assert.ok(steps.some((step) => step.node_name === 'systematic_debugging'));
+  assert.ok(steps.findIndex((step) => step.node_name === 'systematic_debugging') < steps.findIndex((step) => step.node_name === 'verify'));
 });
 
 test('Superpowers review failure synchronizes workflow run as blocked', async () => {
@@ -3781,7 +3945,12 @@ async function continueAfterApprovedSpecArtifactIfNeeded(
   run: WorkflowRun,
   deps: Parameters<typeof startGraphWorkflow>[1],
 ): Promise<WorkflowRun> {
-  if (run.status !== 'blocked' || !/approved spec artifact/i.test(run.error ?? '')) return run;
+  if (
+    run.status !== 'awaiting_approval' &&
+    (run.status !== 'blocked' || !/approved spec artifact/i.test(run.error ?? ''))
+  ) {
+    return run;
+  }
   const state = parseGraphState(run.graph_state);
   if (!state?.approvedSpecArtifactVersionId) return run;
   workflowRepo.updateRun(run.id, { status: 'running', error: null });
@@ -3799,7 +3968,12 @@ async function continueAfterApprovedPlanArtifactIfNeeded(
   run: WorkflowRun,
   deps: Parameters<typeof startGraphWorkflow>[1],
 ): Promise<WorkflowRun> {
-  if (run.status !== 'blocked' || !/approved plan artifact/i.test(run.error ?? '')) return run;
+  if (
+    run.status !== 'awaiting_approval' &&
+    (run.status !== 'blocked' || !/approved plan artifact/i.test(run.error ?? ''))
+  ) {
+    return run;
+  }
   const state = parseGraphState(run.graph_state);
   if (!state?.approvedPlanArtifactVersionId) return run;
   workflowRepo.updateRun(run.id, { status: 'running', error: null });

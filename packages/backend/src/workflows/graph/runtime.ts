@@ -901,10 +901,51 @@ async function resumeGraphWorkflowFromState(
     return nextState;
   }
   let nodeToRun = nextNodeAfter(null, nextState, routePlan);
+  if (
+    runtimeGraph &&
+    nextState.superpowersPhase === 'systematic_debugging' &&
+    hasRunnableChildTask(nextState)
+  ) {
+    nodeToRun = 'systematic_debugging';
+  }
 
   for (let iteration = 0; iteration < 20; iteration += 1) {
     if (!nodeToRun || isTerminalResumeState(nextState)) {
       return nextState;
+    }
+
+    if (nodeToRun === 'systematic_debugging' && runtimeGraph) {
+      if ((nextState.childTaskIds ?? []).length === 0 && (nextState.plan?.tasks.length ?? 0) > 0) {
+        nextState = await nodes.dispatchNode(nextState);
+        if (isPlannerRevisionChangeRequestBlocked(nextState)) {
+          return nextState;
+        }
+        if (nextState.status === 'blocked' || nextState.status === 'failed' || nextState.status === 'cancelled') {
+          return nextState;
+        }
+      }
+
+      if (hasRunnableChildTask(nextState)) {
+        const executedState = await nodes.executeNode({
+          ...nextState,
+          superpowersPhase: 'systematic_debugging',
+        });
+        if (isPlannerRevisionChangeRequestBlocked(executedState)) {
+          return executedState;
+        }
+        nextState = renameLatestExecuteStep(
+          executedState,
+          tools,
+          'systematic_debugging',
+          'systematic_debugging',
+        );
+        if (shouldWaitForActiveAgentRun('execute', nextState)) {
+          return nextState;
+        }
+      }
+
+      nodeToRun = nextNodeAfter('systematic_debugging', nextState, routePlan);
+      continue;
     }
 
     if (nodeToRun === 'tdd_execute' && runtimeGraph && hasRunnableChildTask(nextState)) {
@@ -1144,10 +1185,13 @@ async function runSuperpowersPlannerRouteNode(
   const nextState: AgentWorkflowState = {
     ...rawNextState,
     currentNode: 'planning',
+    status: rawNextState.draftSpecArtifactVersionId ? 'awaiting_approval' : rawNextState.status,
+    error: rawNextState.draftSpecArtifactVersionId ? 'Waiting for approved spec artifact version' : rawNextState.error,
   };
   const blocked = nextState.status === 'blocked';
+  const awaitingApproval = nextState.status === 'awaiting_approval';
   const updatedRun = tools.updateRun(context.run.id, {
-    status: blocked ? 'blocked' : 'running',
+    status: blocked ? 'blocked' : awaitingApproval ? 'awaiting_approval' : 'running',
     current_stage: phaseStep.stage,
     error: blocked ? nextState.error : null,
   });
@@ -1179,10 +1223,13 @@ async function runSuperpowersWritingPlansNode(
   const nextState: AgentWorkflowState = {
     ...plannedState,
     currentNode: 'planning',
+    status: plannedState.draftPlanArtifactVersionId ? 'awaiting_approval' : plannedState.status,
+    error: plannedState.draftPlanArtifactVersionId ? 'Waiting for approved plan artifact version' : plannedState.error,
   };
   const blocked = nextState.status === 'blocked';
+  const awaitingApproval = nextState.status === 'awaiting_approval';
   const updatedRun = tools.updateRun(context.run.id, {
-    status: blocked ? 'blocked' : 'running',
+    status: blocked ? 'blocked' : awaitingApproval ? 'awaiting_approval' : 'running',
     current_stage: 'planning',
     error: blocked ? nextState.error : null,
   });
@@ -1658,21 +1705,30 @@ function renameLatestExecuteStepAsTddExecute(
   state: AgentWorkflowState,
   tools: ReturnType<typeof createGraphTools>,
 ): AgentWorkflowState {
+  return renameLatestExecuteStep(state, tools, 'tdd_execute', 'tdd_execute');
+}
+
+function renameLatestExecuteStep(
+  state: AgentWorkflowState,
+  tools: ReturnType<typeof createGraphTools>,
+  nodeName: 'tdd_execute' | 'systematic_debugging',
+  superpowersPhase: AgentWorkflowState['superpowersPhase'],
+): AgentWorkflowState {
   if (!state.currentStepId) return state;
   const step = tools.getStep(state.currentStepId);
   if (!step || step.node_name !== 'execute') return state;
-  const updatedStep = tools.updateGraphStep(step.id, { node_name: 'tdd_execute' as never });
+  const updatedStep = tools.updateGraphStep(step.id, { node_name: nodeName as never });
   if (updatedStep) {
     const context = tools.readWorkflowContext(state.workflowRunId);
     tools.broadcastStepUpdated(context.room.id, updatedStep);
   }
   tools.updateGraphState(state.workflowRunId, serializeGraphState({
     ...state,
-    superpowersPhase: 'tdd_execute',
+    superpowersPhase,
   }));
   return {
     ...state,
-    superpowersPhase: 'tdd_execute',
+    superpowersPhase,
   };
 }
 
@@ -2028,9 +2084,10 @@ function isSuperpowersPlanningPhase(value: unknown): value is SuperpowersPlannin
   );
 }
 
-function isSuperpowersExecutionPhase(value: unknown): value is SuperpowersExecutionNodeName {
+function isSuperpowersExecutionPhase(value: unknown): value is SuperpowersExecutionNodeName | 'systematic_debugging' {
   return (
     value === 'tdd_execute'
+    || value === 'systematic_debugging'
     || value === 'spec_compliance_review'
     || value === 'code_quality_review'
     || value === 'finish_branch'

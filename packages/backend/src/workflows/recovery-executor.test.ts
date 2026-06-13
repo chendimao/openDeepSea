@@ -19,6 +19,7 @@ const { taskEventRepo } = await import('../repos/task-events.js');
 const { workflowIncidentRepo } = await import('../repos/workflow-incidents.js');
 const { workflowRepo } = await import('../repos/workflows.js');
 const { executeRecoveryDecision } = await import('./recovery-executor.js');
+const { emptyAgentWorkflowState, serializeGraphState } = await import('./graph/state.js');
 
 test('executeRecoveryDecision retries same agent and records recovery message', async () => {
   const fixture = createFixture('retry same');
@@ -184,6 +185,84 @@ test('executeRecoveryDecision marks workflow blocked', async () => {
   assert.equal(workflowIncidentRepo.get(incident.id)?.status, 'blocked');
   assert.equal(workflowRepo.getRun(fixture.workflow.id)?.status, 'blocked');
   assert.match(latestRecoveryMessage(fixture.room.id), /mark_blocked/);
+});
+
+test('executeRecoveryDecision does not block a workflow already awaiting user decision in graph state', async () => {
+  const fixture = createFixture('already awaiting decision');
+  workflowRepo.updateGraphState(fixture.workflow.id, serializeGraphState({
+    ...emptyAgentWorkflowState({
+      workflowRunId: fixture.workflow.id,
+      projectId: fixture.project.id,
+      roomId: fixture.room.id,
+      taskId: fixture.task.id,
+      userGoal: fixture.task.title,
+      projectPath: fixture.project.path,
+    }),
+    status: 'awaiting_decision',
+    currentNode: 'acceptance',
+    superpowersPhase: 'finish_branch',
+    finishBranchDecision: {
+      decision: null,
+      options: ['merge_local', 'create_pr', 'keep_branch', 'discard_work'],
+      reason: '等待用户选择分支收尾方式',
+      decidedAt: null,
+    },
+  }));
+  const incident = createIncident(fixture, { incident_type: 'unknown' });
+
+  const result = await executeRecoveryDecision({
+    incident,
+    decision: decision('mark_blocked'),
+  });
+
+  assert.equal(result.status, 'noop');
+  assert.equal(result.detail, 'workflow is already awaiting user decision');
+  assert.equal(workflowIncidentRepo.get(incident.id)?.status, 'resolved');
+  assert.equal(workflowRepo.getRun(fixture.workflow.id)?.status, 'awaiting_decision');
+  assert.equal(workflowRepo.getRun(fixture.workflow.id)?.error, null);
+  assert.equal(recoveryMessages(fixture.room.id).length, 0);
+});
+
+test('executeRecoveryDecision does not retry a workflow already awaiting user decision in graph state', async () => {
+  const fixture = createFixture('already awaiting retry');
+  workflowRepo.updateGraphState(fixture.workflow.id, serializeGraphState({
+    ...emptyAgentWorkflowState({
+      workflowRunId: fixture.workflow.id,
+      projectId: fixture.project.id,
+      roomId: fixture.room.id,
+      taskId: fixture.task.id,
+      userGoal: fixture.task.title,
+      projectPath: fixture.project.path,
+    }),
+    status: 'awaiting_decision',
+    currentNode: 'acceptance',
+    superpowersPhase: 'finish_branch',
+    finishBranchDecision: {
+      decision: null,
+      options: ['merge_local', 'create_pr', 'keep_branch', 'discard_work'],
+      reason: '等待用户选择分支收尾方式',
+      decidedAt: null,
+    },
+  }));
+  const incident = createIncident(fixture, { incident_type: 'agent_run_stale', error: 'Process exited with code 130' });
+  let retried = false;
+
+  const result = await executeRecoveryDecision({
+    incident,
+    decision: decision('retry_same_agent'),
+    retryWorkflowStep: async (workflowRunId) => {
+      retried = true;
+      return retryWithoutStartingAgent(workflowRunId);
+    },
+  });
+
+  assert.equal(result.status, 'noop');
+  assert.equal(result.detail, 'workflow is already awaiting user decision');
+  assert.equal(retried, false);
+  assert.equal(workflowIncidentRepo.get(incident.id)?.status, 'resolved');
+  assert.equal(workflowRepo.getRun(fixture.workflow.id)?.status, 'awaiting_decision');
+  assert.equal(workflowRepo.getRun(fixture.workflow.id)?.error, null);
+  assert.equal(recoveryMessages(fixture.room.id).length, 0);
 });
 
 function createFixture(name: string, options: { createAgent?: boolean } = {}) {

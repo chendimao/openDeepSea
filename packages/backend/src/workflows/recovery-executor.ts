@@ -15,6 +15,7 @@ import type { Task, WorkflowIncident, WorkflowRun } from '../types.js';
 import { ensureGlobalExecutorForRecovery } from './agent-provisioning.js';
 import type { WorkflowRecoveryDecision } from './recovery-supervisor.js';
 import { workflowOrchestrator } from './orchestrator.js';
+import { parseGraphState } from './graph/state.js';
 
 export interface WorkflowRecoveryExecutionResult {
   status: 'executed' | 'blocked' | 'noop';
@@ -78,13 +79,19 @@ async function retryWorkflow(
   task: Task,
   retryWorkflowStep: WorkflowRetryStepHandler,
 ): Promise<WorkflowRecoveryExecutionResult> {
+  const refreshedRun = workflowRepo.getRun(run.id) ?? run;
+  if (isAwaitingUserDecisionGraphState(refreshedRun)) {
+    workflowRepo.updateRun(run.id, { status: 'awaiting_decision', error: null });
+    workflowIncidentRepo.markResolved(incident.id, null);
+    return { status: 'noop', detail: 'workflow is already awaiting user decision' };
+  }
+
   if (agentRunRepo.listActiveByWorkflow(run.id).length > 0) {
     const recorded = writeRecoveryMessage(incident, decision, run, task, '检测到已有运行中的智能体，本次恢复不重复启动。');
     workflowIncidentRepo.markResolved(incident.id, recorded.message.id);
     return { status: 'noop', messageId: recorded.message.id, detail: 'active agent run exists' };
   }
 
-  const refreshedRun = workflowRepo.getRun(run.id) ?? run;
   if (refreshedRun.status !== 'blocked' && refreshedRun.status !== 'failed' && refreshedRun.status !== 'cancelled') {
     workflowRepo.updateRun(run.id, { status: 'blocked', error: incident.error ?? decision.reason });
   }
@@ -215,10 +222,24 @@ function markBlocked(
   run: WorkflowRun,
   task: Task,
 ): WorkflowRecoveryExecutionResult {
+  if (isAwaitingUserDecisionGraphState(run)) {
+    workflowRepo.updateRun(run.id, { status: 'awaiting_decision', error: null });
+    workflowIncidentRepo.markResolved(incident.id, null);
+    return { status: 'noop', detail: 'workflow is already awaiting user decision' };
+  }
   workflowRepo.updateRun(run.id, { status: 'blocked', error: decision.reason });
   const recorded = writeRecoveryMessage(incident, decision, run, task, '已将工作流标记为阻塞，等待人工处理。');
   workflowIncidentRepo.markBlocked(incident.id, decisionToJson(decision), recorded.message.id);
   return { status: 'blocked', messageId: recorded.message.id };
+}
+
+function isAwaitingUserDecisionGraphState(run: WorkflowRun): boolean {
+  try {
+    const state = parseGraphState(run.graph_state);
+    return state?.status === 'awaiting_decision';
+  } catch {
+    return false;
+  }
 }
 
 function writeRecoveryMessage(

@@ -236,14 +236,15 @@ function formatSuperpowersEvidenceInstruction(phase: SuperpowersRuntimePhase): s
   if (phase === 'tdd_execute') {
     return [
       ...lines,
-      '必须记录 RED 失败与 GREEN 通过；只读/文档任务可以输出 tddExemption，但必须说明原因和批准人。',
+      '必须记录 RED 失败与 GREEN 通过；只读/文档任务可以输出 tddExemption，但必须说明 reason 和 approvedBy。',
       '```json',
       '{',
       '  "superpowers": {',
       '    "tddEvidence": [',
       '      {"stage": "RED", "command": "npm test -- specific.test.ts", "passed": false, "summary": "测试按预期失败"},',
       '      {"stage": "GREEN", "command": "npm test -- specific.test.ts", "passed": true, "summary": "实现后通过"}',
-      '    ]',
+      '    ],',
+      '    "tddExemption": {"reason": "仅文档/只读/配置变更，不涉及运行时行为", "approvedBy": "workflow-runtime"}',
       '  }',
       '}',
       '```',
@@ -385,8 +386,11 @@ function buildImplementationPrompt(context: PromptContext): string {
 function buildReviewPrompt(context: PromptContext): string {
   return [
     '你是开发闭环的代码审查智能体。请审查执行结果，重点发现 bug、回归风险和遗漏验证。',
+    '必须现在完成审查并给出结论；不要只输出“我会审查”“下一步我将检查”这类过程说明。',
+    '如果证据不足以通过，输出 changes_requested 或 failed，并在 findings 中写清缺少什么证据。',
     '必须输出 JSON 代码块：{"verdict":"pass|changes_requested|failed","findings":["每条发现使用字符串，包含文件位置、问题、证据和影响"],"requiredFixes":["每条必修项使用字符串"],"riskLevel":"low|medium|high"}。',
     '不要把 findings 或 requiredFixes 写成对象数组。',
+    '最终回复必须包含且只能依赖这个 JSON 代码块作为机器可读结论。',
     '',
     baseContext(context),
     '',

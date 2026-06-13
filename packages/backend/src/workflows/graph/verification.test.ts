@@ -25,6 +25,7 @@ const { createGraphTools } = await import('./tools.js');
 test('verification allowlist accepts known safe npm commands', () => {
   assert.equal(isAllowedVerificationCommand('npm run test -w @openclaw-room/backend'), true);
   assert.equal(isAllowedVerificationCommand('npm run build'), true);
+  assert.equal(isAllowedVerificationCommand('git status --short'), true);
 });
 
 test('verification allowlist rejects shell chaining and destructive commands', () => {
@@ -48,6 +49,28 @@ test('verification runs natural language file existence checks safely', async ()
   writeFileSync(join(projectPath, markdownPath), '# Superpowers E2E\n');
 
   const result = await runVerificationCommand(`检查目标文件存在：${markdownPath}。`, projectPath);
+
+  assert.equal(result.status, 'passed');
+  assert.equal(result.exitCode, 0);
+});
+
+test('verification runs allowlisted git status short command', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'graph-verification-git-status-short-'));
+  writeFileSync(join(projectPath, 'README.md'), '# Smoke\n');
+  spawnSync('git', ['init'], { cwd: projectPath });
+  spawnSync('git', ['add', 'README.md'], { cwd: projectPath });
+  spawnSync('git', ['commit', '-m', 'docs: init'], {
+    cwd: projectPath,
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: 'OpenDeepSea Test',
+      GIT_AUTHOR_EMAIL: 'test@example.com',
+      GIT_COMMITTER_NAME: 'OpenDeepSea Test',
+      GIT_COMMITTER_EMAIL: 'test@example.com',
+    },
+  });
+
+  const result = await runVerificationCommand('git status --short', projectPath);
 
   assert.equal(result.status, 'passed');
   assert.equal(result.exitCode, 0);

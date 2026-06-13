@@ -127,3 +127,45 @@ test('canLeaveVerify requires non-empty required passed fresh verification evide
     ],
   })), true);
 });
+
+test('canLeaveVerify allows review-only path without required verification commands', () => {
+  assert.equal(canLeaveVerify(buildState({
+    selectedIntent: 'review_only',
+    plan: null,
+    verificationEvidence: [],
+  })), true);
+  assert.equal(canLeaveVerify(buildState({
+    selectedIntent: 'review_only',
+    plan: {
+      goal: 'review',
+      summary: 'review only',
+      assumptions: [],
+      tasks: [],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    verificationEvidence: [],
+  })), true);
+  assert.equal(canLeaveVerify(buildState({
+    selectedIntent: 'review_only',
+    plan: {
+      goal: 'review',
+      summary: 'review only',
+      assumptions: [],
+      tasks: [],
+      reviewFocus: [],
+      verification: ['git status --short'],
+      verificationCommands: [{
+        command: 'git status --short',
+        reason: 'required check',
+        required: true,
+      }],
+      risks: [],
+      needsApproval: false,
+    },
+    verificationEvidence: [],
+  })), false);
+});

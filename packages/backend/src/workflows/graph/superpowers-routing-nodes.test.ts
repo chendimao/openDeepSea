@@ -129,6 +129,40 @@ test('debugPlan and reviewPlan create plan artifacts for their routes', async ()
   assert.equal(createdArtifacts[1]?.structured_data.mode, 'review_only');
 });
 
+test('routeSkills keeps development requests with review wording on standard development path', async () => {
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft() {
+      return { id: 'artifact-1' };
+    },
+    createAssistantMessage() {
+      return { id: 'message-unused' };
+    },
+  });
+
+  const development = await nodes.routeSkills(emptyAgentWorkflowState({
+    workflowRunId: 'run-standard-review-wording',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-1',
+    userGoal: '新增一个标准开发功能，创建模块和测试脚本，并完成审查和验证。',
+    projectPath: '/tmp/project',
+  }));
+
+  const reviewOnly = await nodes.routeSkills(emptyAgentWorkflowState({
+    workflowRunId: 'run-review-only',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-2',
+    userGoal: '请审查当前 diff，指出 bug 和遗漏验证。',
+    projectPath: '/tmp/project',
+  }));
+
+  assert.equal(development.selectedIntent, 'standard_development');
+  assert.deepEqual(development.selectedPath, ['intake', 'route_skills', 'brainstorming']);
+  assert.equal(reviewOnly.selectedIntent, 'review_only');
+  assert.deepEqual(reviewOnly.selectedPath, ['intake', 'route_skills', 'review_plan']);
+});
+
 test('agentAssignment creates artifact with fullstack executor fallback', async () => {
   const artifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: any }> = [];
   const nodes = createSuperpowersRoutingNodes({

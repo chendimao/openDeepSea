@@ -1383,10 +1383,25 @@
   flex: 1 1 auto;
   gap: 1px;
 }
+.deepsea-project-session-row__main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
 .deepsea-project-session-row__project {
   min-width: 0;
   overflow: hidden;
   color: rgba(67, 70, 84, 0.42);
+  font-size: 11px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deepsea-project-session-row__summary {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(67, 70, 84, 0.56);
   font-size: 11px;
   line-height: 14px;
   text-overflow: ellipsis;

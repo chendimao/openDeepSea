@@ -43,6 +43,17 @@ function normalizeGraphNodeName(value: string | null | undefined): GraphNodeName
   if (!value) return null;
   const allowed = new Set<GraphNodeName>([
     'context',
+    'intake',
+    'route_skills',
+    'answer',
+    'analysis_plan',
+    'lightweight_plan',
+    'debug_plan',
+    'debug_plan_confirm',
+    'systematic_debugging',
+    'review_plan',
+    'reviewer_assignment',
+    'agent_assignment',
     'planning',
     'brainstorming',
     'spec_review',

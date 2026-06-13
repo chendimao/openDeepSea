@@ -25,6 +25,28 @@ test('parseSuperpowersEvidence reads fenced superpowers evidence block', () => {
   assert.equal(patch.planReviewVerdict, 'approved');
 });
 
+test('parseSuperpowersEvidence scans later fenced blocks for Superpowers evidence', () => {
+  const patch = parseSuperpowersEvidence([
+    '```json',
+    JSON.stringify({ plan: { summary: 'not evidence' } }, null, 2),
+    '```',
+    '```json',
+    JSON.stringify({ task_readiness: { ready: true } }, null, 2),
+    '```',
+    '```json',
+    JSON.stringify({
+      superpowers: {
+        designDocPath: 'docs/superpowers/specs/later-design.md',
+        designReviewVerdict: 'approved',
+      },
+    }, null, 2),
+    '```',
+  ].join('\n'));
+
+  assert.equal(patch.designDocPath, 'docs/superpowers/specs/later-design.md');
+  assert.equal(patch.designReviewVerdict, 'approved');
+});
+
 test('parseSuperpowersEvidence reads TDD, review, verification, and finish branch evidence', () => {
   const patch = parseSuperpowersEvidence(JSON.stringify({
     superpowers: {
@@ -62,6 +84,28 @@ test('parseSuperpowersEvidence infers TDD exemption from explicit documentation-
 
   assert.equal(patch.tddExemption?.approvedBy, 'workflow-runtime');
   assert.match(patch.tddExemption?.reason ?? '', /文档|只读|配置/u);
+  assert.equal(typeof patch.tddExemption?.createdAt, 'number');
+});
+
+test('parseSuperpowersEvidence accepts worker TDD exemption variants', () => {
+  const patch = parseSuperpowersEvidence([
+    '```json',
+    JSON.stringify({
+      superpowers: {
+        skillUsed: 'superpowers:test-driven-development',
+        tddExemption: {
+          applies: true,
+          reason: '本任务仅修改 README 文档验收记录，不涉及生产代码行为。',
+          approver: '用户请求中的阶段规则允许只读/文档任务输出 tddExemption',
+        },
+        tddEvidence: [],
+      },
+    }, null, 2),
+    '```',
+  ].join('\n'));
+
+  assert.equal(patch.tddExemption?.reason, '本任务仅修改 README 文档验收记录，不涉及生产代码行为。');
+  assert.equal(patch.tddExemption?.approvedBy, '用户请求中的阶段规则允许只读/文档任务输出 tddExemption');
   assert.equal(typeof patch.tddExemption?.createdAt, 'number');
 });
 

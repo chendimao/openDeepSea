@@ -17,8 +17,15 @@ export interface SuperpowersEvidencePatch {
 type EvidenceRecord = Record<string, unknown>;
 
 export function parseSuperpowersEvidence(output: string): SuperpowersEvidencePatch {
-  const parsed = parseEvidenceObject(output);
-  if (!parsed) return inferNaturalLanguageEvidence(output);
+  const parsedObjects = parseEvidenceObjects(output);
+  if (parsedObjects.length === 0) return inferNaturalLanguageEvidence(output);
+  return parsedObjects.reduce(
+    (patch, parsed) => mergeEvidencePatch(patch, parseSuperpowersEvidenceObject(parsed)),
+    {} as SuperpowersEvidencePatch,
+  );
+}
+
+function parseSuperpowersEvidenceObject(parsed: EvidenceRecord): SuperpowersEvidencePatch {
   const root = isRecord(parsed.superpowers) ? parsed.superpowers : parsed;
   const patch: SuperpowersEvidencePatch = {};
 
@@ -54,10 +61,13 @@ export function parseSuperpowersEvidence(output: string): SuperpowersEvidencePat
 
   const exemption = isRecord(root.tddExemption ?? root.tdd_exemption) ? root.tddExemption ?? root.tdd_exemption : null;
   if (isRecord(exemption)) {
-    const reason = stringValue(exemption.reason);
-    const approvedBy = stringValue(exemption.approvedBy ?? exemption.approved_by);
-    const createdAt = numberValue(exemption.createdAt ?? exemption.created_at) ?? Date.now();
-    if (reason && approvedBy) patch.tddExemption = { reason, approvedBy, createdAt };
+    const applies = booleanValue(exemption.applies);
+    if (applies !== false) {
+      const reason = stringValue(exemption.reason);
+      const approvedBy = stringValue(exemption.approvedBy ?? exemption.approved_by ?? exemption.approver);
+      const createdAt = numberValue(exemption.createdAt ?? exemption.created_at) ?? Date.now();
+      if (reason && approvedBy) patch.tddExemption = { reason, approvedBy, createdAt };
+    }
   }
 
   const specComplianceReview = parseReview(root.specComplianceReview ?? root.spec_compliance_review);
@@ -75,6 +85,23 @@ export function parseSuperpowersEvidence(output: string): SuperpowersEvidencePat
   if (finishBranchDecision) patch.finishBranchDecision = finishBranchDecision;
 
   return patch;
+}
+
+function mergeEvidencePatch(base: SuperpowersEvidencePatch, incoming: SuperpowersEvidencePatch): SuperpowersEvidencePatch {
+  return {
+    ...base,
+    designDocPath: incoming.designDocPath ?? base.designDocPath,
+    designReviewVerdict: incoming.designReviewVerdict ?? base.designReviewVerdict,
+    implementationPlanPath: incoming.implementationPlanPath ?? base.implementationPlanPath,
+    planReviewVerdict: incoming.planReviewVerdict ?? base.planReviewVerdict,
+    worktree: incoming.worktree ?? base.worktree,
+    tddEvidence: [...(base.tddEvidence ?? []), ...(incoming.tddEvidence ?? [])],
+    tddExemption: incoming.tddExemption ?? base.tddExemption,
+    specComplianceReview: incoming.specComplianceReview ?? base.specComplianceReview,
+    codeQualityReview: incoming.codeQualityReview ?? base.codeQualityReview,
+    verificationEvidence: [...(base.verificationEvidence ?? []), ...(incoming.verificationEvidence ?? [])],
+    finishBranchDecision: incoming.finishBranchDecision ?? base.finishBranchDecision,
+  };
 }
 
 function inferNaturalLanguageEvidence(output: string): SuperpowersEvidencePatch {
@@ -119,17 +146,21 @@ export function applySuperpowersEvidencePatch(
   };
 }
 
-function parseEvidenceObject(output: string): EvidenceRecord | null {
-  if (!output.trim()) return null;
+function parseEvidenceObjects(output: string): EvidenceRecord[] {
+  if (!output.trim()) return [];
+  const parsedObjects: EvidenceRecord[] = [];
+  const seen = new Set<string>();
   for (const candidate of extractJsonCandidates(output)) {
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
     try {
       const parsed = JSON.parse(candidate) as unknown;
-      if (isRecord(parsed)) return parsed;
+      if (isRecord(parsed)) parsedObjects.push(parsed);
     } catch {
       // Try the next candidate.
     }
   }
-  return null;
+  return parsedObjects;
 }
 
 function extractJsonCandidates(output: string): string[] {

@@ -310,12 +310,8 @@ function BottomStatusBar({
 
   return (
     <footer className="deepsea-bottom-status" aria-label="Session status bar">
-      <div className="deepsea-bottom-status__path" aria-label="当前会话路径">
+      <div className="deepsea-bottom-status__path" aria-label="当前会话信息">
         <GitFork aria-hidden="true" />
-        <span className="deepsea-mono">workspace</span>
-        <span>/</span>
-        <strong>{payload.project.name}</strong>
-        <span>/</span>
         <span className="deepsea-bottom-status__session-title" title={payload.activeSession.session.title}>
           {formatCompactSessionTitle(payload.activeSession.session.title, 28)}
         </span>
@@ -966,16 +962,23 @@ function ProjectSessionTimeRow({
         onClick={() => onOpenSession?.(session.project_id, session.id)}
       >
         <span className="deepsea-project-session-row__stack">
-          <span className="deepsea-project-session-row__title" title={session.title}>
-            {formatCompactSessionTitle(session.title, 31)}
+          <span className="deepsea-project-session-row__main">
+            <span className="deepsea-project-session-row__title" title={session.title}>
+              {formatCompactSessionTitle(session.title, 31)}
+            </span>
+            <time className="deepsea-project-session-row__time">
+              {formatRelativeTime(Date.now(), getSessionSidebarSortTime(session, sortMode))}
+            </time>
           </span>
           <span className="deepsea-project-session-row__project" title={session.project_name}>
             {session.project_name}
           </span>
+          {session.latest_event_summary ? (
+            <span className="deepsea-project-session-row__summary" data-session-change-summary="true">
+              {session.latest_event_summary}
+            </span>
+          ) : null}
         </span>
-        <time className="deepsea-project-session-row__time">
-          {formatRelativeTime(Date.now(), getSessionSidebarSortTime(session, sortMode))}
-        </time>
       </button>
     </div>
   );
@@ -1025,12 +1028,21 @@ function ProjectSessionRow({
         data-status={session.status}
         onClick={() => onOpenSession?.(session.project_id, session.id)}
       >
-        <span className="deepsea-project-session-row__title" title={session.title}>
-          {formatCompactSessionTitle(session.title, 31)}
+        <span className="deepsea-project-session-row__stack">
+          <span className="deepsea-project-session-row__main">
+            <span className="deepsea-project-session-row__title" title={session.title}>
+              {formatCompactSessionTitle(session.title, 31)}
+            </span>
+            <time className="deepsea-project-session-row__time">
+              {formatRelativeTime(Date.now(), getSessionSidebarSortTime(session, sortMode))}
+            </time>
+          </span>
+          {session.latest_event_summary ? (
+            <span className="deepsea-project-session-row__summary" data-session-change-summary="true">
+              {session.latest_event_summary}
+            </span>
+          ) : null}
         </span>
-        <time className="deepsea-project-session-row__time">
-          {formatRelativeTime(Date.now(), getSessionSidebarSortTime(session, sortMode))}
-        </time>
       </button>
     </div>
   );

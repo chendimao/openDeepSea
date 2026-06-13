@@ -318,6 +318,65 @@ test('applySessionWorkspaceEvent replaces inspector rows from snapshot', () => {
   assert.equal(next.diffRows[0]?.summary, 'apply_patch');
 });
 
+test('applySessionWorkspaceEvent refreshes only the active session change count summary', () => {
+  const payload = createPayload('session-current');
+  payload.activeSessions = [
+    {
+      id: 'session-current',
+      project_id: 'project-1',
+      project_name: 'Project',
+      project_path: '/tmp/project',
+      title: 'Current Session',
+      status: 'active',
+      phase: 'implementing',
+      provider: 'codex',
+      model: null,
+      pinned_at: null,
+      created_at: 100,
+      last_viewed_at: null,
+      updated_at: 200,
+      unread_count: 0,
+      active_run_count: 0,
+      latest_event_summary: null,
+    },
+    {
+      id: 'session-other',
+      project_id: 'project-1',
+      project_name: 'Project',
+      project_path: '/tmp/project',
+      title: 'Other Session',
+      status: 'active',
+      phase: 'implementing',
+      provider: 'codex',
+      model: null,
+      pinned_at: null,
+      created_at: 90,
+      last_viewed_at: null,
+      updated_at: 180,
+      unread_count: 0,
+      active_run_count: 0,
+      latest_event_summary: null,
+    },
+  ];
+
+  const next = applySessionWorkspaceEvent(payload, {
+    type: 'session_inspector:snapshot',
+    sessionId: 'session-current',
+    planItems: [],
+    toolRows: [],
+    diffRows: [{
+      path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+      status: 'modified',
+      additions: 4,
+      deletions: 1,
+      summary: 'apply_patch',
+    }],
+  });
+
+  assert.equal(next.activeSessions.find((session) => session.id === 'session-current')?.latest_event_summary, '本会话 1 个文件变更');
+  assert.equal(next.activeSessions.find((session) => session.id === 'session-other')?.latest_event_summary, null);
+});
+
 function createPayload(sessionId: string): SessionWorkspacePayload {
   const now = Date.now();
   return {

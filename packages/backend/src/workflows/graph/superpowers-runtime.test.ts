@@ -342,6 +342,123 @@ test('Superpowers review nodes invoke current room reviewer agent and parse JSON
   assert.equal(reviewStep?.result, reviewOutput);
 });
 
+test('Superpowers review nodes retry once when reviewer omits required JSON evidence', async () => {
+  const projectPath = `/tmp/superpowers-review-runtime-retry-${Date.now()}`;
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Superpowers review retry project', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Superpowers review retry room' });
+  const reviewer = roomAgentRepo.add({
+    room_id: room.id,
+    agent_id: 'reviewer-agent',
+    agent_name: 'Reviewer Agent',
+  });
+  roomAgentRepo.setWorkflowRole(reviewer.id, 'reviewer');
+  roomAgentRepo.setAcp(reviewer.id, {
+    acp_enabled: true,
+    acp_backend: 'codex',
+    acp_session_id: null,
+    acp_session_label: null,
+    acp_permission_mode: 'workspace-write',
+    acp_writable_dirs: [],
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Retry missing reviewer evidence',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...emptyAgentWorkflowState({
+      workflowRunId: run.id,
+      projectId: project.id,
+      roomId: room.id,
+      taskId: task.id,
+      userGoal: task.title,
+      projectPath: project.path,
+    }),
+    runtimeProfile: 'superpowers',
+    superpowersPhase: 'spec_compliance_review',
+    tddExemption: {
+      reason: 'documentation-only',
+      approvedBy: 'test',
+      createdAt: Date.now(),
+    },
+    plan: {
+      goal: task.title,
+      summary: task.title,
+      assumptions: [],
+      tasks: [],
+      reviewFocus: [],
+      verification: ['git status --short'],
+      verificationCommands: [{ command: 'git status --short', reason: 'verify', required: true }],
+      risks: [],
+      needsApproval: false,
+    },
+    implementationPlanPath: 'workflow-artifact:lightweight-plan',
+  }));
+
+  const validReviewOutput = JSON.stringify({
+    superpowers: {
+      specComplianceReview: {
+        verdict: 'approved',
+        findings: [],
+        reviewedAt: '2026-06-13T00:00:00.000Z',
+      },
+    },
+  });
+  const prompts: string[] = [];
+  const graph = buildSuperpowersRuntimeGraph({
+    runAcpAgent: async (input) => {
+      prompts.push(input.prompt);
+      const output = prompts.length === 1
+        ? '我会按审查员角色做只读核查，但没有输出 JSON。'
+        : validReviewOutput;
+      const runRecord = agentRunRepo.create({
+        room_id: room.id,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        task_id: input.taskId ?? null,
+        workflow_run_id: input.workflowRunId ?? null,
+        workflow_step_id: input.workflowStepId ?? null,
+        workflow_stage: input.workflowStage ?? null,
+        prompt: input.prompt,
+      });
+      const completedRun = agentRunRepo.updateStatus(runRecord.id, 'completed', { stdout: output }) ?? runRecord;
+      const message = messageRepo.create({
+        room_id: room.id,
+        sender_type: 'agent',
+        sender_id: input.agent.agent_id,
+        sender_name: input.agent.agent_name,
+        content: output,
+        message_type: 'agent_stream',
+      });
+      return {
+        run: completedRun,
+        message,
+        status: 'completed',
+      };
+    },
+  });
+
+  const latest = await graph.nodes.specComplianceReview(emptyAgentWorkflowState({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+  }));
+  const reviewStep = workflowRepo.listSteps(run.id).find((step) => step.node_name === 'spec_compliance_review');
+
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[1]!, /上一次审查回复没有包含 workflow runtime 可解析/);
+  assert.equal(latest.specComplianceReview?.verdict, 'approved');
+  assert.equal(latest.reviewVerdict, 'pass');
+  assert.equal(reviewStep?.status, 'completed');
+  assert.equal(reviewStep?.result, validReviewOutput);
+});
+
 test('Superpowers brainstorming node invokes planner agent and records required evidence', async () => {
   const projectPath = `/tmp/superpowers-planner-runtime-project-${Date.now()}`;
   mkdirSync(projectPath, { recursive: true });

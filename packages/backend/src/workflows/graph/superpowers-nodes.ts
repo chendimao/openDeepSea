@@ -88,6 +88,7 @@ export const SUPERPOWERS_PLANNING_PHASE_STEPS: readonly SuperpowersPhaseStep[] =
 const DEFAULT_DESIGN_DOC_PATH = 'docs/superpowers/specs/superpowers-design.md';
 const DEFAULT_IMPLEMENTATION_PLAN_PATH = 'docs/superpowers/plans/superpowers-implementation-plan.md';
 const DEFAULT_FINISH_BRANCH_REASON = '等待用户选择分支收尾方式';
+const REVIEW_OUTPUT_RETRY_LIMIT = 1;
 
 export const SUPERPOWERS_FINISH_BRANCH_OPTIONS = [
   'merge_local',
@@ -667,7 +668,7 @@ async function runSuperpowersReview(
     error: null,
   }));
 
-  const runResult = await tools.runAcpAgent({
+  const firstRunResult = await tools.runAcpAgent({
     agent: reviewer,
     projectPath: context.project.path,
     roomId: context.room.id,
@@ -677,6 +678,7 @@ async function runSuperpowersReview(
     workflowStepId: step.id,
     workflowStage: 'code_review',
   });
+  let runResult = firstRunResult;
   const output = runResult.run.stdout || runResult.message.content;
   if (runResult.status !== 'completed') {
     const error = runResult.run.error ?? (runResult.status === 'cancelled' ? 'Agent run cancelled' : 'Agent run failed');
@@ -709,6 +711,20 @@ async function runSuperpowersReview(
   try {
     reviewOutput = parseSuperpowersReviewOutput(output, phase);
   } catch {
+    const retryResult = await retryInvalidReviewOutput({
+      phase,
+      state,
+      tools,
+      context,
+      reviewer,
+      stepId: step.id,
+      invalidOutput: output,
+      retryCount: REVIEW_OUTPUT_RETRY_LIMIT,
+    });
+    if (retryResult) {
+      runResult = retryResult.runResult;
+      reviewOutput = retryResult.reviewOutput;
+    } else {
     const failedStep = tools.updateGraphStep(step.id, {
       status: 'failed',
       agent_run_id: runResult.run.id,
@@ -722,8 +738,10 @@ async function runSuperpowersReview(
       activeAgentRunId: runResult.run.id,
       currentStepId: step.id,
     }, phase, 'failed', ['Invalid Superpowers review output']);
+    }
   }
 
+  const finalOutput = runResult.run.stdout || runResult.message.content;
   const reviewedAt = runResult.run.completed_at ? new Date(runResult.run.completed_at).toISOString() : null;
   const review = {
     verdict: reviewOutput.verdict,
@@ -752,12 +770,85 @@ async function runSuperpowersReview(
   const completedStep = tools.updateGraphStep(step.id, {
     status: finalStatus,
     agent_run_id: runResult.run.id,
-    result: output,
+    result: finalOutput,
     result_message_id: runResult.message.id,
     error: finalError,
   });
   if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
   return applyReviewState(nextState, phase, reviewOutput.verdict, reviewOutput.findings);
+}
+
+async function retryInvalidReviewOutput(input: {
+  phase: 'spec_compliance_review' | 'code_quality_review';
+  state: AgentWorkflowState;
+  tools: GraphTools;
+  context: ReturnType<GraphTools['readWorkflowContext']>;
+  reviewer: ReturnType<GraphTools['selectAgentForRole']> & {};
+  stepId: string;
+  invalidOutput: string;
+  retryCount: number;
+}): Promise<{
+  runResult: Awaited<ReturnType<GraphTools['runAcpAgent']>>;
+  reviewOutput: { verdict: SuperpowersReviewVerdict; findings: string[]; reviewedAt: string | null };
+} | null> {
+  let lastOutput = input.invalidOutput;
+  for (let attempt = 1; attempt <= input.retryCount; attempt += 1) {
+    const retryPrompt = buildStrictReviewRetryPrompt(input.phase, input.state, lastOutput);
+    const runResult = await input.tools.runAcpAgent({
+      agent: input.reviewer,
+      projectPath: input.context.project.path,
+      roomId: input.context.room.id,
+      prompt: retryPrompt,
+      taskId: input.context.task.id,
+      workflowRunId: input.context.run.id,
+      workflowStepId: input.stepId,
+      workflowStage: 'code_review',
+    });
+    lastOutput = runResult.run.stdout || runResult.message.content;
+    if (runResult.status !== 'completed') return null;
+    try {
+      return {
+        runResult,
+        reviewOutput: parseSuperpowersReviewOutput(lastOutput, input.phase),
+      };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function buildStrictReviewRetryPrompt(
+  phase: 'spec_compliance_review' | 'code_quality_review',
+  state: AgentWorkflowState,
+  invalidOutput: string,
+): string {
+  const field = phase === 'spec_compliance_review' ? 'specComplianceReview' : 'codeQualityReview';
+  return [
+    '上一次审查回复没有包含 workflow runtime 可解析的 Superpowers review JSON，因此不能通过门禁。',
+    '现在只执行一次严格格式修复：基于已完成的实现、计划、验证证据和上一次输出，给出审查结论。',
+    '不要输出过程说明，不要说“我会审查”。必须直接输出一个 fenced JSON 代码块。',
+    'verdict 只能是 approved、changes_requested、failed 或 pending。',
+    '',
+    '当前任务目标：',
+    state.userGoal,
+    '',
+    '上一次无效输出：',
+    invalidOutput.slice(0, 4_000),
+    '',
+    '输出格式：',
+    '```json',
+    '{',
+    '  "superpowers": {',
+    `    "${field}": {`,
+    '      "verdict": "approved",',
+    '      "findings": [],',
+    '      "reviewedAt": "2026-06-13T00:00:00.000Z"',
+    '    }',
+    '  }',
+    '}',
+    '```',
+  ].join('\n');
 }
 
 function parseSuperpowersReviewOutput(

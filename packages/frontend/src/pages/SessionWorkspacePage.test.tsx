@@ -64,6 +64,16 @@ test('SessionWorkspacePage exposes override props for keep-alive host params', (
   assert.match(source, /if \(!navigationEnabled \|\| event\.key !== 'Escape'\) return/);
 });
 
+test('SessionWorkspacePage registers the workspace websocket listener before requesting the first snapshot', () => {
+  const source = sessionWorkspacePageSource;
+  const listenerIndex = source.indexOf("return sessionSocket.on((event: WsServerEvent) => {");
+  const requestIndex = source.indexOf('sessionSocket.requestSessionWorkspace({ projectId: activeProjectId, sessionId });');
+
+  assert.notEqual(listenerIndex, -1);
+  assert.notEqual(requestIndex, -1);
+  assert.ok(listenerIndex < requestIndex);
+});
+
 test('SessionWorkspacePage wires save knowledge note mutation to session messages', () => {
   const source = readFileSync(new URL('./SessionWorkspacePage.tsx', import.meta.url), 'utf8');
 
