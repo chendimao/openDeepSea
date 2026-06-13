@@ -678,6 +678,31 @@ test('buildSessionInspectorSnapshot combines plan, tool and session change rows'
   assert.deepEqual(snapshot.diffRows, []);
 });
 
+test('buildSessionInspectorSnapshot does not count live git workspace changes as session changes', () => {
+  const root = mkdtempSync(join(tmpdir(), 'session-inspector-live-git-'));
+  execFileSync('git', ['init'], { cwd: root });
+  execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: root });
+  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: root });
+  writeFileSync(join(root, 'tracked.txt'), 'one\n');
+  execFileSync('git', ['add', 'tracked.txt'], { cwd: root });
+  execFileSync('git', ['commit', '-m', 'init'], { cwd: root });
+  writeFileSync(join(root, 'tracked.txt'), 'one\ntwo\n');
+
+  const project = projectRepo.create({
+    name: 'inspector live git project',
+    path: root,
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Inspector Live Git Session',
+    workspace_path: root,
+  });
+
+  const snapshot = buildSessionInspectorSnapshot(session.id, [], []);
+
+  assert.deepEqual(snapshot.diffRows, []);
+});
+
 test('buildSessionDiffRows reads real git status and numstat', () => {
   const root = mkdtempSync(join(tmpdir(), 'session-diff-project-'));
   execFileSync('git', ['init'], { cwd: root });

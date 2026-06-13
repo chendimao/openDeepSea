@@ -534,8 +534,9 @@ function updateApprovedArtifactGraphState(
 
 function shouldResumeAfterArtifactApproval(run: WorkflowRun, artifactType: WorkflowArtifactVersionType): boolean {
   if (artifactType !== 'spec' && artifactType !== 'plan' && artifactType !== 'lightweight_plan') return false;
-  if (run.status !== 'blocked') return false;
+  if (run.status !== 'blocked' && run.status !== 'awaiting_approval') return false;
   const state = parseGraphState(run.graph_state);
+  if (run.status === 'awaiting_approval') return true;
   const error = [run.error, state?.error].filter(Boolean).join('\n');
   if (artifactType === 'spec') return /approved spec artifact/i.test(error);
   return /approved plan artifact/i.test(error);

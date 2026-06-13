@@ -145,8 +145,9 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
         planReviewVerdict: 'approved',
         plan,
         workflowPlan: null,
-        status: 'blocked',
-        error: 'Superpowers dispatch requires approved plan artifact version',
+        approval: 'pending',
+        status: 'awaiting_approval',
+        error: 'Waiting for user confirmation of lightweight plan artifact',
       };
     },
 

@@ -64,8 +64,9 @@ test('lightweightPlan creates a confirmable lightweight plan artifact', async ()
   assert.equal(planned.activeSuperpowersStage, 'lightweight_plan');
   assert.equal(planned.lightweightPlanArtifactVersionId, 'artifact-1');
   assert.equal(planned.plan?.needsApproval, false);
-  assert.equal(planned.status, 'blocked');
-  assert.match(planned.error ?? '', /approved plan artifact/i);
+  assert.equal(planned.status, 'awaiting_approval');
+  assert.equal(planned.approval, 'pending');
+  assert.match(planned.error ?? '', /user confirmation/i);
   assert.equal(createdArtifacts[0]?.artifact_type, 'lightweight_plan');
 });
 

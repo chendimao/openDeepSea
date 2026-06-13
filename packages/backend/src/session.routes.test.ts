@@ -537,7 +537,7 @@ test('session workflow artifact approve endpoint approves linked artifact and up
   const graphState = parseGraphState(workflowRepo.getRun(workflow.id)?.graph_state ?? null);
   assert.equal(graphState?.approvedPlanArtifactVersionId, draft.id);
   assert.equal(graphState?.draftPlanArtifactVersionId, null);
-  assert.equal(workflowRepo.getRun(workflow.id)?.status, 'awaiting_approval');
+  assert.equal(workflowRepo.getRun(workflow.id)?.status, 'running');
   const payload = buildWorkspacePayload(project, session);
   assert.equal(payload.activeSession.workflowArtifacts?.find((item) => item.id === draft.id)?.status, 'approved');
   const approvedPlanGate = payload.activeSession.workflowGates?.find((gate) => gate.artifact_version_id === draft.id);
