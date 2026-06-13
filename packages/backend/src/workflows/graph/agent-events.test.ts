@@ -22,6 +22,22 @@ test('parseStructuredAgentEvent accepts decision request event', () => {
   assert.equal(event.requestedDecision?.question, '是否允许修改 shared types?');
 });
 
+test('parseStructuredAgentEvent accepts scope_change_request payload', () => {
+  const event = parseStructuredAgentEvent(JSON.stringify({
+    workflowRunId: 'run-1',
+    stepId: 'step-1',
+    agentRunId: 'agent-run-1',
+    type: 'scope_change_request',
+    summary: '需要修改 shared type',
+    detail: '新增字段会影响前后端契约',
+    requestedScopeWrite: ['packages/backend/src/types.ts'],
+    createdAt: 1,
+  }));
+
+  assert.equal(event?.type, 'scope_change_request');
+  assert.deepEqual(event?.requestedScopeWrite, ['packages/backend/src/types.ts']);
+});
+
 test('toTaskEventMetadata stores event as runtime event metadata', () => {
   const metadata = toTaskEventMetadata({
     workflowRunId: 'run',

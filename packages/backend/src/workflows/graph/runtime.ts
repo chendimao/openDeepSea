@@ -897,6 +897,9 @@ async function resumeGraphWorkflowFromState(
     ?? null;
   const routePlan = routeDefinition ? compileRoutePlan(routeDefinition, Boolean(runtimeGraph)) : undefined;
   let nextState = state;
+  if (isPlannerRevisionChangeRequestBlocked(nextState)) {
+    return nextState;
+  }
   let nodeToRun = nextNodeAfter(null, nextState, routePlan);
 
   for (let iteration = 0; iteration < 20; iteration += 1) {
@@ -906,6 +909,9 @@ async function resumeGraphWorkflowFromState(
 
     if (nodeToRun === 'tdd_execute' && runtimeGraph && hasRunnableChildTask(nextState)) {
       const executedState = await nodes.executeNode(nextState);
+      if (isPlannerRevisionChangeRequestBlocked(executedState)) {
+        return executedState;
+      }
       nextState = renameLatestExecuteStepAsTddExecute(
         applyTddEvidenceFromImplementationOutput(executedState, tools),
         tools,
@@ -974,6 +980,9 @@ async function resumeGraphWorkflowFromState(
       nextState = await nodes.acceptanceNode(nextState);
     } else if (nodeToRun === 'memory') {
       nextState = await nodes.memoryNode(nextState);
+    }
+    if (isPlannerRevisionChangeRequestBlocked(nextState)) {
+      return nextState;
     }
     if (shouldWaitForActiveAgentRun(nodeToRun, nextState)) {
       return nextState;
@@ -1792,6 +1801,10 @@ function isTerminalResumeState(state: AgentWorkflowState): boolean {
     state.status === 'cancelled' ||
     state.status === 'failed'
   );
+}
+
+function isPlannerRevisionChangeRequestBlocked(state: AgentWorkflowState): boolean {
+  return state.error === 'scope_change_request' || state.error === 'plan_change_request';
 }
 
 function shouldWaitForActiveAgentRun(

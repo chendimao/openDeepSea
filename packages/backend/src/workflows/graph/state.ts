@@ -180,6 +180,7 @@ export const structuredAgentEventTypeSchema = z.enum([
   'artifact',
   'decision_request',
   'scope_change_request',
+  'plan_change_request',
   'blocked',
   'completed',
   'failed',

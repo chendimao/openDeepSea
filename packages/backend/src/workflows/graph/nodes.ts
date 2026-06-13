@@ -8,7 +8,7 @@ import { resolveWorkflowExecutor } from '../role-resolver.js';
 import { ensureWorkflowAgentsForRun } from '../agent-provisioning.js';
 import { buildCoordinatorWorkflowPlan, deriveCoordinatorPlanFromProductManagerBackground } from './coordinator-plan.js';
 import { selectCoordinatorAgentForTask, type CoordinatorWorkflowTask } from './coordinator-agents.js';
-import { toTaskEventMetadata, type StructuredAgentEvent } from './agent-events.js';
+import { extractStructuredAgentEvents, toTaskEventMetadata, type StructuredAgentEvent } from './agent-events.js';
 import { scopeWritesConflict, scopeWritesRequireSerial } from './scheduler-guards.js';
 import { inferTaskProfile, type TaskProfile } from '../task-profile.js';
 import { assessTaskRisk, buildApprovalCard } from '../task-risk.js';
@@ -798,6 +798,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         onRunCreated: recordStarted,
       });
       recordStarted(runResult.run);
+      const output = runResult.run.stdout || runResult.message.content;
 
       if (runResult.status !== 'completed') {
         const error = runResult.run.error ?? (runResult.status === 'cancelled' ? 'Agent run cancelled' : 'Agent run failed');
@@ -819,7 +820,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         const failedStep = tools.updateGraphStep(step.id, {
           status: runResult.status === 'cancelled' ? 'cancelled' : 'failed',
           agent_run_id: runResult.run.id,
-          result: runResult.run.stdout || runResult.message.content,
+          result: output,
           result_message_id: runResult.message.id,
           error,
         });
@@ -833,8 +834,8 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           sourceId: `${runResult.run.id}:implementation-failed`,
           entryType: 'handoff',
           title: `执行失败：${nextChild.title}`,
-          content: buildImplementationHandoff(nextChild, runResult.run.stdout || runResult.message.content, error),
-          rawCharCount: (runResult.run.stdout || runResult.message.content).length,
+          content: buildImplementationHandoff(nextChild, output, error),
+          rawCharCount: output.length,
           metadata: {
             graph_node: 'execute',
             workflow_stage: 'implementation',
@@ -882,6 +883,25 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         return nextState;
       }
 
+      const changeRequest = findPlannerRevisionChangeRequestEvent(output);
+      if (changeRequest) {
+        return blockWorkflowForPlannerRevisionRequest({
+          tools,
+          context,
+          state: eventState,
+          step,
+          task: nextChild,
+          agentRunId: runResult.run.id,
+          resultMessageId: runResult.message.id,
+          output,
+          event: changeRequest,
+          childTaskPlanIndexes,
+          workflowPlan: runningWorkflowPlan,
+          workflowPlanTaskIndex: originalPlanTaskIndex,
+          executorId: executor.id,
+        });
+      }
+
       eventState = recordStructuredAgentEvent({
         tools,
         context,
@@ -904,7 +924,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         workflow_step_id: step.id,
         artifact_type: 'implementation_summary',
         title: `执行结果：${nextChild.title}`,
-        content: runResult.run.stdout || runResult.message.content,
+        content: output,
         metadata: {
           graph_node: 'execute',
           workflow_stage: 'implementation',
@@ -918,7 +938,7 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       const completedStep = tools.updateGraphStep(step.id, {
         status: 'completed',
         agent_run_id: runResult.run.id,
-        result: runResult.run.stdout || runResult.message.content,
+        result: output,
         result_message_id: runResult.message.id,
         error: runResult.run.error,
       });
@@ -932,8 +952,8 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
         sourceId: `${runResult.run.id}:implementation`,
         entryType: 'handoff',
         title: `执行交接：${nextChild.title}`,
-        content: buildImplementationHandoff(nextChild, runResult.run.stdout || runResult.message.content),
-        rawCharCount: (runResult.run.stdout || runResult.message.content).length,
+        content: buildImplementationHandoff(nextChild, output),
+        rawCharCount: output.length,
         metadata: {
           graph_node: 'execute',
           workflow_stage: 'implementation',
@@ -2225,6 +2245,25 @@ async function runParallelImplementationChildren(input: {
       continue;
     }
 
+    const changeRequest = findPlannerRevisionChangeRequestEvent(output);
+    if (changeRequest) {
+      return blockWorkflowForPlannerRevisionRequest({
+        tools: input.tools,
+        context: input.context,
+        state: eventState,
+        step: item.step,
+        task: item.child,
+        agentRunId: runResult.run.id,
+        resultMessageId: runResult.message.id,
+        output,
+        event: changeRequest,
+        childTaskPlanIndexes: input.childTaskPlanIndexes,
+        workflowPlan: nextWorkflowPlan,
+        workflowPlanTaskIndex: item.originalPlanTaskIndex,
+        executorId: item.executor.id,
+      });
+    }
+
     eventState = recordStructuredAgentEvent({
       tools: input.tools,
       context: input.context,
@@ -2390,6 +2429,143 @@ function resolveParallelImplementationExecutors(input: {
   }
 
   return { ok: true, executionAgents, items };
+}
+
+type PlannerRevisionChangeRequestEvent = StructuredAgentEvent & {
+  type: 'scope_change_request' | 'plan_change_request';
+};
+
+function findPlannerRevisionChangeRequestEvent(output: string): PlannerRevisionChangeRequestEvent | null {
+  return extractStructuredAgentEvents(output)
+    .find(isPlannerRevisionChangeRequestEvent) ?? null;
+}
+
+function isPlannerRevisionChangeRequestEvent(event: StructuredAgentEvent): event is PlannerRevisionChangeRequestEvent {
+  return event.type === 'scope_change_request' || event.type === 'plan_change_request';
+}
+
+function blockWorkflowForPlannerRevisionRequest(input: {
+  tools: GraphTools;
+  context: ReturnType<GraphTools['readWorkflowContext']>;
+  state: AgentWorkflowState;
+  step: ReturnType<GraphTools['createGraphStep']>;
+  task: Task;
+  agentRunId: string;
+  resultMessageId: string;
+  output: string;
+  event: PlannerRevisionChangeRequestEvent;
+  childTaskPlanIndexes: Record<string, number>;
+  workflowPlan: WorkflowPlanJson | null;
+  workflowPlanTaskIndex?: number;
+  executorId?: string | null;
+}): AgentWorkflowState {
+  const changeType = input.event.type;
+  const plannerStage = changeType === 'scope_change_request' ? 'writing_plans' : 'brainstorming';
+  const normalizedEvent: PlannerRevisionChangeRequestEvent = {
+    ...input.event,
+    workflowRunId: input.context.run.id,
+    stepId: input.step.id,
+    agentRunId: input.agentRunId,
+  };
+  const nextWorkflowPlan = typeof input.workflowPlanTaskIndex === 'number'
+    ? updateWorkflowPlanTaskByIndex(input.workflowPlan, input.workflowPlanTaskIndex, {
+      status: 'blocked',
+      progress: 35,
+      agentId: input.executorId ?? null,
+    })
+    : input.workflowPlan;
+  const eventState = recordStructuredAgentEvent({
+    tools: input.tools,
+    context: input.context,
+    state: {
+      ...input.state,
+      currentStepId: input.step.id,
+      activeAgentRunId: input.agentRunId,
+    },
+    event: normalizedEvent,
+  });
+
+  const interruptedStep = input.tools.updateGraphStep(input.step.id, {
+    status: 'interrupted',
+    agent_run_id: input.agentRunId,
+    result: input.output,
+    result_message_id: input.resultMessageId,
+    error: changeType,
+  });
+  if (interruptedStep) input.tools.broadcastStepUpdated(input.context.room.id, interruptedStep);
+  createContextEntrySafely(input.tools, input.context, {
+    task: input.task,
+    workflowStepId: input.step.id,
+    roomAgentId: input.step.room_agent_id,
+    agentRunId: input.agentRunId,
+    sourceType: 'agent_run',
+    sourceId: `${input.agentRunId}:planner-revision-request`,
+    entryType: 'handoff',
+    title: `请求规划修订：${input.task.title}`,
+    content: [
+      `子任务：${input.task.title}`,
+      '状态：请求 planner 修订',
+      `请求类型：${changeType}`,
+      `摘要：${normalizedEvent.summary}`,
+      normalizedEvent.detail ? `详情：${normalizedEvent.detail}` : null,
+      '',
+      '子代理输出：',
+      buildFallbackSummary(input.output),
+    ].filter((line): line is string => line !== null).join('\n'),
+    rawCharCount: input.output.length,
+    metadata: {
+      graph_node: 'execute',
+      workflow_stage: 'implementation',
+      status: 'interrupted',
+      agent_run_id: input.agentRunId,
+      change_request_type: changeType,
+    },
+  });
+  const blockedRun = input.tools.updateRun(input.context.run.id, {
+    status: 'blocked',
+    current_stage: 'planning',
+    error: changeType,
+  });
+  if (blockedRun) input.tools.broadcastWorkflowUpdated(blockedRun);
+  recordEventSafely(input.tools, input.context, {
+    eventType: 'workflow_blocked',
+    task: input.task,
+    workflowStepId: input.step.id,
+    content: `子任务「${input.task.title}」请求 planner 修订：${normalizedEvent.summary}`,
+    metadata: {
+      graph_node: 'execute',
+      workflow_stage: 'implementation',
+      agent_run_id: input.agentRunId,
+      change_request_type: changeType,
+      error: changeType,
+    },
+  });
+
+  const nextState: AgentWorkflowState = {
+    ...eventState,
+    workflowPlan: nextWorkflowPlan,
+    childTaskPlanIndexes: input.childTaskPlanIndexes,
+    currentNode: 'route_skills',
+    currentStepId: input.step.id,
+    activeAgentRunId: input.agentRunId,
+    activeChangeRequestId: `${input.step.id}:${normalizedEvent.createdAt}`,
+    status: 'blocked',
+    error: changeType,
+    superpowersPhase: plannerStage,
+    activeSuperpowersStage: plannerStage,
+    approvedPlanArtifactVersionId: null,
+    lightweightPlanArtifactVersionId: null,
+    agentAssignments: [],
+    agentAssignmentArtifactVersionId: null,
+    approvedAgentAssignmentArtifactVersionId: null,
+    tddEvidence: [],
+    specComplianceReview: null,
+    codeQualityReview: null,
+    verificationEvidence: [],
+    finishBranchDecision: null,
+  };
+  input.tools.updateGraphState(input.context.run.id, serializeGraphState(nextState));
+  return nextState;
 }
 
 function recordStructuredAgentEvent(input: {

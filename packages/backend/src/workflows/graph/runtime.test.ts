@@ -1235,6 +1235,69 @@ test('Superpowers actual runtime proceeds from TDD execute to spec compliance re
   assert.match(state?.error ?? '', /spec compliance review is pending/i);
 });
 
+test('Superpowers implementation scope change request blocks for planner revision', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-scope-change-request-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Scope Change Request', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Scope Change Request Room' });
+  roomAgentRepo.ensureDefaultPlanner(room.id);
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Handle implementation scope change request',
+  });
+  const implementationOutput = JSON.stringify({
+    workflowRunId: 'runtime-will-normalize',
+    stepId: 'step-will-normalize',
+    agentRunId: 'agent-run-will-normalize',
+    type: 'scope_change_request',
+    summary: '需要修改 shared type',
+    detail: '新增字段会影响前后端契约',
+    requestedScopeWrite: ['packages/backend/src/types.ts'],
+    createdAt: 1,
+  });
+
+  const run = await startGraphWorkflowAfterApproval(task.id, {
+    planner: async () => ({
+      goal: task.title,
+      summary: 'Create one implementation task that discovers a scope change.',
+      assumptions: [],
+      tasks: [{
+        title: '实现后端状态字段',
+        description: '实现后端 workflow 状态字段。',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['发现需要修改 shared type 时阻塞'],
+        scopeRead: ['packages/backend/src/workflows/graph/nodes.ts'],
+        scopeWrite: ['packages/backend/src/workflows/graph/nodes.ts'],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: ['npm run build'],
+      verificationCommands: [
+        { command: 'npm run build', reason: 'stubbed runtime verification', required: true },
+      ],
+      risks: [],
+      needsApproval: false,
+    }),
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input, { implementationOutput }),
+  });
+
+  const detail = workflowRepo.detail(run.id);
+  const graphState = parseGraphState(detail?.run.graph_state ?? null);
+  const implementationStep = detail?.steps.find((step) => step.stage === 'implementation');
+
+  assert.equal(detail?.run.status, 'blocked');
+  assert.equal(detail?.run.error, 'scope_change_request');
+  assert.equal(graphState?.currentNode, 'route_skills');
+  assert.equal(graphState?.activeSuperpowersStage, 'writing_plans');
+  assert.equal(graphState?.activeChangeRequestId, `${implementationStep?.id}:1`);
+  assert.equal(graphState?.approvedPlanArtifactVersionId, null);
+  assert.equal(graphState?.agentAssignmentArtifactVersionId, null);
+  assert.equal(implementationStep?.status, 'interrupted');
+  assert.equal(graphState?.agentEvents?.at(-1)?.type, 'scope_change_request');
+});
+
 test('Superpowers review changes request clears TDD evidence and blocks instead of looping', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-superpowers-review-changes-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
@@ -3888,7 +3951,7 @@ function createTestWorkflowDefinition(): WorkflowDefinitionGraph {
 function createCompletedAgentRun(
   roomId: string,
   input: RespondAsAgentInput,
-  options: { includeTddEvidence?: boolean; codeReviewOutput?: string } = {},
+  options: { includeTddEvidence?: boolean; codeReviewOutput?: string; implementationOutput?: string } = {},
 ) {
   const content = outputForStage(
     input.workflowStage,
@@ -3920,7 +3983,7 @@ function createCompletedAgentRun(
 
 function outputForStage(
   stage: WorkflowStage | null | undefined,
-  options: { includeTddEvidence?: boolean; codeReviewOutput?: string } = {},
+  options: { includeTddEvidence?: boolean; codeReviewOutput?: string; implementationOutput?: string } = {},
   prompt = '',
 ): string {
   if (stage === 'planning') {
@@ -3969,6 +4032,7 @@ function outputForStage(
       notes: 'Accepted.',
     });
   }
+  if (stage === 'implementation' && options.implementationOutput) return options.implementationOutput;
   if (options.includeTddEvidence === false) {
     return JSON.stringify({
       summary: 'implementation output from ACP-only executor',

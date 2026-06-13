@@ -318,7 +318,7 @@ export interface StructuredAgentEventMetadata {
   workflowRunId: string;
   stepId: string;
   agentRunId: string;
-  type: 'started' | 'progress' | 'artifact' | 'decision_request' | 'scope_change_request' | 'blocked' | 'completed' | 'failed';
+  type: 'started' | 'progress' | 'artifact' | 'decision_request' | 'scope_change_request' | 'plan_change_request' | 'blocked' | 'completed' | 'failed';
   summary: string;
   detail?: string;
   progress?: number;

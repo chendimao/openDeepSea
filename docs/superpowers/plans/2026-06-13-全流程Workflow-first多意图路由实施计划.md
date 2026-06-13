@@ -1513,7 +1513,7 @@ git commit -m "feat(workflow): 显式生成子代理分配门禁"
 - Test: `packages/backend/src/workflows/graph/agent-events.test.ts`
 - Test: `packages/backend/src/workflows/graph/runtime.test.ts`
 
-- [ ] **Step 1: Write failing structured event parser test**
+- [x] **Step 1: Write failing structured event parser test**
 
 In `packages/backend/src/workflows/graph/agent-events.test.ts`, add:
 
@@ -1535,7 +1535,7 @@ test('parseStructuredAgentEvent accepts scope_change_request payload', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -1545,7 +1545,7 @@ node --import tsx --test packages/backend/src/workflows/graph/agent-events.test.
 
 Expected: FAIL if parser strips `requestedScopeWrite` or rejects passthrough.
 
-- [ ] **Step 3: Normalize change request events**
+- [x] **Step 3: Normalize change request events**
 
 In `packages/backend/src/workflows/graph/agent-events.ts`, ensure structured event parsing preserves passthrough fields and add:
 
@@ -1557,7 +1557,7 @@ export function isWorkflowChangeRequestEvent(event: StructuredAgentEvent): boole
 
 If `plan_change_request` is not in the enum, add it to `structuredAgentEventTypeSchema` and frontend mirror types.
 
-- [ ] **Step 4: Pause workflow on change request**
+- [x] **Step 4: Pause workflow on change request**
 
 In `packages/backend/src/workflows/graph/nodes.ts`, after worker run output is parsed into structured events, detect:
 
@@ -1589,7 +1589,7 @@ if (changeRequest) {
 }
 ```
 
-- [ ] **Step 5: Ensure user-visible blocker**
+- [x] **Step 5: Ensure user-visible blocker**
 
 In runtime, when `error` is `scope_change_request` or `plan_change_request`, do not retry worker automatically. Keep run blocked until planner revision is requested or resumed by artifact change handling.
 
@@ -1603,7 +1603,7 @@ if (state.error === 'scope_change_request' || state.error === 'plan_change_reque
 
 inside `resumeGraphWorkflowFromState()` before calculating `nodeToRun`.
 
-- [ ] **Step 6: Run runtime tests**
+- [x] **Step 6: Run runtime tests**
 
 Run:
 
@@ -1613,7 +1613,7 @@ node --import tsx --test packages/backend/src/workflows/graph/agent-events.test.
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 7**
+- [x] **Step 7: Commit Task 7**
 
 ```bash
 git add packages/backend/src/workflows/graph/agent-events.ts packages/backend/src/workflows/graph/agent-events.test.ts packages/backend/src/workflows/graph/nodes.ts packages/backend/src/workflows/graph/runtime.ts packages/backend/src/workflows/graph/runtime.test.ts packages/frontend/src/lib/types.ts
