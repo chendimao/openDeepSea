@@ -1967,7 +1967,7 @@ git commit -m "feat(frontend): 展示工作流控制和子代理分配"
 - Modify: `docs/superpowers/plans/2026-06-13-全流程Workflow-first多意图路由实施计划.md`
 - Test-only command execution.
 
-- [ ] **Step 1: Run backend targeted workflow suite**
+- [x] **Step 1: Run backend targeted workflow suite**
 
 Run:
 
@@ -1985,7 +1985,9 @@ node --import tsx --test \
 
 Expected: PASS. If a test fails, stop and fix the failing task before continuing.
 
-- [ ] **Step 2: Run frontend targeted suite**
+Result: PASS, 128/128 backend workflow/session tests passed.
+
+- [x] **Step 2: Run frontend targeted suite**
 
 Run:
 
@@ -1997,7 +1999,9 @@ node --import tsx --test \
 
 Expected: PASS.
 
-- [ ] **Step 3: Run build**
+Result: PASS, 144/144 frontend session tests passed. Existing React SSR `useLayoutEffect` warnings remain.
+
+- [x] **Step 3: Run build**
 
 Run:
 
@@ -2007,7 +2011,9 @@ npm run build
 
 Expected: PASS with backend TypeScript compile and frontend Vite build completing.
 
-- [ ] **Step 4: Search for forbidden old routing behavior**
+Result: PASS. `npm run build` completed backend `tsc` and frontend `tsc -b && vite build`; Vite reported existing dynamic import and chunk size warnings.
+
+- [x] **Step 4: Search for forbidden old routing behavior**
 
 Run:
 
@@ -2022,7 +2028,12 @@ Expected:
 - No `branchName: 'not_available'`.
 - `startSessionPlannerRun(` may exist only as function definition or explicitly internal compatibility path, not in ordinary dispatch flow.
 
-- [ ] **Step 5: Completion verification audit**
+Result: PASS with reviewed allowed matches:
+- `startSessionPlannerRun(` remains as function definition plus legacy pending-approval compatibility fallback, not ordinary message dispatch.
+- `lightweight_plan_revision_not_implemented` appears only in a negative assertion checking no blocker event is emitted.
+- No `if (riskGate.applies)` ordinary dispatch branch and no `branchName: 'not_available'` placeholder remain.
+
+- [x] **Step 5: Completion verification audit**
 
 Manually verify the following against code and tests:
 
@@ -2040,7 +2051,23 @@ Manually verify the following against code and tests:
 12. Finish branch awaits explicit user decision.
 13. Frontend renders controller panel and assignment table.
 
-- [ ] **Step 6: Mark plan tasks completed as they are implemented**
+Audit result: all 13 items are covered by implementation and targeted tests:
+
+1. Ordinary session messages create `superpowers-v2` workflow runs: `session-workflow-intake.test.ts` and `session-message-dispatch.test.ts`.
+2. Chat intent routes to `answer` and completes without child tasks: `superpowers-routing-nodes.test.ts`.
+3. Analysis intent creates analysis artifact: `superpowers-routing-nodes.ts` and route compiler/runtime tests.
+4. Lightweight plan generation, approval, revision, and dispatch: `session-message-dispatch.test.ts` lightweight artifact change request and routing node tests.
+5. Standard development spec and plan confirmation: runtime graph tests around spec/plan approval gates.
+6. Debug path routes through debug plan and systematic debugging: route compiler, routing node, and runtime graph tests.
+7. Review-only path avoids executor child tasks: route graph goes `review_plan -> reviewer_assignment -> spec_compliance_review`, not `agent_assignment -> dispatch`.
+8. Agent assignment artifact records fallback reason: `superpowers-routing-nodes.test.ts` and `session.routes.test.ts`.
+9. Fullstack fallback is executor-only: `assignPlanTaskAgent()` filters candidates by `workflowRoles.includes('executor')`.
+10. Scope/plan change requests pause workflow and return to planner revision: `runtime.test.ts`.
+11. Worktree no longer records `not_available`: `superpowers-runtime.test.ts`.
+12. Finish branch awaits explicit user decision: `superpowers-runtime.test.ts` and runtime routing guards.
+13. Frontend renders controller and assignment: `SessionShell.test.tsx`.
+
+- [x] **Step 6: Mark plan tasks completed as they are implemented**
 
 When executing this plan, update this file's checkboxes for completed steps and include that update in the final task commit:
 
