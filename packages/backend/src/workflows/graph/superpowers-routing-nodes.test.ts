@@ -70,6 +70,33 @@ test('lightweightPlan creates a confirmable lightweight plan artifact', async ()
   assert.equal(createdArtifacts[0]?.artifact_type, 'lightweight_plan');
 });
 
+test('lightweightPlan uses docs verification for README-only tasks', async () => {
+  const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, any> }> = [];
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft(input) {
+      createdArtifacts.push({ artifact_type: input.artifact_type, structured_data: input.structured_data });
+      return { id: `artifact-${createdArtifacts.length}` };
+    },
+    createAssistantMessage() {
+      return { id: 'message-unused' };
+    },
+  });
+  const initial = emptyAgentWorkflowState({
+    workflowRunId: 'run-lightweight-readme',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-1',
+    userGoal: '轻量修改 README 文档，追加一行说明',
+    projectPath: '/tmp/project',
+  });
+
+  const planned = await nodes.lightweightPlan(initial);
+
+  assert.equal(planned.plan?.verificationCommands[0]?.command, 'git status --short');
+  assert.equal(planned.plan?.tasks[0]?.scopeWrite[0], 'README.md');
+  assert.equal(createdArtifacts[0]?.structured_data.verificationCommands[0]?.command, 'git status --short');
+});
+
 test('debugPlan and reviewPlan create plan artifacts for their routes', async () => {
   const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, unknown> }> = [];
   const nodes = createSuperpowersRoutingNodes({

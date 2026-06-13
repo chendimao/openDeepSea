@@ -198,6 +198,39 @@ test('Superpowers review nodes expose reroute metadata when reviews request chan
   assert.equal(afterCodeChanges.reviewVerdict, 'changes_requested');
 });
 
+test('Superpowers review change requests keep TDD exemption evidence for documentation repair loops', async () => {
+  const graph = buildSuperpowersRuntimeGraph();
+  const nodes = graph.nodes as typeof graph.nodes & {
+    specComplianceReview?: (state: ReturnType<typeof emptyAgentWorkflowState>) => Promise<ReturnType<typeof emptyAgentWorkflowState>>;
+  };
+  const baseState = emptyAgentWorkflowState({
+    workflowRunId: 'run-superpowers-runtime-review-tdd-exemption',
+    projectId: 'project-superpowers-runtime-review-tdd-exemption',
+    roomId: 'room-superpowers-runtime-review-tdd-exemption',
+    taskId: 'task-superpowers-runtime-review-tdd-exemption',
+    userGoal: 'Review documentation repair keeps exemption',
+    projectPath: '/tmp/open-deep-sea-superpowers-runtime-review-tdd-exemption',
+  });
+  const tddExemption = {
+    reason: 'documentation-only task has no executable behavior',
+    approvedBy: 'workflow-runtime',
+    createdAt: Date.now(),
+  };
+
+  const afterSpecChanges = await nodes.specComplianceReview!({
+    ...baseState,
+    tddExemption,
+    specComplianceReview: {
+      verdict: 'changes_requested',
+      findings: ['README change needs a traceability note'],
+      reviewedAt: null,
+    },
+  });
+
+  assert.equal(afterSpecChanges.reviewVerdict, 'changes_requested');
+  assert.deepEqual(afterSpecChanges.tddExemption, tddExemption);
+});
+
 test('Superpowers review nodes invoke current room reviewer agent and parse JSON verdict', async () => {
   const projectPath = `/tmp/superpowers-review-runtime-project-${Date.now()}`;
   mkdirSync(projectPath, { recursive: true });

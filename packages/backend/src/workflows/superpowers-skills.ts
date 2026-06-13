@@ -33,7 +33,7 @@ export const SUPERPOWERS_PHASE_SKILLS: Record<SuperpowersRuntimePhase, readonly 
   brainstorming: ['using-superpowers', 'brainstorming'],
   worktree: ['using-git-worktrees'],
   writing_plans: ['writing-plans'],
-  tdd_execute: ['test-driven-development', 'subagent-driven-development'],
+  tdd_execute: ['test-driven-development'],
   systematic_debugging: ['systematic-debugging'],
   spec_compliance_review: ['requesting-code-review'],
   code_quality_review: ['requesting-code-review'],

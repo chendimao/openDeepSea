@@ -18,6 +18,7 @@ import type {
   Task,
   TerminalProfile,
   TerminalStatus,
+  WorkflowRun,
   WorkflowArtifactVersionType,
 } from './types';
 
@@ -95,6 +96,7 @@ export type WsServerEvent =
   | { type: 'session_compact:preview'; sessionId: string; compaction: import('./types').SessionCompaction }
   | { type: 'history_records:snapshot'; projectId: string; records: HistoryRecord[] }
   | { type: 'session:updated'; sessionId: string; session: Session }
+  | { type: 'session_workflow:updated'; sessionId: string; workflow: WorkflowRun }
   | { type: 'session_message:new'; sessionId: string; message: SessionMessage }
   | { type: 'session_run:created'; sessionId: string; run: SessionRun }
   | { type: 'session_run:updated'; sessionId: string; run: SessionRun }

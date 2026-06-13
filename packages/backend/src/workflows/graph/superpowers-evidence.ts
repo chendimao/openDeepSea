@@ -18,7 +18,7 @@ type EvidenceRecord = Record<string, unknown>;
 
 export function parseSuperpowersEvidence(output: string): SuperpowersEvidencePatch {
   const parsed = parseEvidenceObject(output);
-  if (!parsed) return {};
+  if (!parsed) return inferNaturalLanguageEvidence(output);
   const root = isRecord(parsed.superpowers) ? parsed.superpowers : parsed;
   const patch: SuperpowersEvidencePatch = {};
 
@@ -75,6 +75,25 @@ export function parseSuperpowersEvidence(output: string): SuperpowersEvidencePat
   if (finishBranchDecision) patch.finishBranchDecision = finishBranchDecision;
 
   return patch;
+}
+
+function inferNaturalLanguageEvidence(output: string): SuperpowersEvidencePatch {
+  if (!hasExplicitTddExemptionSignal(output) || !hasNonCodeTaskSignal(output)) return {};
+  return {
+    tddExemption: {
+      reason: '执行输出声明该任务为文档/只读/配置类变更，TDD RED/GREEN 不适用；按 Superpowers 要求记录豁免。',
+      approvedBy: 'workflow-runtime',
+      createdAt: Date.now(),
+    },
+  };
+}
+
+function hasExplicitTddExemptionSignal(output: string): boolean {
+  return /tdd\s*(?:豁免|不适用|无需|免除)|tddExemption|tdd_exemption/i.test(output);
+}
+
+function hasNonCodeTaskSignal(output: string): boolean {
+  return /文档(?:-?only)?|只读|配置|README|readme|docs?|documentation/i.test(output);
 }
 
 export function applySuperpowersEvidencePatch(

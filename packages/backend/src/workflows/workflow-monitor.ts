@@ -354,8 +354,18 @@ function getChildTaskId(row: JoinedWorkflowRow): string | null {
 function classifyBlockedWorkflowError(error: string): WorkflowIncidentType {
   const normalized = error.toLowerCase();
   if (normalized.includes('no executor available')) return 'executor_unavailable';
+  if (normalized.includes('prompt timed out') || normalized.includes('timed out')) return 'agent_run_stale';
   if (normalized.includes('runtime boundary') || normalized.includes('workspace') || normalized.includes('permission')) {
     return 'runtime_boundary_mismatch';
+  }
+  if (
+    normalized.includes('missing required evidence') ||
+    normalized.includes('tdd evidence gate') ||
+    normalized.includes('requires approved') ||
+    normalized.includes('requires design') ||
+    normalized.includes('requires implementation')
+  ) {
+    return 'planner_output_invalid';
   }
   return 'unknown';
 }

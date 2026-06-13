@@ -201,6 +201,33 @@ test('scanWorkflowIncidents classifies blocked workflow executor errors', () => 
   assert.equal(workflowIncidentRepo.listByWorkflow(fixture.workflow.id).length, 1);
 });
 
+test('scanWorkflowIncidents classifies blocked Superpowers evidence gates as invalid planner output', () => {
+  const fixture = createWorkflowFixture('superpowers evidence gate');
+  workflowRepo.blockRun(
+    fixture.workflow.id,
+    'Superpowers TDD evidence gate requires RED failed and GREEN passed records or an explicit exemption',
+  );
+
+  const incidents = scanWorkflowIncidents();
+  const incident = incidents.find((item) => item.workflow_run_id === fixture.workflow.id);
+
+  assert.equal(incident?.incident_type, 'planner_output_invalid');
+  assert.equal(incident?.severity, 'warning');
+  assert.match(incident?.error ?? '', /TDD evidence gate/);
+});
+
+test('scanWorkflowIncidents classifies ACP prompt timeout as stale agent run', () => {
+  const fixture = createWorkflowFixture('acp prompt timeout');
+  workflowRepo.blockRun(fixture.workflow.id, 'ACP prompt timed out');
+
+  const incidents = scanWorkflowIncidents();
+  const incident = incidents.find((item) => item.workflow_run_id === fixture.workflow.id);
+
+  assert.equal(incident?.incident_type, 'agent_run_stale');
+  assert.equal(incident?.severity, 'warning');
+  assert.match(incident?.error ?? '', /ACP prompt timed out/);
+});
+
 function createWorkflowFixture(name: string) {
   const fixtureProjectDir = join(projectDir, name.replace(/\s+/g, '-'));
   mkdirSync(fixtureProjectDir, { recursive: true });

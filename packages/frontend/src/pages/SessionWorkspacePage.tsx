@@ -753,7 +753,7 @@ export function shouldRefreshSessionWorkspace(
     activeProjectId?: string | null;
     activeWorkspaceProjectId?: string | null;
   } | null,
-): event is Extract<WsServerEvent, { type: 'session_evidence:new' }> {
+): event is Extract<WsServerEvent, { type: 'session_evidence:new' | 'session_workflow:updated' }> {
   const activeSessionId = typeof context === 'string' ? context : context?.activeSessionId;
   if (
     context &&
@@ -766,6 +766,7 @@ export function shouldRefreshSessionWorkspace(
   }
   if (!isSessionWorkspaceEvent(event)) return false;
   if (!activeSessionId || !('sessionId' in event) || event.sessionId !== activeSessionId) return false;
+  if (event.type === 'session_workflow:updated') return true;
   if (event.type !== 'session_evidence:new') return false;
   return isSessionChangeEvidence(event.event);
 }

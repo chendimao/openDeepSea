@@ -175,6 +175,22 @@ export function decideRecoveryByDefaultPolicy(input: WorkflowRecoveryInput): Wor
     };
   }
 
+  if (incidentType === 'child_task_failed') {
+    if (attempts >= 2) {
+      return {
+        action: 'ask_user',
+        reason: '同一子任务已经连续失败，继续自动重试可能重复消耗执行资源，需要用户确认是否改派、拆分或手动处理。',
+        confidence: 0.7,
+        userQuestion: '这个子任务已经连续失败，是否改派其他智能体、拆分任务，或让 planner 修改计划？',
+      };
+    }
+    return {
+      action: 'retry_same_agent',
+      reason: '子任务失败可先复用当前执行智能体和任务上下文重试一次，以排除临时 ACP 运行失败或输出格式问题。',
+      confidence: 0.72,
+    };
+  }
+
   if (incidentType === 'executor_unavailable') {
     return {
       action: 'retry_with_global_agent',
@@ -197,6 +213,22 @@ export function decideRecoveryByDefaultPolicy(input: WorkflowRecoveryInput): Wor
       action: 'retry_with_global_agent',
       reason: '当前房间内没有匹配任务边界的可用执行智能体，应拉入合适的全局智能体继续。',
       confidence: 0.76,
+    };
+  }
+
+  if (incidentType === 'planner_output_invalid') {
+    if (attempts >= 2) {
+      return {
+        action: 'ask_user',
+        reason: '智能体连续输出缺少工作流所需的结构化证据，继续自动重试可能重复失败，需要用户确认是否补充提示、改派或手动处理。',
+        confidence: 0.7,
+        userQuestion: '智能体连续没有输出必需的 workflow 证据，是否重试、改派其他智能体，或让 planner 修改计划？',
+      };
+    }
+    return {
+      action: 'retry_same_agent',
+      reason: '工作流门禁失败是因为智能体输出缺少必需的结构化 evidence，可复用当前任务上下文并要求同一智能体补齐输出证据。',
+      confidence: 0.74,
     };
   }
 

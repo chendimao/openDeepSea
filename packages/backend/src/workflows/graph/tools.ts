@@ -14,7 +14,7 @@ import { formatWorkflowContextEntries, workflowContextRepo } from '../../repos/w
 import { workflowRepo } from '../../repos/workflows.js';
 import { sessionMessageRepo } from '../../repos/sessions.js';
 import { workflowArtifactVersionRepo } from '../../repos/workflows.js';
-import { mirrorWorkflowRoomMessageToSession } from '../../session-workflow-bridge.js';
+import { broadcastSessionWorkflowUpdated, mirrorWorkflowRoomMessageToSession } from '../../session-workflow-bridge.js';
 import { recordTaskCreatedEvent, recordTaskEvent, recordTaskStatusChanged } from '../../task-conversation.js';
 import type {
   AgentRun,
@@ -217,7 +217,10 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     updateGraphStep: workflowRepo.updateStep.bind(workflowRepo),
     createArtifact: workflowRepo.createArtifact.bind(workflowRepo),
     createArtifactVersionDraft(input) {
-      return workflowArtifactVersionRepo.createDraft(input);
+      const artifact = workflowArtifactVersionRepo.createDraft(input);
+      const workflow = workflowRepo.getRun(input.workflow_run_id);
+      if (workflow) broadcastSessionWorkflowUpdated(workflow);
+      return artifact;
     },
     createWorkflowSessionMessage(input) {
       const run = workflowRepo.getRun(input.workflowRunId);
@@ -275,6 +278,7 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
     createContextEntry: workflowContextRepo.create.bind(workflowContextRepo),
     broadcastWorkflowUpdated(workflow: WorkflowRun) {
       wsHub.broadcast(workflow.room_id, { type: 'workflow:updated', roomId: workflow.room_id, workflow });
+      broadcastSessionWorkflowUpdated(workflow);
     },
     broadcastStepCreated(roomId: string, step: WorkflowStep) {
       wsHub.broadcast(roomId, { type: 'workflow_step:created', roomId, step });

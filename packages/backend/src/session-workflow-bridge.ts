@@ -2,7 +2,7 @@ import { sessionMessageRepo } from './repos/sessions.js';
 import { taskRepo } from './repos/tasks.js';
 import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
 import { wsHub } from './ws-hub.js';
-import type { Message, SessionMessage, SessionMessageType, Task, TaskEventType } from './types.js';
+import type { Message, SessionMessage, SessionMessageType, Task, TaskEventType, WorkflowRun } from './types.js';
 
 const MIRRORED_WORKFLOW_EVENT_TYPES = new Set<TaskEventType>([
   'task_created',
@@ -84,9 +84,27 @@ export function mirrorWorkflowRoomMessageToSession(input: {
   return sessionMessage;
 }
 
+export function broadcastSessionWorkflowUpdated(workflow: WorkflowRun): void {
+  const sessionId = resolveWorkflowSessionId(workflow);
+  if (!sessionId) return;
+  wsHub.broadcastSession(sessionId, {
+    type: 'session_workflow:updated',
+    sessionId,
+    workflow,
+  });
+  broadcastActiveSessionUpsert(sessionId);
+}
+
 function shouldMirrorWorkflowMessage(message: Message, eventType: TaskEventType | null): boolean {
   if (message.sender_type === 'agent') return true;
   return eventType ? MIRRORED_WORKFLOW_EVENT_TYPES.has(eventType) : false;
+}
+
+function resolveWorkflowSessionId(workflow: WorkflowRun): string | null {
+  const task = resolveTask(workflow.task_id);
+  const rootTask = task ? resolveRootTask(task) : null;
+  if (!rootTask?.source_message_id) return null;
+  return sessionMessageRepo.get(rootTask.source_message_id)?.session_id ?? null;
 }
 
 function resolveTask(taskId: string | null | undefined): Task | null {

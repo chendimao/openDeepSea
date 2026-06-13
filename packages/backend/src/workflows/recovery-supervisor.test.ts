@@ -132,6 +132,34 @@ test('decideRecoveryByDefaultPolicy falls back to global agent when no compatibl
   assert.equal(decision.action, 'retry_with_global_agent');
 });
 
+test('decideRecoveryByDefaultPolicy retries invalid planner or worker evidence once', () => {
+  const first = decideRecoveryByDefaultPolicy(baseRecoveryInput({
+    incident: incident({ incident_type: 'planner_output_invalid', attempt_count: 0 }),
+  }));
+  const repeated = decideRecoveryByDefaultPolicy(baseRecoveryInput({
+    incident: incident({ incident_type: 'planner_output_invalid', attempt_count: 2 }),
+  }));
+
+  assert.equal(first.action, 'retry_same_agent');
+  assert.match(first.reason, /evidence|证据|输出/u);
+  assert.equal(repeated.action, 'ask_user');
+  assert.match(repeated.userQuestion ?? '', /输出|证据/u);
+});
+
+test('decideRecoveryByDefaultPolicy retries failed child task once and escalates repeats', () => {
+  const first = decideRecoveryByDefaultPolicy(baseRecoveryInput({
+    incident: incident({ incident_type: 'child_task_failed', attempt_count: 0 }),
+  }));
+  const repeated = decideRecoveryByDefaultPolicy(baseRecoveryInput({
+    incident: incident({ incident_type: 'child_task_failed', attempt_count: 2 }),
+  }));
+
+  assert.equal(first.action, 'retry_same_agent');
+  assert.match(first.reason, /子任务|重试/u);
+  assert.equal(repeated.action, 'ask_user');
+  assert.match(repeated.userQuestion ?? '', /子任务|改派/u);
+});
+
 test('decideRecoveryByDefaultPolicy blocks unknown incidents', () => {
   const decision = decideRecoveryByDefaultPolicy(baseRecoveryInput({
     incident: incident({ incident_type: 'unknown' }),

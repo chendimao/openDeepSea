@@ -1501,6 +1501,7 @@ export type WsServerEvent =
     }
   | { type: 'history_records:snapshot'; projectId: string; records: import('./session-types.js').HistoryRecord[] }
   | { type: 'session:updated'; sessionId: string; session: import('./session-types.js').Session }
+  | { type: 'session_workflow:updated'; sessionId: string; workflow: WorkflowRun }
   | { type: 'session_message:new'; sessionId: string; message: import('./session-types.js').SessionMessage }
   | { type: 'session_run:created'; sessionId: string; run: import('./session-types.js').SessionRun }
   | { type: 'session_run:updated'; sessionId: string; run: import('./session-types.js').SessionRun }

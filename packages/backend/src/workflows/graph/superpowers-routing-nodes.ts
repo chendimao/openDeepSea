@@ -113,13 +113,16 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
     },
 
     async lightweightPlan(state: AgentWorkflowState): Promise<AgentWorkflowState> {
+      const lightweightDefaults = inferLightweightPlanDefaults(state.userGoal);
       const plan = buildSingleTaskPlan({
         goal: state.userGoal,
         summary: '轻量任务走最小执行计划，用户确认后进入执行。',
         taskTitle: '执行轻量任务',
         taskDescription: state.userGoal,
-        verificationCommand: 'npm run build',
-        verificationReason: 'TypeScript and bundle gate',
+        verificationCommand: lightweightDefaults.verificationCommand,
+        verificationReason: lightweightDefaults.verificationReason,
+        scopeRead: lightweightDefaults.scopeRead,
+        scopeWrite: lightweightDefaults.scopeWrite,
         needsApproval: false,
       });
       const structuredData = {
@@ -398,6 +401,8 @@ function buildSingleTaskPlan(input: {
   taskDescription: string;
   verificationCommand: string;
   verificationReason: string;
+  scopeRead?: string[];
+  scopeWrite?: string[];
   needsApproval: boolean;
 }): NonNullable<AgentWorkflowState['plan']> {
   return {
@@ -410,8 +415,8 @@ function buildSingleTaskPlan(input: {
       suggestedRole: 'executor',
       priority: 'normal',
       acceptance: ['完成用户请求并保持现有行为不回退。'],
-      scopeRead: [],
-      scopeWrite: [],
+      scopeRead: input.scopeRead ?? [],
+      scopeWrite: input.scopeWrite ?? [],
       dependsOn: [],
     }],
     reviewFocus: [],
@@ -423,6 +428,40 @@ function buildSingleTaskPlan(input: {
     }],
     risks: [],
     needsApproval: input.needsApproval,
+  };
+}
+
+function inferLightweightPlanDefaults(goal: string): {
+  verificationCommand: string;
+  verificationReason: string;
+  scopeRead: string[];
+  scopeWrite: string[];
+} {
+  const normalized = goal.toLowerCase();
+  if (/readme|README|文档|docs?|documentation/u.test(goal)) {
+    const scopeWrite = /readme/i.test(goal) ? ['README.md'] : ['docs/'];
+    return {
+      verificationCommand: 'git status --short',
+      verificationReason: '确认文档轻量改动后的工作区状态',
+      scopeRead: scopeWrite,
+      scopeWrite,
+    };
+  }
+
+  if (/文案|copy|label|按钮|标题/u.test(normalized)) {
+    return {
+      verificationCommand: 'npm run build',
+      verificationReason: '验证轻量 UI 文案改动不会破坏构建',
+      scopeRead: [],
+      scopeWrite: [],
+    };
+  }
+
+  return {
+    verificationCommand: 'npm run build',
+    verificationReason: 'TypeScript and bundle gate',
+    scopeRead: [],
+    scopeWrite: [],
   };
 }
 

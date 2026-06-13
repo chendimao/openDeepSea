@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -772,7 +773,13 @@ test('Superpowers actual runtime executes TDD, two-stage reviews, verify, and wa
   const run = createGraphWorkflowRun(task.id);
   workflowRepo.updateGraphState(run.id, JSON.stringify({
     ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
-    plan: createRunnableSuperpowersPlan(task.title),
+    plan: {
+      ...createRunnableSuperpowersPlan(task.title),
+      verification: ['node --version'],
+      verificationCommands: [
+        { command: 'node --version', reason: 'verify review evidence flow', required: true },
+      ],
+    },
     tddEvidence: [
       { stage: 'RED', command: 'node --test', passed: false, summary: 'failed as expected' },
       { stage: 'GREEN', command: 'node --test', passed: true, summary: 'passed' },
@@ -871,6 +878,180 @@ test('Superpowers review stages run current room reviewer agents instead of auto
     state?.specComplianceReview?.reviewedAt,
     new Date(agentRunRepo.get(reviewCalls[0]!.runId)?.completed_at ?? 0).toISOString(),
   );
+});
+
+test('Superpowers review stages accept project-owned Superpowers evidence JSON', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-evidence-review-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers Evidence Review', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Evidence Review Room' });
+  const reviewer = addAcpWorkflowAgent(room.id, 'reviewer');
+  const acceptor = addAcpWorkflowAgent(room.id, 'acceptor');
+  roomAgentRepo.setCapabilitiesAndRuntime(reviewer.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
+  roomAgentRepo.setCapabilitiesAndRuntime(acceptor.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Accept Superpowers review evidence',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    plan: {
+      ...createRunnableSuperpowersPlan(task.title),
+      verification: ['node --version'],
+      verificationCommands: [
+        { command: 'node --version', reason: 'verify review evidence flow', required: true },
+      ],
+    },
+    tddEvidence: [
+      { stage: 'RED', command: 'node --test', passed: false, summary: 'failed as expected' },
+      { stage: 'GREEN', command: 'node --test', passed: true, summary: 'passed' },
+    ],
+  }));
+
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input, {
+      codeReviewOutput: workflowRepo.getStep(input.workflowStepId ?? '')?.node_name === 'spec_compliance_review'
+        ? JSON.stringify({
+          superpowers: {
+            specComplianceReview: {
+              verdict: 'approved',
+              findings: [],
+              reviewedAt: '2026-06-13T00:00:00.000Z',
+            },
+          },
+        })
+        : JSON.stringify({
+          superpowers: {
+            codeQualityReview: {
+              verdict: 'approved',
+              findings: [],
+              reviewedAt: '2026-06-13T00:01:00.000Z',
+            },
+          },
+        }),
+    }),
+  });
+  const state = parseGraphState(latest.graph_state);
+
+  assert.equal(latest.status, 'awaiting_decision');
+  assert.equal(state?.specComplianceReview?.verdict, 'approved');
+  assert.equal(state?.codeQualityReview?.verdict, 'approved');
+  assert.equal(state?.reviewVerdict, 'pass');
+});
+
+test('Superpowers lightweight README task verifies with git status instead of build', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-lightweight-readme-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  writeFileSync(join(projectPath, 'README.md'), '# Smoke\n');
+  execFileSync('git', ['init'], { cwd: projectPath, stdio: 'ignore' });
+  execFileSync('git', ['config', 'user.email', 'smoke@example.com'], { cwd: projectPath });
+  execFileSync('git', ['config', 'user.name', 'Smoke Test'], { cwd: projectPath });
+  execFileSync('git', ['add', 'README.md'], { cwd: projectPath });
+  execFileSync('git', ['commit', '-m', 'docs: initial'], { cwd: projectPath, stdio: 'ignore' });
+
+  const project = projectRepo.create({ name: 'Graph Runtime Lightweight README', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Lightweight README Room' });
+  const executor = addAcpWorkflowAgent(room.id, 'executor');
+  const reviewer = addAcpWorkflowAgent(room.id, 'reviewer');
+  const acceptor = addAcpWorkflowAgent(room.id, 'acceptor');
+  for (const agent of [executor, reviewer, acceptor]) {
+    roomAgentRepo.setCapabilitiesAndRuntime(agent.id, {
+      capabilities: ['documentation'],
+      default_runtime: 'acp',
+      tool_policy: { allowed: ['read_files', 'write_files'] },
+      workspace_policy: { read: ['.'], write: ['.'] },
+    });
+  }
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '轻量修改 README 文档，追加一行说明',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path, {
+      approvedPlanArtifactVersionId: null,
+    }),
+    currentNode: 'intake',
+    selectedIntent: 'lightweight_task',
+    selectedPath: ['intake', 'route_skills', 'lightweight_plan'],
+    plan: null,
+    approval: 'not_required',
+    approvedPlanArtifactVersionId: null,
+    lightweightPlanArtifactVersionId: null,
+    implementationPlanPath: null,
+    planReviewVerdict: null,
+  }));
+
+  let awaiting = await continueGraphWorkflow(run.id);
+  let state = parseGraphState(awaiting.graph_state);
+  assert.equal(awaiting.status, 'awaiting_approval');
+  assert.equal(state?.plan?.verificationCommands[0]?.command, 'git status --short');
+  const approvedLightweightPlan = workflowArtifactVersionRepo.approve(state?.lightweightPlanArtifactVersionId ?? '', {
+    approved_by: 'test',
+    approval_message_id: null,
+  });
+  assert.ok(approvedLightweightPlan);
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...state!,
+    lightweightPlanArtifactVersionId: approvedLightweightPlan.id,
+    status: 'running',
+    error: null,
+  }));
+  workflowRepo.updateRun(run.id, { status: 'running', error: null });
+
+  const latest = await continueGraphWorkflow(awaiting.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input, {
+      implementationOutput: JSON.stringify({
+        superpowers: {
+          tddExemption: {
+            reason: 'README-only 文档轻量任务，不涉及可执行代码行为。',
+            approvedBy: 'test',
+            createdAt: Date.now(),
+          },
+        },
+      }),
+      codeReviewOutput: workflowRepo.getStep(input.workflowStepId ?? '')?.node_name === 'spec_compliance_review'
+        ? JSON.stringify({
+          superpowers: {
+            specComplianceReview: {
+              verdict: 'approved',
+              findings: [],
+              reviewedAt: '2026-06-13T00:00:00.000Z',
+            },
+          },
+        })
+        : JSON.stringify({
+          superpowers: {
+            codeQualityReview: {
+              verdict: 'approved',
+              findings: [],
+              reviewedAt: '2026-06-13T00:01:00.000Z',
+            },
+          },
+        }),
+    }),
+  });
+  state = parseGraphState(latest.graph_state);
+  const verifyStep = workflowRepo.listSteps(run.id).find((step) => step.node_name === 'verify');
+
+  assert.equal(latest.status, 'awaiting_decision');
+  assert.equal(state?.superpowersPhase, 'finish_branch');
+  assert.equal(state?.verificationEvidence?.[0]?.command, 'git status --short');
+  assert.equal(state?.verificationEvidence?.[0]?.status, 'passed');
+  assert.match(verifyStep?.result ?? '', /git status --short: passed/);
 });
 
 test('Superpowers review failure synchronizes workflow run as blocked', async () => {

@@ -34,6 +34,9 @@ export function buildSuperpowersPhasePrompt(phase: SuperpowersRuntimePhase, cont
     buildSuperpowersPhaseHeader(phase),
     '',
     'Superpowers workflow 顺序：using-superpowers -> brainstorming -> writing-plans -> subagent-driven-development/executing-plans -> TDD/debugging/review/verification -> finishing-a-development-branch。',
+    phase === 'tdd_execute'
+      ? 'OpenDeepSea planner 已完成子代理分配；当前 worker 不要再次启动 CLI 内部 subagent-driven-development，只执行分配给你的具体任务并输出 TDD 或豁免证据。'
+      : '',
     '',
     formatSuperpowersSkillInstruction(phase),
     '',

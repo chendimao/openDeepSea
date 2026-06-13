@@ -10,6 +10,7 @@ import { settingsRepo } from '../repos/settings.js';
 import { taskRepo } from '../repos/tasks.js';
 import { workflowRepo } from '../repos/workflows.js';
 import { runRegistry } from '../run-registry.js';
+import { broadcastSessionWorkflowUpdated } from '../session-workflow-bridge.js';
 import { recordTaskCreatedEvent, recordTaskEvent, recordTaskStatusChanged } from '../task-conversation.js';
 import { wsHub } from '../ws-hub.js';
 import {
@@ -318,6 +319,7 @@ function nextSortOrder(runId: string): number {
 
 function broadcastWorkflow(type: 'workflow:created' | 'workflow:updated', workflow: WorkflowRun): void {
   wsHub.broadcast(workflow.room_id, { type, roomId: workflow.room_id, workflow });
+  if (type === 'workflow:updated') broadcastSessionWorkflowUpdated(workflow);
 }
 
 function broadcastStep(type: 'workflow_step:created' | 'workflow_step:updated', roomId: string, step: WorkflowStep): void {

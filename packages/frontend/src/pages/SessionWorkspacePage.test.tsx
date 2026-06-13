@@ -468,6 +468,211 @@ test('shouldRefreshSessionWorkspace does not refresh session run updates', () =>
   assert.equal(shouldRefreshSessionWorkspace(event), false);
 });
 
+test('shouldRefreshSessionWorkspace refreshes current session after file diff evidence', () => {
+  const event: WsServerEvent = {
+    type: 'session_evidence:new',
+    sessionId: 'session-1',
+    event: {
+      id: 'evidence-diff-1',
+      session_id: 'session-1',
+      seq: 1,
+      event_type: 'file_diff',
+      severity: 'info',
+      source_run_id: 'run-1',
+      source_message_id: null,
+      title: '修改文件 packages/frontend/src/session-ui/SessionShellView.tsx',
+      summary: 'apply_patch',
+      payload: {
+        path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+        additions: 4,
+        deletions: 1,
+      },
+      created_at: 100,
+    },
+  };
+
+  assert.equal(shouldRefreshSessionWorkspace(event, 'session-1'), true);
+  assert.equal(shouldRefreshSessionWorkspace(event, 'session-2'), false);
+});
+
+test('shouldRefreshSessionWorkspace refreshes current session after workflow updates', () => {
+  const event: WsServerEvent = {
+    type: 'session_workflow:updated',
+    sessionId: 'session-1',
+    workflow: {
+      id: 'workflow-1',
+      room_id: 'room-1',
+      project_id: 'project-1',
+      task_id: 'task-1',
+      workflow_definition_id: null,
+      workflow_definition_version: null,
+      workflow_definition_snapshot: null,
+      openclaw_flow_id: null,
+      graph_version: 'superpowers-v2',
+      graph_state: null,
+      status: 'awaiting_approval',
+      current_stage: 'planning',
+      approval_required: 1,
+      approved_by: null,
+      approved_at: null,
+      error: null,
+      created_at: 100,
+      completed_at: null,
+      updated_at: 200,
+    },
+  };
+
+  assert.equal(shouldRefreshSessionWorkspace(event, 'session-1'), true);
+  assert.equal(shouldRefreshSessionWorkspace(event, 'session-2'), false);
+});
+
+test('shouldRefreshSessionWorkspace refreshes current session after ACP patch tool evidence', () => {
+  const event: WsServerEvent = {
+    type: 'session_evidence:new',
+    sessionId: 'session-1',
+    event: {
+      id: 'evidence-tool-1',
+      session_id: 'session-1',
+      seq: 1,
+      event_type: 'tool_call',
+      severity: 'info',
+      source_run_id: 'run-1',
+      source_message_id: null,
+      title: 'Tool: apply_patch',
+      summary: '*** Update File: packages/frontend/src/session-ui/SessionShellView.tsx',
+      payload: {
+        rawType: 'tool_call',
+        trace: {
+          kind: 'tool',
+          name: 'apply_patch',
+          input: '*** Update File: packages/frontend/src/session-ui/SessionShellView.tsx',
+        },
+      },
+      created_at: 100,
+    },
+  };
+
+  assert.equal(shouldRefreshSessionWorkspace(event, 'session-1'), true);
+});
+
+test('shouldRefreshSessionWorkspace refreshes after nested ACP patch tool payload evidence', () => {
+  const event: WsServerEvent = {
+    type: 'session_evidence:new',
+    sessionId: 'session-1',
+    event: {
+      id: 'evidence-nested-tool-1',
+      session_id: 'session-1',
+      seq: 1,
+      event_type: 'tool_call',
+      severity: 'info',
+      source_run_id: 'run-1',
+      source_message_id: null,
+      title: '调用工具 apply_patch',
+      summary: 'patch SessionShellView',
+      payload: {
+        rawType: 'tool_call',
+        event: {
+          type: 'tool_call',
+          payload: {
+            name: 'apply_patch',
+            input: '*** Update File: packages/frontend/src/session-ui/SessionShellView.tsx',
+          },
+        },
+      },
+      created_at: 100,
+    },
+  };
+
+  assert.equal(shouldRefreshSessionWorkspace(event, 'session-1'), true);
+});
+
+test('shouldRefreshSessionWorkspace honors the active workspace project while refreshing changes', () => {
+  const event: WsServerEvent = {
+    type: 'session_evidence:new',
+    sessionId: 'session-1',
+    event: {
+      id: 'evidence-project-guard-1',
+      session_id: 'session-1',
+      seq: 1,
+      event_type: 'file_diff',
+      severity: 'info',
+      source_run_id: 'run-1',
+      source_message_id: null,
+      title: '修改文件 packages/frontend/src/session-ui/SessionShellView.tsx',
+      summary: 'apply_patch',
+      payload: {
+        path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+      },
+      created_at: 100,
+    },
+  };
+
+  assert.equal(shouldRefreshSessionWorkspace(event, {
+    activeSessionId: 'session-1',
+    activeProjectId: 'project-1',
+    activeWorkspaceProjectId: 'project-1',
+  }), true);
+  assert.equal(shouldRefreshSessionWorkspace(event, {
+    activeSessionId: 'session-1',
+    activeProjectId: 'project-2',
+    activeWorkspaceProjectId: 'project-1',
+  }), false);
+});
+
+test('shouldRefreshSessionWorkspace refreshes after nested ACP file diff evidence', () => {
+  const event: WsServerEvent = {
+    type: 'session_evidence:new',
+    sessionId: 'session-1',
+    event: {
+      id: 'evidence-nested-diff-1',
+      session_id: 'session-1',
+      seq: 1,
+      event_type: 'tool_call',
+      severity: 'info',
+      source_run_id: 'run-1',
+      source_message_id: null,
+      title: '文件变更',
+      summary: 'nested file diff',
+      payload: {
+        rawType: 'tool_call_update',
+        event: {
+          type: 'file_diff',
+          payload: {
+            path: 'packages/frontend/src/session-ui/SessionShellView.tsx',
+            additions: 1,
+            deletions: 0,
+          },
+        },
+      },
+      created_at: 100,
+    },
+  };
+
+  assert.equal(shouldRefreshSessionWorkspace(event, 'session-1'), true);
+});
+
+test('shouldRefreshSessionWorkspace skips non-diff evidence', () => {
+  const event: WsServerEvent = {
+    type: 'session_evidence:new',
+    sessionId: 'session-1',
+    event: {
+      id: 'evidence-message-1',
+      session_id: 'session-1',
+      seq: 1,
+      event_type: 'message',
+      severity: 'info',
+      source_run_id: null,
+      source_message_id: 'message-1',
+      title: '用户消息',
+      summary: null,
+      payload: {},
+      created_at: 100,
+    },
+  };
+
+  assert.equal(shouldRefreshSessionWorkspace(event, 'session-1'), false);
+});
+
 test('getSnapshotNavigation replaces project route with active session route', () => {
   assert.deepEqual(getSnapshotNavigation('project-1', 'session-2', undefined), {
     to: '/projects/project-1/sessions/session-2',

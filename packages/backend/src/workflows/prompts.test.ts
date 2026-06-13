@@ -8,7 +8,7 @@ test('buildSuperpowersPhasePrompt includes required skills for each phase', () =
     brainstorming: ['- using-superpowers', '- brainstorming'],
     worktree: ['- using-git-worktrees'],
     writing_plans: ['- writing-plans'],
-    tdd_execute: ['- test-driven-development', '- subagent-driven-development'],
+    tdd_execute: ['- test-driven-development'],
     spec_compliance_review: ['- requesting-code-review'],
     code_quality_review: ['- requesting-code-review'],
     verify: ['- verification-before-completion'],
@@ -34,7 +34,8 @@ test('implementation prompt embeds Superpowers TDD evidence protocol', () => {
   const prompt = buildStagePrompt('implementation', basePromptContext());
 
   assert.match(prompt, /test-driven-development/);
-  assert.match(prompt, /subagent-driven-development/);
+  assert.doesNotMatch(prompt, /本阶段必须激活并遵循以下 Superpowers skills：\n- test-driven-development\n- subagent-driven-development/);
+  assert.match(prompt, /OpenDeepSea planner 已完成子代理分配/);
   assert.match(prompt, /"tddEvidence"/);
   assert.match(prompt, /"RED"/);
   assert.match(prompt, /"GREEN"/);

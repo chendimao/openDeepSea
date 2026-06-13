@@ -2,7 +2,7 @@ import { canLeaveTddExecute, canLeaveVerify, canLeaveWritingPlans } from './supe
 import { buildStagePrompt, buildSuperpowersPhasePrompt } from '../prompts.js';
 import { parseReviewVerdict } from '../plan-parser.js';
 import { ensureWorkflowAgentsForRun } from '../agent-provisioning.js';
-import { applySuperpowersEvidencePatch } from './superpowers-evidence.js';
+import { applySuperpowersEvidencePatch, parseSuperpowersEvidence } from './superpowers-evidence.js';
 import { buildSuperpowersInvocationPrompt, parseRequiredSuperpowersEvidence } from '../superpowers-invocation.js';
 import { workflowArtifactVersionRepo } from '../../repos/workflows.js';
 import type { GraphTools } from './tools.js';
@@ -276,7 +276,7 @@ function applyReviewState(
       ...state,
       superpowersPhase: phase,
       tddEvidence: [],
-      tddExemption: null,
+      tddExemption: state.tddExemption,
       specComplianceReview: phase === 'spec_compliance_review' ? null : state.specComplianceReview,
       codeQualityReview: phase === 'code_quality_review' ? null : state.codeQualityReview,
       reviewFindings: findings,
@@ -705,9 +705,9 @@ async function runSuperpowersReview(
   });
   tools.broadcastArtifactCreated(context.room.id, artifact);
 
-  let verdict;
+  let reviewOutput;
   try {
-    verdict = parseReviewVerdict(output);
+    reviewOutput = parseSuperpowersReviewOutput(output, phase);
   } catch {
     const failedStep = tools.updateGraphStep(step.id, {
       status: 'failed',
@@ -726,9 +726,9 @@ async function runSuperpowersReview(
 
   const reviewedAt = runResult.run.completed_at ? new Date(runResult.run.completed_at).toISOString() : null;
   const review = {
-    verdict: verdict.verdict === 'pass' ? 'approved' : verdict.verdict,
-    findings: verdict.findings,
-    reviewedAt,
+    verdict: reviewOutput.verdict,
+    findings: reviewOutput.findings,
+    reviewedAt: reviewOutput.reviewedAt ?? reviewedAt,
   } as const;
   const nextState = phase === 'spec_compliance_review'
     ? {
@@ -743,8 +743,8 @@ async function runSuperpowersReview(
       currentStepId: step.id,
       codeQualityReview: review,
     };
-  const finalStatus = verdict.verdict === 'failed' ? 'failed' : 'completed';
-  const finalError = verdict.verdict === 'failed'
+  const finalStatus = reviewOutput.verdict === 'failed' ? 'failed' : 'completed';
+  const finalError = reviewOutput.verdict === 'failed'
     ? (phase === 'spec_compliance_review'
       ? 'Superpowers spec compliance review failed'
       : 'Superpowers code quality review failed')
@@ -757,5 +757,23 @@ async function runSuperpowersReview(
     error: finalError,
   });
   if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
-  return applyReviewState(nextState, phase, verdict.verdict as SuperpowersReviewVerdict, verdict.findings);
+  return applyReviewState(nextState, phase, reviewOutput.verdict, reviewOutput.findings);
+}
+
+function parseSuperpowersReviewOutput(
+  output: string,
+  phase: 'spec_compliance_review' | 'code_quality_review',
+): { verdict: SuperpowersReviewVerdict; findings: string[]; reviewedAt: string | null } {
+  const evidence = parseSuperpowersEvidence(output);
+  const review = phase === 'spec_compliance_review'
+    ? evidence.specComplianceReview
+    : evidence.codeQualityReview;
+  if (review) return review;
+
+  const legacyVerdict = parseReviewVerdict(output);
+  return {
+    verdict: legacyVerdict.verdict === 'pass' ? 'approved' : legacyVerdict.verdict,
+    findings: legacyVerdict.findings,
+    reviewedAt: null,
+  };
 }

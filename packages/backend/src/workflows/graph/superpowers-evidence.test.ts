@@ -53,6 +53,24 @@ test('parseSuperpowersEvidence reads TDD, review, verification, and finish branc
   assert.equal(patch.finishBranchDecision?.decision, 'keep_branch');
 });
 
+test('parseSuperpowersEvidence infers TDD exemption from explicit documentation-only output', () => {
+  const patch = parseSuperpowersEvidence([
+    '这是文档-only 任务，没有生产代码行为变更。',
+    '按 Superpowers 流程记录 TDD 豁免依据：TDD 不适用。',
+    '已完成 README 文档更新。',
+  ].join('\n'));
+
+  assert.equal(patch.tddExemption?.approvedBy, 'workflow-runtime');
+  assert.match(patch.tddExemption?.reason ?? '', /文档|只读|配置/u);
+  assert.equal(typeof patch.tddExemption?.createdAt, 'number');
+});
+
+test('parseSuperpowersEvidence does not infer TDD exemption from unrelated prose', () => {
+  const patch = parseSuperpowersEvidence('任务已经完成，后续可以继续 review。');
+
+  assert.equal(patch.tddExemption, undefined);
+});
+
 test('applySuperpowersEvidencePatch merges evidence without duplicating records', () => {
   const state = emptyAgentWorkflowState({
     workflowRunId: 'run-evidence',
