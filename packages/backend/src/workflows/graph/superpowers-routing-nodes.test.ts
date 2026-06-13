@@ -163,6 +163,40 @@ test('routeSkills keeps development requests with review wording on standard dev
   assert.deepEqual(reviewOnly.selectedPath, ['intake', 'route_skills', 'review_plan']);
 });
 
+test('routeSkills prioritizes lightweight and pure review intents over incidental wording', async () => {
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft() {
+      return { id: 'artifact-1' };
+    },
+    createAssistantMessage() {
+      return { id: 'message-unused' };
+    },
+  });
+
+  const lightweight = await nodes.routeSkills(emptyAgentWorkflowState({
+    workflowRunId: 'run-lightweight-review-wording',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-lightweight',
+    userGoal: '轻量任务：在 README.md 追加一行项目说明。请走轻量流程，完成审查和验证。',
+    projectPath: '/tmp/project',
+  }));
+
+  const reviewOnly = await nodes.routeSkills(emptyAgentWorkflowState({
+    workflowRunId: 'run-pure-review-no-edit',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-review',
+    userGoal: '请审查当前项目代码和测试，指出潜在问题与缺失验证。只做代码审查，不要修改文件。',
+    projectPath: '/tmp/project',
+  }));
+
+  assert.equal(lightweight.selectedIntent, 'lightweight_task');
+  assert.deepEqual(lightweight.selectedPath, ['intake', 'route_skills', 'lightweight_plan']);
+  assert.equal(reviewOnly.selectedIntent, 'review_only');
+  assert.deepEqual(reviewOnly.selectedPath, ['intake', 'route_skills', 'review_plan']);
+});
+
 test('agentAssignment creates artifact with fullstack executor fallback', async () => {
   const artifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: any }> = [];
   const nodes = createSuperpowersRoutingNodes({

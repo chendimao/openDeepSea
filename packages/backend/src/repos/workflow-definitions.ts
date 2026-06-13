@@ -678,7 +678,9 @@ function isSupportedRuntimeTransition(
     );
   }
   if (from === 'tdd_execute') return to === 'spec_compliance_review';
-  if (from === 'spec_compliance_review') return to === 'code_quality_review';
+  if (from === 'spec_compliance_review') {
+    return to === 'code_quality_review' || (to === 'verify' && condition === 'review_only');
+  }
   if (from === 'code_quality_review') return to === 'verify';
   if (from === 'review') {
     return (

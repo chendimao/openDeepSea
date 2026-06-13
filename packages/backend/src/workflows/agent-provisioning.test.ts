@@ -36,6 +36,30 @@ test('ensureWorkflowAgentsForRun provisions fullstack fallback for executor task
   assert.equal(result.joinedAgents[0]?.agent_id, 'fullstack-engineer');
 });
 
+test('ensureWorkflowAgentsForRun does not classify npm build debug text as frontend UI', () => {
+  const projectPath = join(tmpdir(), `opendeepsea-provisioning-debug-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Debug Project', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Debug Room' });
+
+  const result = ensureWorkflowAgentsForRun({
+    roomId: room.id,
+    agents: [],
+    planTasks: [{
+      title: '执行系统化调试',
+      description: '调试任务：npm run build 如果失败请系统化定位根因并修复；如果当前不失败，请仍按 debug 流程验证并说明根因判断。',
+      suggestedRole: 'executor',
+      priority: 'normal',
+      acceptance: [],
+      scopeRead: [],
+      scopeWrite: [],
+      dependsOn: [],
+    }],
+  });
+
+  assert.deepEqual(result.joinedAgents.map((agent) => agent.agent_id), ['fullstack-engineer']);
+});
+
 test('ensureWorkflowAgentsForRun keeps specialist mappings for frontend backend and documentation tasks', () => {
   const projectPath = join(tmpdir(), `opendeepsea-provisioning-specialists-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });

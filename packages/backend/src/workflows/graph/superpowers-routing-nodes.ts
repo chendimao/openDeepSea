@@ -467,16 +467,18 @@ function inferLightweightPlanDefaults(goal: string): {
 
 function inferIntentFromGoal(goal: string): SuperpowersSelectedIntent {
   if (/什么|吗|如何|怎么|\?|？/u.test(goal)) return 'answer';
+  if (/轻量|小改|文案|配置/u.test(goal)) return 'lightweight_task';
   if (isReviewOnlyGoal(goal)) return 'review_only';
   if (/修复|bug|报错|失败|debug|调试/u.test(goal)) return 'debug';
-  if (/轻量|小改|文案|配置/u.test(goal)) return 'lightweight_task';
   if (/分析|解释|为什么|原因|架构/u.test(goal)) return 'analysis';
   return 'standard_development';
 }
 
 function isReviewOnlyGoal(goal: string): boolean {
   if (!/review|审查|代码审查|检查\s*(?:diff|代码|变更)|review\s*(?:diff|code|changes)/iu.test(goal)) return false;
-  return !/新增|创建|实现|开发|修改|更新|补充|修复|重构|测试|脚本|使\s*.+通过|add|create|implement|develop|modify|update|fix|refactor|test|script/iu.test(goal);
+  if (/只做.{0,12}(?:审查|review)|只(?:进行)?(?:代码)?审查|不要\s*(?:修改|更改|改动|编辑|实现)/iu.test(goal)) return true;
+  const normalized = goal.replace(/不要\s*(?:修改|更改|改动|编辑|实现)/gu, '');
+  return !/新增|创建|实现|开发|修改|更新|补充|修复|重构|测试|脚本|使\s*.+通过|add|create|implement|develop|modify|update|fix|refactor|test|script/iu.test(normalized);
 }
 
 function selectedPathForIntent(intent: SuperpowersSelectedIntent): string[] {

@@ -150,6 +150,7 @@ function createRouteEdges(): WorkflowDefinitionGraph['edges'] {
     { from: 'review_plan', to: 'reviewer_assignment' },
     { from: 'reviewer_assignment', to: 'spec_compliance_review' },
     { from: 'spec_compliance_review', to: 'execute', condition: 'changes_requested' },
+    { from: 'spec_compliance_review', to: 'verification', condition: 'review_only' },
     { from: 'spec_compliance_review', to: 'code_quality_review', condition: 'pass' },
     { from: 'code_quality_review', to: 'execute', condition: 'changes_requested' },
     { from: 'code_quality_review', to: 'verification', condition: 'pass' },

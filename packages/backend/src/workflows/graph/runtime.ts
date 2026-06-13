@@ -2101,6 +2101,11 @@ function routeRuntimeNode(
   if (isSuperpowersPlanningRouteNode(node)) return null;
   if (isSuperpowersExecutionRouteNode(node)) {
     if (state.status === 'blocked' || state.status === 'cancelled' || state.status === 'failed') return null;
+    if (state.selectedIntent === 'review_only') {
+      if (node === 'spec_compliance_review') return 'verify';
+      if (node === 'code_quality_review') return 'verify';
+      if (node === 'tdd_execute') return 'spec_compliance_review';
+    }
     if (node === 'tdd_execute') return hasRunnableChildTask(state) ? 'tdd_execute' : 'spec_compliance_review';
     if (node === 'spec_compliance_review') {
       return state.reviewVerdict === 'changes_requested' ? 'tdd_execute' : 'code_quality_review';
@@ -2146,6 +2151,18 @@ function matchesRouteCondition(
   }
   if (isSuperpowersPlanningRouteNode(node)) return false;
   if (isSuperpowersExecutionRouteNode(node)) {
+    if (state.selectedIntent === 'review_only') {
+      if (node === 'spec_compliance_review') {
+        if (condition === 'changes_requested') return false;
+        if (condition === 'review_only') return true;
+        if (condition === 'pass' || condition === 'approved' || condition === 'verify') return true;
+      }
+      if (node === 'code_quality_review') {
+        if (condition === 'changes_requested') return false;
+        if (condition === 'pass' || condition === 'approved' || condition === 'verify') return true;
+      }
+      if (node === 'tdd_execute' && condition === 'has_runnable_child') return false;
+    }
     if (node === 'tdd_execute' && condition === 'has_runnable_child') return hasRunnableChildTask(state);
     if (condition === 'changes_requested') return state.reviewVerdict === 'changes_requested';
     if (condition === 'pass' || condition === 'approved' || condition === 'verify') return state.reviewVerdict !== 'changes_requested';

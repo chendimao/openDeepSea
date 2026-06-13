@@ -147,9 +147,18 @@ function inferTaskDomain(task: ParsedPlanTask): TaskDomain {
     '.md',
     'markdown',
     'readme',
+    'ppt',
+    'presentation',
+    'slide',
+    'slides',
+    'deck',
+    'report',
     '技术文档',
     '文档',
-    '说明',
+    '说明文档',
+    '演示文稿',
+    '汇报',
+    '报告',
     '交付总结',
     '验证文档',
   ]);
@@ -162,7 +171,14 @@ function inferTaskDomain(task: ParsedPlanTask): TaskDomain {
 }
 
 function countSignals(text: string, signals: string[]): number {
-  return signals.reduce((count, signal) => count + (text.includes(signal) ? 1 : 0), 0);
+  return signals.reduce((count, signal) => count + (hasSignal(text, signal) ? 1 : 0), 0);
+}
+
+function hasSignal(text: string, signal: string): boolean {
+  if (signal === 'ui' || signal === 'ux') {
+    return new RegExp(`(^|[^a-z0-9])${signal}([^a-z0-9]|$)`, 'iu').test(text);
+  }
+  return text.includes(signal);
 }
 
 function requiredCapabilitiesForDomain(domain: TaskDomain): string[] {

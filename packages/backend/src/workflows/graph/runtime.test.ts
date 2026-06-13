@@ -1218,6 +1218,143 @@ test('Superpowers debug retry resumes systematic debugging before verification w
   assert.ok(steps.findIndex((step) => step.node_name === 'systematic_debugging') < steps.findIndex((step) => step.node_name === 'verify'));
 });
 
+test('Superpowers review-only path skips TDD execution and proceeds to finish branch decision', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-review-only-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Review Only', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Review Only Room' });
+  const reviewer = addAcpWorkflowAgent(room.id, 'reviewer');
+  roomAgentRepo.setCapabilitiesAndRuntime(reviewer.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '只做代码审查，不要修改文件',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    currentNode: 'review_plan',
+    selectedIntent: 'review_only',
+    selectedPath: ['intake', 'route_skills', 'review_plan'],
+    superpowersPhase: null,
+    activeSuperpowersStage: 'review_plan',
+    plan: {
+      goal: task.title,
+      summary: '只读审查路径',
+      assumptions: [],
+      tasks: [],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    workflowPlan: null,
+    childTaskIds: [],
+    childTaskPlanIndexes: {},
+    tddEvidence: [],
+    tddExemption: null,
+    approvedPlanArtifactVersionId: null,
+    draftPlanArtifactVersionId: createApprovedPlanArtifactVersion(run.id, task.title).id,
+  }));
+
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input, {
+      codeReviewOutput: JSON.stringify({
+        verdict: 'pass',
+        findings: ['review-only path reviewed'],
+        requiredFixes: [],
+        riskLevel: 'low',
+      }),
+    }),
+  });
+  const state = parseGraphState(latest.graph_state);
+  const steps = workflowRepo.listSteps(run.id);
+  const stepNames = steps.map((step) => step.node_name);
+
+  assert.equal(latest.status, 'awaiting_decision');
+  assert.equal(state?.selectedIntent, 'review_only');
+  assert.equal(state?.currentNode, 'acceptance');
+  assert.equal(state?.verificationEvidence?.length, 0);
+  assert.equal(stepNames.includes('spec_compliance_review'), true);
+  assert.equal(stepNames.includes('code_quality_review'), false);
+  assert.equal(stepNames.includes('tdd_execute'), false);
+  assert.equal(stepNames.includes('verify'), true);
+  assert.equal(stepNames.includes('finish_branch'), true);
+});
+
+test('Superpowers review-only findings do not reroute into TDD repair', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-review-only-findings-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Review Only Findings', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Review Only Findings Room' });
+  const reviewer = addAcpWorkflowAgent(room.id, 'reviewer');
+  roomAgentRepo.setCapabilitiesAndRuntime(reviewer.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '只做代码审查，不要修改文件，指出问题',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    currentNode: 'review_plan',
+    selectedIntent: 'review_only',
+    selectedPath: ['intake', 'route_skills', 'review_plan'],
+    superpowersPhase: null,
+    activeSuperpowersStage: 'review_plan',
+    plan: {
+      goal: task.title,
+      summary: '只读审查路径',
+      assumptions: [],
+      tasks: [],
+      reviewFocus: [],
+      verification: [],
+      verificationCommands: [],
+      risks: [],
+      needsApproval: false,
+    },
+    workflowPlan: null,
+    childTaskIds: [],
+    childTaskPlanIndexes: {},
+    approvedPlanArtifactVersionId: null,
+    draftPlanArtifactVersionId: createApprovedPlanArtifactVersion(run.id, task.title).id,
+  }));
+
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input, {
+      codeReviewOutput: JSON.stringify({
+        verdict: 'changes_requested',
+        findings: ['review-only finding should be reported, not repaired'],
+        requiredFixes: ['Add missing tests later if user asks for implementation'],
+        riskLevel: 'medium',
+      }),
+    }),
+  });
+  const state = parseGraphState(latest.graph_state);
+  const stepNames = workflowRepo.listSteps(run.id).map((step) => step.node_name);
+
+  assert.equal(latest.status, 'awaiting_decision');
+  assert.equal(state?.selectedIntent, 'review_only');
+  assert.equal(state?.reviewVerdict, 'changes_requested');
+  assert.equal(state?.currentNode, 'acceptance');
+  assert.equal(stepNames.includes('spec_compliance_review'), true);
+  assert.equal(stepNames.includes('code_quality_review'), false);
+  assert.equal(stepNames.includes('tdd_execute'), false);
+  assert.equal(stepNames.includes('verify'), true);
+  assert.equal(stepNames.includes('finish_branch'), true);
+});
+
 test('Superpowers review failure synchronizes workflow run as blocked', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-superpowers-review-block-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
