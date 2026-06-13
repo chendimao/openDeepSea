@@ -2,11 +2,15 @@ import { FULLSTACK_ENGINEER_AGENT_ID } from './fullstack-engineer.js';
 
 export interface AvailableWorkflowAgent {
   id: string;
+  roomAgentId?: string;
   name: string;
   provider: 'codex' | 'claudecode' | 'opencode';
   capabilities: string[];
   workflowRoles: string[];
   acpEnabled: boolean;
+  acpPermissionMode?: string | null;
+  toolPolicyAllowed?: string[];
+  workspaceWrite?: string[];
   available: boolean;
   fallback?: boolean;
   priority?: number;
@@ -39,7 +43,7 @@ export function assignPlanTaskAgent(input: AssignPlanTaskAgentInput): PlanTaskAg
   const specialists = candidates
     .filter((agent) => !isFallbackAgent(agent))
     .map((agent) => ({ agent, score: scoreAgent(agent, input.requiredCapabilities, input.title) }))
-    .filter((item) => item.score > 0)
+    .filter((item) => item.score > 0 && agentCoversCapabilities(item.agent, input.requiredCapabilities))
     .sort((left, right) => right.score - left.score || (right.agent.priority ?? 0) - (left.agent.priority ?? 0));
 
   const specialist = specialists[0]?.agent;
@@ -97,4 +101,14 @@ function scoreAgent(agent: AvailableWorkflowAgent, requiredCapabilities: string[
     if (token.length > 2 && lowerTitle.includes(token)) score += 1;
   }
   return score;
+}
+
+function agentCoversCapabilities(agent: AvailableWorkflowAgent, requiredCapabilities: string[]): boolean {
+  if (requiredCapabilities.length === 0) return true;
+  const haystack = new Set([
+    ...agent.capabilities.map((item) => item.toLowerCase()),
+    agent.id.toLowerCase(),
+    agent.name.toLowerCase(),
+  ]);
+  return requiredCapabilities.every((capability) => haystack.has(capability.toLowerCase()));
 }

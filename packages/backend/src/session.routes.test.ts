@@ -7,7 +7,7 @@ import test from 'node:test';
 process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-session-routes-')), 'test.db');
 
 const { projectRepo } = await import('./repos/projects.js');
-const { roomRepo } = await import('./repos/rooms.js');
+const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { workflowArtifactVersionRepo, workflowRepo } = await import('./repos/workflows.js');
 const { fileRepo } = await import('./repos/files.js');
@@ -354,6 +354,114 @@ test('session workspace payload exposes workflow artifact versions and approval 
   assert.equal(payload.activeSession.workflowArtifacts?.[0]?.id, draft.id);
   assert.deepEqual(payload.activeSession.workflowArtifacts?.[0]?.structured_data, { tasks: [] });
   assert.equal(payload.activeSession.workflowGates?.some((gate) => gate.kind === 'plan_confirm'), true);
+});
+
+test('session workspace payload exposes workflow controller and agent assignments', () => {
+  const project = projectRepo.create({
+    name: 'assignment payload project',
+    path: mkdtempSync(join(tmpdir(), 'session-assignment-payload-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Assignment Payload Room' });
+  const fullstack = roomAgentRepo.ensureBuiltInAgent(room.id, 'fullstack-engineer');
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Assignment Payload Session',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const sourceMessage = sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: null,
+    content: '实现 workflow assignment payload',
+    metadata: {},
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Assignment workflow',
+    source_message_id: sourceMessage.id,
+    created_from: 'chat_plan',
+  });
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: sourceMessage.content,
+    projectPath: project.path,
+  });
+  const workflow = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'running',
+    current_stage: 'assignment',
+    approval_required: false,
+    graph_version: 'superpowers-v2',
+    graph_state: serializeGraphState(state),
+  });
+  workflowRepo.updateGraphState(workflow.id, serializeGraphState({
+    ...state,
+    workflowRunId: workflow.id,
+    currentNode: 'agent_assignment',
+    selectedIntent: 'standard_development',
+    activeSuperpowersStage: 'agent_assignment',
+    plan: {
+      goal: '实现 workflow assignment payload',
+      summary: '实现 workflow assignment payload',
+      assumptions: [],
+      tasks: [{
+        title: '实现 assignment payload',
+        description: '后端暴露 workflow assignment',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['payload 包含 assignment'],
+        scopeRead: ['packages/backend/src/session.routes.ts'],
+        scopeWrite: ['packages/backend/src/session.routes.ts'],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: ['node --import tsx --test packages/backend/src/session.routes.test.ts'],
+      verificationCommands: [{
+        command: 'node --import tsx --test packages/backend/src/session.routes.test.ts',
+        reason: 'session payload regression',
+        required: true,
+      }],
+      risks: [],
+      needsApproval: true,
+    },
+    agentAssignments: [{
+      taskId: 'task-1',
+      assignedAgentId: fullstack.agent_id,
+      fallbackAgentIds: [fullstack.agent_id],
+      fallbackReason: '未找到更匹配的专门子代理，使用全栈工程师兜底执行',
+      executionMode: 'parallel',
+      scopeRead: ['packages/backend/src/session.routes.ts'],
+      scopeWrite: ['packages/backend/src/session.routes.ts'],
+    }],
+  }));
+
+  const payload = buildWorkspacePayload(project, session);
+
+  assert.equal(payload.activeSession.workflowController?.workflow_run_id, workflow.id);
+  assert.equal(payload.activeSession.workflowController?.selected_intent, 'standard_development');
+  assert.equal(payload.activeSession.workflowController?.active_stage, 'agent_assignment');
+  assert.equal(payload.activeSession.workflowController?.controller, 'planner');
+  assert.equal(payload.activeSession.workflowController?.next_action, '生成并冻结子任务执行智能体分配。');
+  assert.deepEqual(payload.activeSession.workflowAgentAssignments, [{
+    task_id: 'task-1',
+    task_title: '实现 assignment payload',
+    role: 'executor',
+    assigned_agent_id: 'fullstack-engineer',
+    assigned_agent_name: '全栈工程师',
+    backend: fullstack.acp_backend,
+    fallback_reason: '未找到更匹配的专门子代理，使用全栈工程师兜底执行',
+    execution_mode: 'parallel',
+    scope_write: ['packages/backend/src/session.routes.ts'],
+  }]);
 });
 
 test('session workflow artifact approve endpoint approves linked artifact and updates graph state', async () => {

@@ -274,6 +274,39 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
 
       const scopeRead = Array.from(new Set(state.plan.tasks.flatMap((item) => item.scopeRead)));
       const scopeWrite = Array.from(new Set(state.plan.tasks.flatMap((item) => item.scopeWrite)));
+      const implementationPlanTasks = state.plan.tasks
+        .map((planTask, originalIndex) => ({ planTask, originalIndex }))
+        .filter(({ planTask }) => isImplementationPlanTask(planTask));
+      const frozenAssignments = state.agentAssignments ?? [];
+      if (frozenAssignments.length > 0) {
+        const missingFrozenExecutor = implementationPlanTasks.find(({ planTask, originalIndex }) => {
+          if (planTask.suggestedRole !== 'executor') return false;
+          const assignment = frozenAssignments.find((item) => item.taskId === `task-${originalIndex + 1}`);
+          return !assignment?.assignedAgentId;
+        });
+        if (missingFrozenExecutor) {
+          const error = 'needs_agent_assignment';
+          const updatedRun = tools.updateRun(context.run.id, {
+            status: 'blocked',
+            current_stage: 'assignment',
+            error,
+          });
+          if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+          const nextState: AgentWorkflowState = {
+            ...state,
+            currentNode: 'dispatch',
+            status: 'blocked',
+            error,
+          };
+          tools.updateGraphState(context.run.id, serializeGraphState(nextState));
+          recordEventSafely(tools, context, {
+            eventType: 'workflow_blocked',
+            content: `子任务「${missingFrozenExecutor.planTask.title}」缺少已确认的执行智能体分配，工作流已阻塞。`,
+            metadata: { graph_node: 'dispatch', workflow_stage: 'assignment', error },
+          });
+          return nextState;
+        }
+      }
       const step = tools.createGraphStep({
         workflow_run_id: context.run.id,
         task_id: context.task.id,
@@ -291,9 +324,6 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
       const assignmentTraces: AssignmentTrace[] = [];
       const createdChildren: Task[] = [];
       let assignmentAgents = context.agents;
-      const implementationPlanTasks = state.plan.tasks
-        .map((planTask, originalIndex) => ({ planTask, originalIndex }))
-        .filter(({ planTask }) => isImplementationPlanTask(planTask));
       for (const { planTask } of implementationPlanTasks) {
         const selection = selectOrJoinAgentForPlanTask({
           tools,
@@ -336,9 +366,18 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           resolved = selection.agent;
         }
         const hintedAssignment = selectAssignmentHintForPlanTask(state, originalIndex, assignmentAgents, tools, resolved);
-        const assigned = hintedAssignment ?? resolved;
+        const frozenAssignment = frozenAssignments.find((assignment) => assignment.taskId === `task-${originalIndex + 1}`);
+        const frozenAgent = frozenAssignment?.assignedAgentId
+          ? assignmentAgents.find((agent) =>
+            agent.id === frozenAssignment.assignedAgentId ||
+            agent.agent_id === frozenAssignment.assignedAgentId
+          ) ?? null
+          : null;
+        const assigned = frozenAgent ?? hintedAssignment ?? resolved;
         const assignmentReason = assigned
-          ? hintedAssignment
+          ? frozenAgent
+            ? `Selected frozen assignment ${frozenAssignment?.assignedAgentId}.`
+            : hintedAssignment
             ? `Selected supervisor assignment hint ${hintedAssignment.agent_name || hintedAssignment.agent_id}.`
             : selection.reason
           : `No matching in-room or global agent; suggested ${selection.templateId ?? 'workflow executor'}.`;

@@ -100,3 +100,67 @@ test('debugPlan and reviewPlan create plan artifacts for their routes', async ()
   assert.equal(createdArtifacts[0]?.structured_data.mode, 'debug');
   assert.equal(createdArtifacts[1]?.structured_data.mode, 'review_only');
 });
+
+test('agentAssignment creates artifact with fullstack executor fallback', async () => {
+  const artifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: any }> = [];
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft(input) {
+      artifacts.push({ artifact_type: input.artifact_type, structured_data: input.structured_data });
+      return { id: `artifact-${artifacts.length}` };
+    },
+    createAssistantMessage() {
+      return { id: 'message-1' };
+    },
+    listAvailableWorkflowAgents() {
+      return [{
+        id: 'fullstack-engineer',
+        name: '全栈工程师',
+        provider: 'codex',
+        capabilities: ['frontend', 'backend', 'testing'],
+        workflowRoles: ['executor'],
+        acpEnabled: true,
+        available: true,
+        fallback: true,
+      }];
+    },
+  });
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'run-assignment-1',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-1',
+    userGoal: '实现设置页',
+    projectPath: '/tmp/project',
+  });
+
+  const next = await nodes.agentAssignment({
+    ...state,
+    selectedIntent: 'standard_development',
+    plan: {
+      goal: '实现设置页',
+      summary: '实现设置页',
+      assumptions: [],
+      tasks: [{
+        title: '实现设置页',
+        description: '修改前端页面',
+        suggestedRole: 'executor',
+        priority: 'normal',
+        acceptance: ['页面可构建'],
+        scopeRead: ['packages/frontend/src/pages'],
+        scopeWrite: ['packages/frontend/src/pages/SettingsPage.tsx'],
+        dependsOn: [],
+      }],
+      reviewFocus: [],
+      verification: ['npm run build'],
+      verificationCommands: [{ command: 'npm run build', reason: 'build', required: true }],
+      risks: [],
+      needsApproval: true,
+    },
+  });
+
+  assert.equal(next.agentAssignmentArtifactVersionId, 'artifact-1');
+  assert.equal(next.agentAssignments?.[0]?.assignedAgentId, 'fullstack-engineer');
+  assert.equal(artifacts[0]?.artifact_type, 'agent_assignment');
+  assert.equal(artifacts[0]?.structured_data.assignments[0].assignedAgentId, 'fullstack-engineer');
+  assert.match(artifacts[0]?.structured_data.assignments[0].fallbackReason, /全栈工程师/);
+});

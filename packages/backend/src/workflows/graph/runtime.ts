@@ -19,6 +19,8 @@ import type {
   WorkflowStage,
 } from '../../types.js';
 import type { WorkflowSupervisorDecision } from '../supervisor.js';
+import type { AvailableWorkflowAgent } from '../agent-assignment.js';
+import { ensureWorkflowAgentsForRun } from '../agent-provisioning.js';
 import { buildSuperpowersPhasePrompt } from '../prompts.js';
 import { normalizeParsedPlanTaskTitles, parsePlanArtifact, type ParsedPlan } from '../plan-parser.js';
 import { generateWorkflowSupervisorDecision } from '../supervisor.js';
@@ -1004,6 +1006,33 @@ async function runSuperpowersRoutingNode(
     createAssistantMessage(input) {
       return tools.createWorkflowSessionMessage(input);
     },
+    listAvailableWorkflowAgents() {
+      const context = tools.readWorkflowContext(state.workflowRunId);
+      const provisioning = ensureWorkflowAgentsForRun({
+        roomId: context.room.id,
+        agents: context.agents,
+        planTasks: state.plan?.tasks ?? [],
+      });
+      for (const agent of provisioning.joinedAgents) {
+        tools.broadcastAgentJoined(context.room.id, agent);
+      }
+      return provisioning.agents
+        .filter((agent) => agent.left_at === null)
+        .map((agent): AvailableWorkflowAgent => ({
+          id: agent.agent_id,
+          roomAgentId: agent.id,
+          name: agent.agent_name,
+          provider: agent.acp_backend ?? 'codex',
+          capabilities: agent.capabilities,
+          workflowRoles: agent.workflow_role ? [agent.workflow_role] : [],
+          acpEnabled: agent.acp_enabled === 1,
+          acpPermissionMode: agent.acp_permission_mode,
+          toolPolicyAllowed: agent.tool_policy?.allowed ?? [],
+          workspaceWrite: agent.workspace_policy?.write ?? [],
+          available: true,
+          fallback: agent.agent_id === 'fullstack-engineer',
+        }));
+    },
   });
 
   let nextState: AgentWorkflowState;
@@ -1014,6 +1043,7 @@ async function runSuperpowersRoutingNode(
   else if (nodeToRun === 'lightweight_plan') nextState = await nodes.lightweightPlan(state);
   else if (nodeToRun === 'debug_plan') nextState = await nodes.debugPlan(state);
   else if (nodeToRun === 'review_plan') nextState = await nodes.reviewPlan(state);
+  else if (nodeToRun === 'agent_assignment') nextState = await nodes.agentAssignment(state);
   else nextState = await nodes.passthrough(state, nodeToRun);
 
   const context = tools.readWorkflowContext(state.workflowRunId);

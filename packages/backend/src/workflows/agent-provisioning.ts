@@ -64,7 +64,7 @@ export function ensureGlobalExecutorForRecovery(input: {
 function templateIdsForPlanTask(task: ParsedPlanTask): string[] {
   const domain = inferTaskDomain(task);
   if (domain === 'fullstack') {
-    return ['frontend-executor', 'backend-executor'];
+    return ['frontend-executor', 'backend-executor', FULLSTACK_ENGINEER_AGENT_ID];
   }
   const assignment = assignPlanTaskAgent({
     taskId: task.title,

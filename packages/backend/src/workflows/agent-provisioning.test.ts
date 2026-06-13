@@ -89,6 +89,7 @@ test('ensureWorkflowAgentsForRun provisions frontend and backend specialists for
   assert.deepEqual(result.joinedAgents.map((agent) => agent.agent_id).sort(), [
     'backend-executor',
     'frontend-executor',
+    'fullstack-engineer',
   ]);
 });
 

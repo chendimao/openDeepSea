@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { fileRepo } from './repos/files.js';
 import { projectRepo } from './repos/projects.js';
+import { roomAgentRepo } from './repos/rooms.js';
 import { taskRepo } from './repos/tasks.js';
 import { workflowArtifactVersionRepo, workflowRepo } from './repos/workflows.js';
 import {
@@ -50,6 +51,8 @@ import type {
   WorkflowArtifactVersion,
   WorkflowArtifactVersionType,
   WorkflowArtifactVersionView,
+  WorkflowAgentAssignmentView,
+  WorkflowControllerView,
   WorkflowGateView,
   WorkflowRun,
 } from './types.js';
@@ -291,6 +294,8 @@ function buildSessionDetail(session: Session): SessionDetail {
     evidence: sessionEvidenceRepo.listBySession(session.id),
     workflowArtifacts,
     workflowGates: buildWorkflowGates(workflowRuns, workflowArtifacts),
+    workflowController: buildWorkflowControllerView(workflowRuns),
+    workflowAgentAssignments: buildWorkflowAgentAssignmentViews(workflowRuns),
   };
 }
 
@@ -340,6 +345,52 @@ function toWorkflowArtifactVersionView(artifact: WorkflowArtifactVersion): Workf
   };
 }
 
+function buildWorkflowControllerView(runs: WorkflowRun[]): WorkflowControllerView | null {
+  const run = latestWorkflowRun(runs);
+  if (!run) return null;
+  const state = parseGraphState(run.graph_state);
+  const activeStage = state?.activeSuperpowersStage ?? run.current_stage ?? null;
+  const blocker = state?.error ?? run.error ?? null;
+  return {
+    workflow_run_id: run.id,
+    selected_intent: state?.selectedIntent ?? null,
+    active_stage: activeStage,
+    controller: inferWorkflowController(state?.currentNode ?? null, activeStage, run.status),
+    blocker,
+    next_action: inferWorkflowNextAction(state, run, blocker),
+  };
+}
+
+function buildWorkflowAgentAssignmentViews(runs: WorkflowRun[]): WorkflowAgentAssignmentView[] {
+  return runs.flatMap((run) => {
+    const state = parseGraphState(run.graph_state);
+    const assignments = state?.agentAssignments ?? [];
+    if (assignments.length === 0) return [];
+    const roomAgents = roomAgentRepo.listByRoom(run.room_id, { includeRemoved: true });
+    return assignments.map((assignment) => {
+      const taskIndex = parsePlanTaskIndex(assignment.taskId);
+      const planTask = taskIndex === null ? null : state?.plan?.tasks[taskIndex] ?? null;
+      const assignedAgent = assignment.assignedAgentId
+        ? roomAgents.find((agent) =>
+          agent.id === assignment.assignedAgentId ||
+          agent.agent_id === assignment.assignedAgentId
+        ) ?? null
+        : null;
+      return {
+        task_id: assignment.taskId,
+        task_title: planTask?.title ?? assignment.taskId,
+        role: normalizeWorkflowAssignmentRole(planTask?.suggestedRole ?? 'executor'),
+        assigned_agent_id: assignment.assignedAgentId,
+        assigned_agent_name: assignedAgent?.agent_name ?? assignment.assignedAgentId,
+        backend: assignedAgent?.acp_backend ?? null,
+        fallback_reason: assignment.fallbackReason,
+        execution_mode: assignment.executionMode,
+        scope_write: assignment.scopeWrite.length > 0 ? assignment.scopeWrite : planTask?.scopeWrite ?? [],
+      };
+    });
+  });
+}
+
 function buildWorkflowGates(
   runs: WorkflowRun[],
   artifacts: WorkflowArtifactVersionView[],
@@ -376,6 +427,57 @@ function buildWorkflowGateReason(
   if (artifactType === 'spec') return '等待用户确认 planner 生成的需求/设计规格。';
   if (artifactType === 'lightweight_plan') return '等待用户确认 planner 生成的轻量执行计划。';
   return '等待用户确认 planner 生成的执行计划。';
+}
+
+function latestWorkflowRun(runs: WorkflowRun[]): WorkflowRun | null {
+  return runs.reduce<WorkflowRun | null>((latest, run) => {
+    if (!latest) return run;
+    const latestTime = latest.updated_at || latest.created_at;
+    const runTime = run.updated_at || run.created_at;
+    return runTime > latestTime ? run : latest;
+  }, null);
+}
+
+function inferWorkflowController(
+  node: AgentWorkflowState['currentNode'] | null,
+  activeStage: string | null,
+  status: WorkflowRun['status'],
+): WorkflowControllerView['controller'] {
+  if (status === 'awaiting_approval') return 'user';
+  if (node === 'approval' || node === 'debug_plan_confirm') return 'user';
+  if (node === 'execute' || node === 'tdd_execute' || node === 'systematic_debugging') return 'worker';
+  if (node === 'review' || node === 'spec_compliance_review' || node === 'code_quality_review') return 'reviewer';
+  if (node === 'verify') return 'verifier';
+  if (activeStage === 'implementation') return 'worker';
+  if (activeStage === 'code_review') return 'reviewer';
+  if (activeStage === 'acceptance') return 'user';
+  if (!node && !activeStage) return null;
+  return 'planner';
+}
+
+function inferWorkflowNextAction(
+  state: AgentWorkflowState | null,
+  run: WorkflowRun,
+  blocker: string | null,
+): string | null {
+  if (blocker === 'needs_agent_assignment') return '需要 planner 重新分配可用执行智能体。';
+  if (run.status === 'awaiting_approval') return '等待用户确认当前 workflow artifact。';
+  if (run.status === 'blocked') return blocker ?? '等待处理阻塞。';
+  if (state?.currentNode === 'agent_assignment') return '生成并冻结子任务执行智能体分配。';
+  if (state?.currentNode === 'dispatch') return '按已确认分配创建子任务并进入执行。';
+  return null;
+}
+
+function parsePlanTaskIndex(taskId: string): number | null {
+  const match = /^task-(\d+)$/u.exec(taskId);
+  if (!match) return null;
+  const index = Number(match[1]);
+  return Number.isInteger(index) && index > 0 ? index - 1 : null;
+}
+
+function normalizeWorkflowAssignmentRole(role: string): WorkflowAgentAssignmentView['role'] {
+  if (role === 'reviewer' || role === 'acceptor') return role;
+  return 'executor';
 }
 
 function latestArtifactByStatus(

@@ -332,6 +332,35 @@ export interface WorkflowGateView {
   reason: string;
 }
 
+export type SuperpowersSelectedIntent =
+  | 'answer'
+  | 'analysis'
+  | 'lightweight_task'
+  | 'standard_development'
+  | 'debug'
+  | 'review_only';
+
+export interface WorkflowControllerView {
+  workflow_run_id: string;
+  selected_intent: SuperpowersSelectedIntent | null;
+  active_stage: string | null;
+  controller: 'planner' | 'worker' | 'reviewer' | 'verifier' | 'user' | null;
+  blocker: string | null;
+  next_action: string | null;
+}
+
+export interface WorkflowAgentAssignmentView {
+  task_id: string;
+  task_title: string;
+  role: 'executor' | 'reviewer' | 'verifier' | 'acceptor';
+  assigned_agent_id: string | null;
+  assigned_agent_name: string | null;
+  backend: string | null;
+  fallback_reason: string | null;
+  execution_mode: 'serial' | 'parallel' | 'hybrid';
+  scope_write: string[];
+}
+
 export interface SessionDetail {
   session: Session;
   messages: SessionMessage[];
@@ -343,6 +372,8 @@ export interface SessionDetail {
   evidence: SessionEvidenceEvent[];
   workflowArtifacts?: WorkflowArtifactVersionView[];
   workflowGates?: WorkflowGateView[];
+  workflowController?: WorkflowControllerView | null;
+  workflowAgentAssignments?: WorkflowAgentAssignmentView[];
 }
 
 export interface StatusSnapshot {

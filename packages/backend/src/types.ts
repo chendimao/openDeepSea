@@ -58,7 +58,10 @@ export type {
   SessionTodoStats,
   SessionWorkspacePayload,
   StatusSnapshot,
+  SuperpowersSelectedIntent,
+  WorkflowAgentAssignmentView,
   WorkflowArtifactVersionView,
+  WorkflowControllerView,
   WorkflowGateView,
 } from './session-types.js';
 

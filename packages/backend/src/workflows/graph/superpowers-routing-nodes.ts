@@ -1,4 +1,9 @@
 import type { WorkflowArtifactVersionType } from '../../types.js';
+import {
+  assignPlanTaskAgent,
+  type AvailableWorkflowAgent,
+} from '../agent-assignment.js';
+import { inferTaskProfile } from '../task-profile.js';
 import type { AgentWorkflowState, SuperpowersSelectedIntent } from './state.js';
 
 export interface SuperpowersRoutingNodeTools {
@@ -14,6 +19,7 @@ export interface SuperpowersRoutingNodeTools {
     workflowRunId: string;
     content: string;
   }): { id: string };
+  listAvailableWorkflowAgents?(): AvailableWorkflowAgent[];
 }
 
 export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools) {
@@ -199,6 +205,79 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
       };
     },
 
+    async agentAssignment(state: AgentWorkflowState): Promise<AgentWorkflowState> {
+      const agents = tools.listAvailableWorkflowAgents?.() ?? [];
+      const assignments = (state.plan?.tasks ?? []).map((task, index) => {
+        const taskId = `task-${index + 1}`;
+        const requiredCapabilities = inferCapabilities(task);
+        const eligibleAgents = agents.filter((agent) => agentCanWriteTask(agent, task.scopeWrite));
+        const hintedAgent = selectSupervisorHintedAgent({
+          state,
+          task,
+          requiredCapabilities,
+          agents: eligibleAgents,
+        });
+        const genericAgent = !hintedAgent && requiredCapabilities.length === 0
+          ? selectGenericExecutorAgent(eligibleAgents)
+          : null;
+        const selectedAgent = hintedAgent ?? genericAgent;
+        const result = selectedAgent
+          ? {
+            taskId,
+            assignedAgentId: selectedAgent.roomAgentId ?? selectedAgent.id,
+            fallbackAgentIds: [],
+            fallbackReason: null,
+            executionMode: task.scopeWrite.length > 1 ? 'serial' as const : 'parallel' as const,
+            scopeWrite: [...task.scopeWrite],
+          }
+          : assignPlanTaskAgent({
+            taskId,
+            title: task.title,
+            requiredCapabilities,
+            scopeWrite: task.scopeWrite,
+            agents: eligibleAgents,
+          });
+        return {
+          taskId,
+          taskTitle: task.title,
+          role: task.suggestedRole,
+          assignedAgentId: result.assignedAgentId,
+          fallbackAgentIds: result.fallbackAgentIds,
+          fallbackReason: result.fallbackReason,
+          executionMode: result.executionMode,
+          scopeRead: task.scopeRead,
+          scopeWrite: result.scopeWrite,
+        };
+      });
+      const missingExecutor = assignments.find((item) => item.role === 'executor' && !item.assignedAgentId);
+      const structuredData = { assignments };
+      const artifact = tools.createArtifactVersionDraft({
+        workflow_run_id: state.workflowRunId,
+        artifact_type: 'agent_assignment',
+        title: 'Agent Assignment',
+        content: formatJson(structuredData),
+        structured_data: structuredData,
+        created_by_agent_id: 'planner',
+      });
+      return {
+        ...state,
+        currentNode: 'agent_assignment',
+        activeSuperpowersStage: 'agent_assignment',
+        agentAssignmentArtifactVersionId: artifact.id,
+        agentAssignments: assignments.map((item) => ({
+          taskId: item.taskId,
+          assignedAgentId: item.assignedAgentId,
+          fallbackAgentIds: item.fallbackAgentIds,
+          fallbackReason: item.fallbackReason,
+          executionMode: item.executionMode,
+          scopeRead: item.scopeRead,
+          scopeWrite: item.scopeWrite,
+        })),
+        status: missingExecutor ? 'blocked' : state.status,
+        error: missingExecutor ? 'needs_agent_assignment' : null,
+      };
+    },
+
     async passthrough(state: AgentWorkflowState, nodeName: string): Promise<AgentWorkflowState> {
       return {
         ...state,
@@ -207,6 +286,108 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
       };
     },
   };
+}
+
+function selectSupervisorHintedAgent(input: {
+  state: AgentWorkflowState;
+  task: NonNullable<AgentWorkflowState['plan']>['tasks'][number];
+  requiredCapabilities: string[];
+  agents: AvailableWorkflowAgent[];
+}): AvailableWorkflowAgent | null {
+  const sameRoleTaskCount = input.state.plan?.tasks.filter((task) =>
+    task.suggestedRole === input.task.suggestedRole
+  ).length ?? 0;
+  if (sameRoleTaskCount !== 1) return null;
+  const hint = (input.state.supervisorAssignments ?? []).find((assignment) =>
+    assignment.stage === 'implementation' && assignment.role === input.task.suggestedRole
+  );
+  if (!hint) return null;
+  const agent = input.agents.find((item) =>
+    item.roomAgentId === hint.agentId ||
+    item.id === hint.agentId
+  ) ?? null;
+  if (!agent || !isExecutableForRole(agent, input.task.suggestedRole)) return null;
+  return agentCoversCapabilities(agent, input.requiredCapabilities) ? agent : null;
+}
+
+function selectGenericExecutorAgent(agents: AvailableWorkflowAgent[]): AvailableWorkflowAgent | null {
+  return agents
+    .filter((agent) => isExecutableForRole(agent, 'executor') && agent.fallback !== true)
+    .sort((left, right) => (right.priority ?? 0) - (left.priority ?? 0))[0] ?? null;
+}
+
+function isExecutableForRole(agent: AvailableWorkflowAgent, role: string): boolean {
+  return agent.available && agent.acpEnabled && agent.workflowRoles.includes(role);
+}
+
+function agentCanWriteTask(agent: AvailableWorkflowAgent, scopeWrite: string[]): boolean {
+  const pathScopes = scopeWrite.map(normalizePathScope).filter((scope): scope is string => scope !== null);
+  if (pathScopes.length === 0) return true;
+  if (
+    agent.acpPermissionMode === undefined &&
+    agent.toolPolicyAllowed === undefined &&
+    agent.workspaceWrite === undefined
+  ) {
+    return true;
+  }
+  if (agent.acpPermissionMode === 'read-only') return false;
+  if (!(agent.toolPolicyAllowed ?? []).includes('write_files')) return false;
+  const writableScopes = agent.workspaceWrite ?? [];
+  if (writableScopes.length === 0) return false;
+  return pathScopes.every((scope) =>
+    writableScopes.some((writable) => pathMatchesScope(scope, writable))
+  );
+}
+
+function agentCoversCapabilities(agent: AvailableWorkflowAgent, requiredCapabilities: string[]): boolean {
+  if (requiredCapabilities.length === 0) return true;
+  const text = [
+    agent.id,
+    agent.name,
+    ...agent.capabilities,
+  ].join(' ').toLowerCase();
+  return requiredCapabilities.every((capability) => {
+    const normalized = capability.toLowerCase();
+    if (normalized === 'documentation') {
+      return text.includes('documentation') || text.includes('document') || text.includes('writer') || text.includes('文档');
+    }
+    return text.includes(normalized);
+  });
+}
+
+function inferCapabilities(task: {
+  title: string;
+  description: string;
+  acceptance?: string[];
+  scopeRead: string[];
+  scopeWrite: string[];
+}): string[] {
+  return inferTaskProfile({
+    title: task.title,
+    description: task.description,
+    scopeRead: task.scopeRead,
+    scopeWrite: task.scopeWrite,
+    acceptance: task.acceptance ?? [],
+  }).requiredCapabilities.map(normalizeRequiredCapability);
+}
+
+function normalizeRequiredCapability(capability: string): string {
+  if (capability === 'document') return 'documentation';
+  return capability;
+}
+
+function normalizePathScope(scope: string): string | null {
+  const trimmed = scope.trim();
+  if (trimmed.length === 0) return null;
+  if (trimmed === '.') return '';
+  if (/^[a-z]+:\/\//iu.test(trimmed)) return null;
+  return trimmed.replace(/\\/gu, '/').replace(/\/+/gu, '/').replace(/^\.\/+/u, '');
+}
+
+function pathMatchesScope(scope: string, writable: string): boolean {
+  const normalizedWritable = normalizePathScope(writable);
+  if (normalizedWritable === null || normalizedWritable === '') return true;
+  return scope === normalizedWritable || scope.startsWith(`${normalizedWritable}/`);
 }
 
 function buildSingleTaskPlan(input: {

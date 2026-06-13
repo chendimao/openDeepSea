@@ -2730,7 +2730,7 @@ test('no-approval graph invites built-in executor instead of selecting non-ACP e
   const childTasks = taskRepo.listChildren(task.id);
   const graphState = parseGraphState(detail?.run.graph_state ?? null);
 
-  assert.ok(['backend-executor', 'frontend-executor'].includes(implementationAgentId ?? ''));
+  assert.ok(['backend-executor', 'frontend-executor', 'fullstack-engineer'].includes(implementationAgentId ?? ''));
   assert.equal(detail?.run.status, 'completed');
   assert.equal(childTasks.length, 1);
   assert.equal(

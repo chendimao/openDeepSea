@@ -1285,7 +1285,7 @@ git commit -m "feat(workflow): 补齐轻量调试审查计划闭环"
 - Test: `packages/backend/src/workflows/graph/superpowers-routing-nodes.test.ts`
 - Test: `packages/backend/src/session.routes.test.ts`
 
-- [ ] **Step 1: Write failing assignment artifact test**
+- [x] **Step 1: Write failing assignment artifact test**
 
 Add to `packages/backend/src/workflows/graph/superpowers-routing-nodes.test.ts`:
 
@@ -1354,7 +1354,7 @@ test('agentAssignment creates artifact with fullstack executor fallback and bloc
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -1364,7 +1364,7 @@ node --import tsx --test packages/backend/src/workflows/graph/superpowers-routin
 
 Expected: FAIL because `agentAssignment()` is missing.
 
-- [ ] **Step 3: Extend routing tools for available agents**
+- [x] **Step 3: Extend routing tools for available agents**
 
 In `SuperpowersRoutingNodeTools`, add:
 
@@ -1374,7 +1374,7 @@ listAvailableWorkflowAgents?(): AvailableWorkflowAgent[];
 
 Import `assignPlanTaskAgent` and `AvailableWorkflowAgent`.
 
-- [ ] **Step 4: Implement `agentAssignment` node**
+- [x] **Step 4: Implement `agentAssignment` node**
 
 In `createSuperpowersRoutingNodes()`:
 
@@ -1442,7 +1442,7 @@ function inferCapabilities(task: { title: string; description: string; scopeRead
 }
 ```
 
-- [ ] **Step 5: Freeze assignment at dispatch**
+- [x] **Step 5: Freeze assignment at dispatch**
 
 In `packages/backend/src/workflows/graph/nodes.ts`, before creating child tasks from plan, prefer `state.agentAssignments` when available:
 
@@ -1455,7 +1455,7 @@ const assigned = frozenAssignment?.assignedAgentId
 
 If `state.agentAssignments.length > 0` and a required executor assignment is missing, block with `needs_agent_assignment`.
 
-- [ ] **Step 6: Expose assignment in session payload**
+- [x] **Step 6: Expose assignment in session payload**
 
 In `packages/backend/src/session.routes.ts`, add `workflowController` and `workflowAgentAssignments` to `SessionDetail` assembly by parsing latest workflow run graph state:
 
@@ -1485,7 +1485,7 @@ function buildWorkflowAgentAssignmentViews(runs: WorkflowRun[]): WorkflowAgentAs
 }
 ```
 
-- [ ] **Step 7: Run assignment tests**
+- [x] **Step 7: Run assignment tests**
 
 Run:
 
@@ -1495,7 +1495,7 @@ node --import tsx --test packages/backend/src/workflows/agent-assignment.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit Task 6**
+- [x] **Step 8: Commit Task 6**
 
 ```bash
 git add packages/backend/src/workflows/agent-assignment.ts packages/backend/src/workflows/agent-assignment.test.ts packages/backend/src/workflows/graph/superpowers-routing-nodes.ts packages/backend/src/workflows/graph/superpowers-routing-nodes.test.ts packages/backend/src/workflows/graph/nodes.ts packages/backend/src/session.routes.ts packages/backend/src/session.routes.test.ts
