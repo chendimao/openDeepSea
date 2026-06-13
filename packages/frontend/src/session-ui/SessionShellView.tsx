@@ -55,6 +55,8 @@ import type {
   SessionWorkspacePayload,
   StatusSnapshot,
   WorkflowArtifactVersionView,
+  WorkflowAgentAssignmentView,
+  WorkflowControllerView,
   WorkflowGateView,
   WorkspaceFilePreview,
 } from '../lib/types';
@@ -1435,6 +1437,8 @@ function TranscriptCanvas({
             },
           })}
         />
+        <WorkflowControllerPanel controller={detail.workflowController ?? null} />
+        <WorkflowAgentAssignmentTable assignments={detail.workflowAgentAssignments ?? []} />
         {timeline.length === 0 ? (
           <div className="deepsea-empty deepsea-empty--center">发送第一条消息开始当前会话。</div>
         ) : timeline.map((item) => {
@@ -1659,6 +1663,71 @@ function WorkflowArtifactGatePanel({
                 )}
               </div>
             </footer>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WorkflowControllerPanel({
+  controller,
+}: {
+  controller?: WorkflowControllerView | null;
+}): JSX.Element | null {
+  if (!controller) return null;
+  return (
+    <section className="deepsea-workflow-controller" data-workflow-controller-panel="true" aria-label="Workflow controller">
+      <div className="deepsea-workflow-controller__header">
+        <span className="deepsea-status-chip" data-tone="ok">Workflow</span>
+        <strong>{controller.selected_intent ?? 'unrouted'}</strong>
+      </div>
+      <dl className="deepsea-workflow-controller__grid">
+        <div>
+          <dt>Stage</dt>
+          <dd>{controller.active_stage ?? 'pending'}</dd>
+        </div>
+        <div>
+          <dt>Controller</dt>
+          <dd>{controller.controller ?? 'planner'}</dd>
+        </div>
+        <div>
+          <dt>Next</dt>
+          <dd>{controller.next_action ?? '等待推进'}</dd>
+        </div>
+      </dl>
+      {controller.blocker ? (
+        <p className="deepsea-workflow-controller__blocker">{controller.blocker}</p>
+      ) : null}
+    </section>
+  );
+}
+
+function WorkflowAgentAssignmentTable({
+  assignments,
+}: {
+  assignments?: WorkflowAgentAssignmentView[];
+}): JSX.Element | null {
+  if (!assignments || assignments.length === 0) return null;
+  return (
+    <section className="deepsea-agent-assignment" data-agent-assignment-table="true" aria-label="子代理分配">
+      <header className="deepsea-agent-assignment__header">
+        <span className="deepsea-status-chip" data-tone="ok">Assignments</span>
+        <strong>子代理分配</strong>
+      </header>
+      <div className="deepsea-agent-assignment__rows">
+        {assignments.map((assignment) => (
+          <article className="deepsea-agent-assignment__row" key={`${assignment.task_id}:${assignment.role}`}>
+            <div className="deepsea-agent-assignment__task">
+              <strong>{assignment.task_title}</strong>
+              <span>{assignment.role} · {assignment.execution_mode}</span>
+            </div>
+            <div className="deepsea-agent-assignment__agent">
+              <span>{assignment.assigned_agent_name ?? assignment.assigned_agent_id ?? '未分配'}</span>
+              {assignment.backend ? <small>{assignment.backend}</small> : null}
+            </div>
+            {assignment.fallback_reason ? <p>{assignment.fallback_reason}</p> : null}
+            <code>{assignment.scope_write.join(', ') || 'scopeWrite 未声明'}</code>
           </article>
         ))}
       </div>

@@ -1771,7 +1771,7 @@ git commit -m "feat(workflow): 明确worktree和分支收尾门禁"
 - Test: `packages/frontend/src/session-ui/SessionShell.test.tsx`
 - Test: `packages/frontend/src/pages/SessionWorkspacePage.test.tsx`
 
-- [ ] **Step 1: Write failing SessionShell render test**
+- [x] **Step 1: Write failing SessionShell render test**
 
 In `packages/frontend/src/session-ui/SessionShell.test.tsx`, add:
 
@@ -1810,7 +1810,7 @@ test('SessionShell renders workflow controller and agent assignment table', () =
 
 Use existing render helpers in the test file. If fixture helper names differ, adapt this test to the local helper patterns.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -1820,7 +1820,7 @@ node --import tsx --test packages/frontend/src/session-ui/SessionShell.test.tsx
 
 Expected: FAIL because the new panels do not render.
 
-- [ ] **Step 3: Add controller panel component**
+- [x] **Step 3: Add controller panel component**
 
 In `packages/frontend/src/session-ui/SessionShellView.tsx`, add:
 
@@ -1850,7 +1850,7 @@ Render it near the existing workflow artifact panel:
 <WorkflowControllerPanel controller={detail.workflowController ?? null} />
 ```
 
-- [ ] **Step 4: Add assignment table component**
+- [x] **Step 4: Add assignment table component**
 
 In the same file:
 
@@ -1890,7 +1890,7 @@ Render:
 <WorkflowAgentAssignmentTable assignments={detail.workflowAgentAssignments ?? []} />
 ```
 
-- [ ] **Step 5: Add compact CSS**
+- [x] **Step 5: Add compact CSS**
 
 In `packages/frontend/src/session-ui/session-os.css`, add:
 
@@ -1942,7 +1942,7 @@ In `packages/frontend/src/session-ui/session-os.css`, add:
 }
 ```
 
-- [ ] **Step 6: Run frontend tests**
+- [x] **Step 6: Run frontend tests**
 
 Run:
 
@@ -1952,7 +1952,7 @@ node --import tsx --test packages/frontend/src/session-ui/SessionShell.test.tsx 
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 9**
+- [x] **Step 7: Commit Task 9**
 
 ```bash
 git add packages/frontend/src/lib/types.ts packages/frontend/src/session-ui/SessionShellView.tsx packages/frontend/src/session-ui/session-os.css packages/frontend/src/pages/SessionWorkspacePage.tsx packages/frontend/src/session-ui/SessionShell.test.tsx packages/frontend/src/pages/SessionWorkspacePage.test.tsx

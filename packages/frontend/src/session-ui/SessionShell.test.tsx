@@ -261,6 +261,37 @@ test('SessionShell hides artifact confirm action after approval while keeping ch
   assert.doesNotMatch(panel, /确认 plan/);
 });
 
+test('SessionShell renders workflow controller and agent assignment table', () => {
+  const payload = createPayload();
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-1',
+    selected_intent: 'standard_development',
+    active_stage: 'agent_assignment',
+    controller: 'planner',
+    blocker: null,
+    next_action: '等待用户确认计划',
+  };
+  payload.activeSession.workflowAgentAssignments = [{
+    task_id: 'task-1',
+    task_title: '实现设置页',
+    role: 'executor',
+    assigned_agent_id: 'fullstack-engineer',
+    assigned_agent_name: '全栈工程师',
+    backend: 'codex',
+    fallback_reason: '未找到更匹配的专门子代理，使用全栈工程师兜底执行',
+    execution_mode: 'serial',
+    scope_write: ['packages/frontend/src/pages/SettingsPage.tsx'],
+  }];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-workflow-controller-panel="true"/);
+  assert.match(html, /standard_development/);
+  assert.match(html, /data-agent-assignment-table="true"/);
+  assert.match(html, /全栈工程师/);
+  assert.match(html, /未找到更匹配/);
+});
+
 test('SessionShell renders local git state in the bottom path area', () => {
   const payload = createPayload();
   payload.status.git = {
