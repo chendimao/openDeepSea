@@ -260,6 +260,40 @@ test('parseGraphState preserves Superpowers finish branch decision options', () 
   });
 });
 
+test('parseGraphState preserves pending Superpowers finish branch decision', () => {
+  const options: NonNullable<AgentWorkflowState['finishBranchDecision']>['options'] = [
+    'merge_local',
+    'create_pr',
+    'keep_branch',
+    'discard_work',
+  ];
+  const state = {
+    ...emptyAgentWorkflowState({
+      workflowRunId: 'run-superpowers-pending-finish-branch',
+      projectId: 'project-superpowers-pending-finish-branch',
+      roomId: 'room-superpowers-pending-finish-branch',
+      taskId: 'task-superpowers-pending-finish-branch',
+      userGoal: 'Superpowers pending finish branch state',
+      projectPath: tempDir,
+    }),
+    finishBranchDecision: {
+      decision: null,
+      options,
+      reason: '等待用户选择分支收尾方式',
+      decidedAt: null,
+    },
+  };
+
+  const parsed = parseGraphState(serializeGraphState(state));
+
+  assert.deepEqual(parsed?.finishBranchDecision, {
+    decision: null,
+    options: ['merge_local', 'create_pr', 'keep_branch', 'discard_work'],
+    reason: '等待用户选择分支收尾方式',
+    decidedAt: null,
+  });
+});
+
 test('parseGraphState preserves risk assessment approval card and agent events', () => {
   const verificationCommands = [{
     command: 'npm run build -w @openclaw-room/backend',

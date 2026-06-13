@@ -43,6 +43,27 @@ test('buildSuperpowersRuntimeGraph exposes ordered Superpowers planning phase st
   );
 });
 
+test('worktree node records explicit skip decision instead of not_available placeholder', async () => {
+  const graph = buildSuperpowersRuntimeGraph();
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'run-worktree-1',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-1',
+    userGoal: '轻量修改',
+    projectPath: '/tmp/project',
+  });
+
+  const next = await graph.nodes.worktree({
+    ...state,
+    approvedSpecArtifactVersionId: 'artifact-spec-1',
+  });
+
+  assert.notEqual(next.worktree?.branchName, 'not_available');
+  assert.equal(next.worktreeDecision?.action, 'skip');
+  assert.match(next.worktreeDecision?.reason ?? '', /当前工作区|skip/i);
+});
+
 test('buildSuperpowersRuntimeGraph executable definition starts with planner route gates', () => {
   const graph = buildSuperpowersRuntimeGraph();
   const edgeIds = new Set(graph.executableDefinition.edges.map((edge) => `${edge.from}->${edge.to}:${edge.condition ?? ''}`));
@@ -606,7 +627,7 @@ test('Superpowers writing plans node blocks when planner omits required evidence
   assert.match(writingPlansStep?.error ?? '', /missing required evidence.*implementationPlanPath/);
 });
 
-test('Superpowers finish branch node records default keep branch decision and available options', async () => {
+test('finishBranch blocks for user decision instead of silently choosing keep_branch', async () => {
   const graph = buildSuperpowersRuntimeGraph();
   const state = emptyAgentWorkflowState({
     workflowRunId: 'run-superpowers-runtime-finish-branch',
@@ -634,15 +655,15 @@ test('Superpowers finish branch node records default keep branch decision and av
   );
 
   assert.equal(afterFinishBranch.superpowersPhase, 'finish_branch');
-  assert.equal(finishBranchDecision?.decision, 'keep_branch');
+  assert.equal(afterFinishBranch.status, 'awaiting_decision');
+  assert.equal(finishBranchDecision?.decision, null);
   assert.deepEqual(finishBranchDecision?.options, [
     'merge_local',
     'create_pr',
     'keep_branch',
     'discard_work',
   ]);
-  assert.equal(finishBranchDecision?.reason, 'awaiting explicit closeout automation');
-  assert.equal(afterFinishBranch.status, 'running');
+  assert.equal(finishBranchDecision?.reason, '等待用户选择分支收尾方式');
   assert.equal(afterFinishBranch.error, null);
 });
 
@@ -684,8 +705,9 @@ test('Superpowers planning nodes record phase artifacts and review verdicts', as
   const afterWorktree = await graph.nodes.worktree(afterSpecReview);
   assert.equal(afterWorktree.superpowersPhase, 'worktree');
   assert.equal(afterWorktree.worktree?.path, projectPath);
-  assert.equal(afterWorktree.worktree?.branchName, 'not_available');
-  assert.match(afterWorktree.worktree?.baseRef ?? '', /skipped/);
+  assert.equal(afterWorktree.worktree?.branchName, 'current-workspace');
+  assert.equal(afterWorktree.worktreeDecision?.action, 'skip');
+  assert.match(afterWorktree.worktree?.baseRef ?? '', /当前工作区/);
 
   const afterWritingPlans = await graph.nodes.writingPlans(afterWorktree);
   assert.equal(afterWritingPlans.superpowersPhase, 'writing_plans');

@@ -752,7 +752,7 @@ test('Superpowers dispatch blocks when implementation plan is missing or unappro
   assert.equal(workflowRepo.listSteps(unapprovedRun.id).some((step) => step.node_name === 'dispatch'), false);
 });
 
-test('Superpowers actual runtime executes TDD, two-stage reviews, verify, and finish branch before acceptance', async () => {
+test('Superpowers actual runtime executes TDD, two-stage reviews, verify, and waits at finish branch decision', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-superpowers-actual-route-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Runtime Superpowers Actual Route', path: projectPath });
@@ -785,19 +785,19 @@ test('Superpowers actual runtime executes TDD, two-stage reviews, verify, and fi
   const state = parseGraphState(latest.graph_state);
   const nodeNames = listRawStepNodeNames(run.id);
 
-  assert.deepEqual(nodeNames.slice(0, 7), [
+  assert.deepEqual(nodeNames.slice(0, 6), [
     'dispatch',
     'tdd_execute',
     'spec_compliance_review',
     'code_quality_review',
     'verify',
     'finish_branch',
-    'acceptance',
   ]);
+  assert.equal(latest.status, 'awaiting_decision');
   assert.equal(state?.superpowersPhase, 'finish_branch');
   assert.equal(state?.specComplianceReview?.verdict, 'approved');
   assert.equal(state?.codeQualityReview?.verdict, 'approved');
-  assert.equal(state?.finishBranchDecision?.decision, 'keep_branch');
+  assert.equal(state?.finishBranchDecision?.decision, null);
   assert.equal(nodeNames.includes('review'), false);
 });
 
@@ -855,13 +855,12 @@ test('Superpowers review stages run current room reviewer agents instead of auto
   });
   const state = parseGraphState(latest.graph_state);
 
-  assert.equal(latest.status, 'completed');
+  assert.equal(latest.status, 'awaiting_decision');
   assert.deepEqual(
     reviewCalls.map((call) => `${call.stage}:${call.nodeName}`),
     [
       'code_review:spec_compliance_review',
       'code_review:code_quality_review',
-      'acceptance:acceptance',
     ],
   );
   assert.match(reviewCalls[0]!.prompt, /spec_compliance_review/);
@@ -923,7 +922,7 @@ test('Superpowers review failure synchronizes workflow run as blocked', async ()
   assert.equal(steps.filter((step) => step.node_name === 'tdd_execute').length, 1);
 });
 
-test('Superpowers actual runtime records fresh verification evidence and default finish branch decision after verify succeeds', async () => {
+test('Superpowers actual runtime records fresh verification evidence and waits for finish branch decision after verify succeeds', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-superpowers-verify-evidence-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Runtime Superpowers Verify Evidence', path: projectPath });
@@ -961,14 +960,15 @@ test('Superpowers actual runtime records fresh verification evidence and default
   const nodeNames = listRawStepNodeNames(run.id);
 
   assert.ok(nodeNames.includes('finish_branch'));
-  assert.ok(nodeNames.includes('acceptance'));
+  assert.equal(nodeNames.includes('acceptance'), false);
+  assert.equal(latest.status, 'awaiting_decision');
   assert.equal(state?.verificationEvidence?.length, 1);
   assert.equal(state?.verificationEvidence?.[0]?.command, 'npm run build');
   assert.equal(state?.verificationEvidence?.[0]?.required, true);
   assert.equal(state?.verificationEvidence?.[0]?.fresh, true);
   assert.equal(state?.verificationEvidence?.[0]?.status, 'passed');
   assert.match(state?.verificationEvidence?.[0]?.recordedAt ?? '', /^\d{4}-\d{2}-\d{2}T/);
-  assert.equal(state?.finishBranchDecision?.decision, 'keep_branch');
+  assert.equal(state?.finishBranchDecision?.decision, null);
 });
 
 test('Superpowers actual runtime blocks before finish branch when required verification evidence is missing, failing, or stale', async () => {
@@ -1818,7 +1818,7 @@ test('graph workflow invites required built-in agents when the room only has pla
   const agents = roomAgentRepo.listByRoom(room.id);
   assert.deepEqual(
     agents.map((agent) => agent.agent_id),
-    ['planner', 'frontend-executor', 'backend-executor', 'reviewer', 'acceptor'],
+    ['planner', 'frontend-executor', 'backend-executor', 'reviewer'],
   );
   const children = taskRepo.listChildren(task.id);
   assert.equal(
@@ -1838,7 +1838,6 @@ test('graph workflow invites required built-in agents when the room only has pla
       'implementation:backend-executor',
       'code_review:reviewer',
       'code_review:reviewer',
-      'acceptance:acceptor',
     ],
   );
   assert.deepEqual(
@@ -2059,7 +2058,7 @@ test('graph workflow skips optional executor task when no single agent covers it
   const graphState = parseGraphState(detail?.run.graph_state ?? null);
   const children = taskRepo.listChildren(task.id);
 
-  assert.equal(detail?.run.status, 'completed');
+  assert.equal(detail?.run.status, 'awaiting_decision');
   assert.deepEqual(implementationAgents, ['backend-executor', 'fullstack-engineer']);
   assert.deepEqual(children.map((child) => child.title), ['补充后端 workflow 诊断', '必要时同步前后端共享展示字段']);
   assert.equal(graphState?.workflowPlan?.tasks[0]?.status, 'completed');
@@ -2113,7 +2112,7 @@ test('graph workflow assigns required cross-scope executor task to fullstack fal
   const graphState = parseGraphState(detail?.run.graph_state ?? null);
   const children = taskRepo.listChildren(task.id);
 
-  assert.equal(detail?.run.status, 'completed');
+  assert.equal(detail?.run.status, 'awaiting_decision');
   assert.equal(implementationCalls, 1);
   assert.equal(children.length, 1);
   assert.equal(
@@ -2167,13 +2166,13 @@ test('planning node consumes product-manager background without calling planner 
   const detail = workflowRepo.detail(run.id);
   const graphState = parseGraphState(detail?.run.graph_state ?? null);
 
-  assert.equal(detail?.run.status, 'completed');
+  assert.equal(detail?.run.status, 'awaiting_decision');
   assert.deepEqual(implementationAgents, ['backend-executor', 'frontend-executor']);
   assert.deepEqual(graphState?.plan?.tasks.map((item) => item.title), [
     '补充后端资源元数据与查询能力',
     '改造前端资源库展示与详情',
   ]);
-  assert.deepEqual(graphState?.workflowPlan?.tasks.map((item) => item.mode), ['parallel', 'serial', 'serial', 'serial']);
+  assert.deepEqual(graphState?.workflowPlan?.tasks.map((item) => item.mode), ['parallel', 'serial', 'serial']);
 });
 
 test('supervisor assignment hint is ignored when multiple executor tasks would make it ambiguous', async () => {
@@ -2794,13 +2793,13 @@ test('no-approval graph invites built-in executor instead of selecting non-ACP e
   const graphState = parseGraphState(detail?.run.graph_state ?? null);
 
   assert.ok(['backend-executor', 'frontend-executor', 'fullstack-engineer'].includes(implementationAgentId ?? ''));
-  assert.equal(detail?.run.status, 'completed');
+  assert.equal(detail?.run.status, 'awaiting_decision');
   assert.equal(childTasks.length, 1);
   assert.equal(
     childTasks[0]?.assigned_agent_id,
     roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === implementationAgentId)?.id,
   );
-  assert.equal(graphState?.status, 'completed');
+  assert.equal(graphState?.status, 'awaiting_decision');
 });
 
 test('graph execute invites matching executor instead of falling back outside runtime boundary', async () => {
@@ -2856,13 +2855,13 @@ test('graph execute invites matching executor instead of falling back outside ru
   const graphState = parseGraphState(detail?.run.graph_state ?? null);
 
   assert.equal(implementationAgentId, 'frontend-executor');
-  assert.equal(detail?.run.status, 'completed');
+  assert.equal(detail?.run.status, 'awaiting_decision');
   assert.equal(childTasks.length, 1);
   assert.equal(
     childTasks[0]?.assigned_agent_id,
     roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'frontend-executor')?.id,
   );
-  assert.equal(graphState?.status, 'completed');
+  assert.equal(graphState?.status, 'awaiting_decision');
 });
 
 test('graph execute blocks assigned write task when assigned executor is outside runtime boundary', async () => {

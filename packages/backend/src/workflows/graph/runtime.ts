@@ -1555,15 +1555,16 @@ async function runSuperpowersExecutionNode(
     currentStepId: step.id,
   }), nodeToRun);
   const blocked = nextState.status === 'blocked';
+  const awaitingDecision = nextState.status === 'awaiting_decision';
   const completedStep = tools.updateGraphStep(step.id, {
     node_name: nodeToRun as never,
-    status: blocked ? 'failed' : 'completed',
+    status: blocked ? 'failed' : awaitingDecision ? 'awaiting_approval' : 'completed',
     error: blocked ? nextState.error : null,
   });
   if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
 
   const updatedRun = tools.updateRun(context.run.id, {
-    status: blocked ? 'blocked' : 'running',
+    status: blocked ? 'blocked' : awaitingDecision ? 'awaiting_decision' : 'running',
     current_stage: nodeToRun === 'tdd_execute' ? 'implementation' : nodeToRun === 'finish_branch' ? 'acceptance' : 'code_review',
     error: blocked ? nextState.error : null,
   });
@@ -2050,7 +2051,7 @@ function routeRuntimeNode(
     if (node === 'code_quality_review') {
       return state.reviewVerdict === 'changes_requested' ? 'tdd_execute' : 'verify';
     }
-    if (node === 'finish_branch') return state.finishBranchDecision ? 'acceptance' : null;
+    if (node === 'finish_branch') return state.finishBranchDecision?.decision ? 'acceptance' : null;
   }
   if (node === 'approval') {
     const route = routeAfterApproval(state);
@@ -2092,7 +2093,7 @@ function matchesRouteCondition(
     if (condition === 'changes_requested') return state.reviewVerdict === 'changes_requested';
     if (condition === 'pass' || condition === 'approved' || condition === 'verify') return state.reviewVerdict !== 'changes_requested';
     if (node === 'finish_branch' && (condition === 'completed' || condition === 'acceptance')) {
-      return Boolean(state.finishBranchDecision);
+      return Boolean(state.finishBranchDecision?.decision);
     }
     return false;
   }

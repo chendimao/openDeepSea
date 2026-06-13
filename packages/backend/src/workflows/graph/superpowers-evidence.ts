@@ -167,6 +167,7 @@ function parseFinishBranchDecision(value: unknown): SuperpowersFinishBranchDecis
   if (!isRecord(value)) return null;
   const decision = value.decision;
   if (
+    decision !== null &&
     decision !== 'merge_local'
     && decision !== 'create_pr'
     && decision !== 'keep_branch'
@@ -176,7 +177,7 @@ function parseFinishBranchDecision(value: unknown): SuperpowersFinishBranchDecis
   }
   const reason = stringValue(value.reason);
   if (!reason) return null;
-  const options = arrayValue(value.options).filter((item): item is SuperpowersFinishBranchDecision['decision'] =>
+  const options = arrayValue(value.options).filter((item): item is Exclude<SuperpowersFinishBranchDecision['decision'], null> =>
     item === 'merge_local' || item === 'create_pr' || item === 'keep_branch' || item === 'discard_work',
   );
   return {

@@ -87,7 +87,7 @@ export const SUPERPOWERS_PLANNING_PHASE_STEPS: readonly SuperpowersPhaseStep[] =
 
 const DEFAULT_DESIGN_DOC_PATH = 'docs/superpowers/specs/superpowers-design.md';
 const DEFAULT_IMPLEMENTATION_PLAN_PATH = 'docs/superpowers/plans/superpowers-implementation-plan.md';
-const DEFAULT_FINISH_BRANCH_REASON = 'awaiting explicit closeout automation';
+const DEFAULT_FINISH_BRANCH_REASON = '等待用户选择分支收尾方式';
 
 export const SUPERPOWERS_FINISH_BRANCH_OPTIONS = [
   'merge_local',
@@ -133,13 +133,20 @@ export function createSuperpowersRuntimeNodes(tools?: GraphTools): SuperpowersRu
     },
 
     async worktree(state) {
+      const decision = {
+        action: 'skip' as const,
+        path: state.projectPath,
+        branchName: null,
+        reason: '当前工作区复用 session workspace；执行隔离由后续 using-git-worktrees 集成创建。',
+      };
       return {
         ...state,
         superpowersPhase: 'worktree',
+        worktreeDecision: decision,
         worktree: {
-          path: state.projectPath,
-          branchName: 'not_available',
-          baseRef: 'skipped: worktree handling is not implemented in this runtime node yet',
+          path: decision.path,
+          branchName: 'current-workspace',
+          baseRef: decision.reason,
         },
       };
     },
@@ -208,16 +215,20 @@ export function createSuperpowersRuntimeNodes(tools?: GraphTools): SuperpowersRu
         };
       }
 
+      const finishBranchDecision = state.finishBranchDecision ?? {
+        decision: null,
+        options: [...SUPERPOWERS_FINISH_BRANCH_OPTIONS],
+        reason: DEFAULT_FINISH_BRANCH_REASON,
+        decidedAt: null,
+      };
+      const hasDecision = Boolean(finishBranchDecision.decision);
       return {
         ...state,
         superpowersPhase: 'finish_branch',
-        finishBranchDecision: state.finishBranchDecision ?? {
-          decision: 'keep_branch',
-          options: SUPERPOWERS_FINISH_BRANCH_OPTIONS,
-          reason: DEFAULT_FINISH_BRANCH_REASON,
-          decidedAt: new Date().toISOString(),
-        } as unknown as AgentWorkflowState['finishBranchDecision'],
-        status: state.status === 'blocked' ? 'running' : state.status,
+        finishBranchDecision,
+        status: hasDecision
+          ? (state.status === 'blocked' || state.status === 'awaiting_decision' ? 'running' : state.status)
+          : 'awaiting_decision',
         error: null,
       };
     },

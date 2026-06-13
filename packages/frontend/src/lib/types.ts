@@ -85,7 +85,7 @@ export interface SuperpowersVerificationEvidence {
 }
 export type SuperpowersFinishBranchDecisionValue = 'merge_local' | 'create_pr' | 'keep_branch' | 'discard_work';
 export interface SuperpowersFinishBranchDecision {
-  decision: SuperpowersFinishBranchDecisionValue;
+  decision: SuperpowersFinishBranchDecisionValue | null;
   options: SuperpowersFinishBranchDecisionValue[];
   reason: string;
   decidedAt: string | null;

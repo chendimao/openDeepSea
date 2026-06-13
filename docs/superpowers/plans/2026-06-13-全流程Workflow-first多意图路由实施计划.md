@@ -1629,7 +1629,7 @@ git commit -m "feat(workflow): 接入范围和计划变更请求"
 - Modify: `packages/backend/src/workflows/graph/superpowers-gates.ts`
 - Test: `packages/backend/src/workflows/graph/superpowers-runtime.test.ts`
 
-- [ ] **Step 1: Write failing worktree evidence test**
+- [x] **Step 1: Write failing worktree evidence test**
 
 In `packages/backend/src/workflows/graph/superpowers-runtime.test.ts`, update or add:
 
@@ -1656,7 +1656,7 @@ test('worktree node records explicit skip decision instead of not_available plac
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run:
 
@@ -1666,7 +1666,7 @@ node --import tsx --test packages/backend/src/workflows/graph/superpowers-runtim
 
 Expected: FAIL because current worktree branchName is `not_available`.
 
-- [ ] **Step 3: Replace worktree placeholder**
+- [x] **Step 3: Replace worktree placeholder**
 
 In `packages/backend/src/workflows/graph/superpowers-nodes.ts`, replace worktree node with:
 
@@ -1693,7 +1693,7 @@ async worktree(state) {
 
 This is still a skip, but it is explicit evidence rather than a fake unavailable success. A later implementation can replace `skip` with actual `reuse/create`.
 
-- [ ] **Step 4: Write failing finish branch decision test**
+- [x] **Step 4: Write failing finish branch decision test**
 
 Add:
 
@@ -1720,7 +1720,7 @@ test('finishBranch blocks for user decision instead of silently choosing keep_br
 });
 ```
 
-- [ ] **Step 5: Replace default finish decision**
+- [x] **Step 5: Replace default finish decision**
 
 In `finishBranch(state)`, return:
 
@@ -1742,7 +1742,7 @@ decision: z.enum(['merge_local', 'create_pr', 'keep_branch', 'discard_work']).nu
 decidedAt: z.string().nullable(),
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run:
 
@@ -1752,7 +1752,7 @@ node --import tsx --test packages/backend/src/workflows/graph/superpowers-runtim
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 8**
+- [x] **Step 7: Commit Task 8**
 
 ```bash
 git add packages/backend/src/workflows/graph/superpowers-nodes.ts packages/backend/src/workflows/graph/superpowers-runtime.test.ts packages/backend/src/workflows/graph/state.ts packages/backend/src/workflows/graph/state.test.ts
