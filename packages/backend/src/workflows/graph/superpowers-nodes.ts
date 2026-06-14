@@ -272,6 +272,24 @@ function applyReviewState(
   verdict: SuperpowersReviewVerdict,
   findings: string[],
 ): AgentWorkflowState {
+  if (verdict === 'changes_requested' && isCompletionOnlyReviewFeedback(findings)) {
+    const review = {
+      verdict: 'approved' as const,
+      findings,
+      reviewedAt: null,
+    };
+    return {
+      ...state,
+      superpowersPhase: phase,
+      specComplianceReview: phase === 'spec_compliance_review' ? review : state.specComplianceReview,
+      codeQualityReview: phase === 'code_quality_review' ? review : state.codeQualityReview,
+      reviewFindings: findings,
+      reviewVerdict: 'pass',
+      status: state.status === 'blocked' ? 'running' : state.status,
+      error: null,
+    };
+  }
+
   if (verdict === 'changes_requested') {
     return {
       ...state,
@@ -333,6 +351,36 @@ function applyReviewState(
     status: state.status === 'blocked' ? 'running' : state.status,
     error: null,
   };
+}
+
+function isCompletionOnlyReviewFeedback(findings: string[]): boolean {
+  if (findings.length === 0) return false;
+  let hasCompletionGate = false;
+  return findings.every((finding) => {
+    const text = finding.toLowerCase();
+    const mentionsCompletionGate =
+      text.includes('commit') ||
+      text.includes('git add') ||
+      text.includes('git commit') ||
+      text.includes('提交') ||
+      text.includes('自动提交') ||
+      text.includes('收尾') ||
+      text.includes('完成前') ||
+      text.includes('not a git repository') ||
+      text.includes('fatal: not a git repository') ||
+      text.includes('.git');
+    if (mentionsCompletionGate) hasCompletionGate = true;
+    const isPassingContext =
+      text.includes('符合') ||
+      text.includes('通过') ||
+      text.includes('未发现') ||
+      text.includes('不涉及') ||
+      text.includes('not affect') ||
+      text.includes('no issue') ||
+      text.includes('no defect') ||
+      text.includes('no regression');
+    return mentionsCompletionGate || isPassingContext;
+  }) && hasCompletionGate;
 }
 
 function hasExecutableWorkflowRole(agents: ReturnType<GraphTools['readWorkflowContext']>['agents'], role: WorkflowRole): boolean {

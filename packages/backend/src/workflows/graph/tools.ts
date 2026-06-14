@@ -95,6 +95,7 @@ export interface GraphTools {
     structured_data: Record<string, unknown>;
     created_by_agent_id: string;
   }) => WorkflowArtifactVersion;
+  getArtifactVersion: typeof workflowArtifactVersionRepo.get;
   createWorkflowSessionMessage: (input: {
     workflowRunId: string;
     content: string;
@@ -222,6 +223,7 @@ export function createGraphTools(deps: GraphRuntimeDeps = {}): GraphTools {
       if (workflow) broadcastSessionWorkflowUpdated(workflow);
       return artifact;
     },
+    getArtifactVersion: workflowArtifactVersionRepo.get.bind(workflowArtifactVersionRepo),
     createWorkflowSessionMessage(input) {
       const run = workflowRepo.getRun(input.workflowRunId);
       if (!run) throw new Error('workflow not found');

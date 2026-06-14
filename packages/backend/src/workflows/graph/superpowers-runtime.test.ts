@@ -231,6 +231,68 @@ test('Superpowers review change requests keep TDD exemption evidence for documen
   assert.deepEqual(afterSpecChanges.tddExemption, tddExemption);
 });
 
+test('Superpowers review treats commit-only feedback as finish-branch concern', async () => {
+  const graph = buildSuperpowersRuntimeGraph();
+  const nodes = graph.nodes as typeof graph.nodes & {
+    specComplianceReview?: (state: ReturnType<typeof emptyAgentWorkflowState>) => Promise<ReturnType<typeof emptyAgentWorkflowState>>;
+  };
+  const baseState = emptyAgentWorkflowState({
+    workflowRunId: 'run-superpowers-runtime-review-commit-only',
+    projectId: 'project-superpowers-runtime-review-commit-only',
+    roomId: 'room-superpowers-runtime-review-commit-only',
+    taskId: 'task-superpowers-runtime-review-commit-only',
+    userGoal: 'Review documentation commit-only feedback',
+    projectPath: '/tmp/open-deep-sea-superpowers-runtime-review-commit-only',
+  });
+
+  const afterSpecChanges = await nodes.specComplianceReview!({
+    ...baseState,
+    specComplianceReview: {
+      verdict: 'changes_requested',
+      findings: [
+        'README.md:3 内容符合任务要求，未发现运行时回归风险。',
+        '.git:1 缺少提交闭环证据，git add README.md 失败并返回 fatal: not a git repository。',
+      ],
+      reviewedAt: null,
+    },
+  });
+
+  assert.equal(afterSpecChanges.reviewVerdict, 'pass');
+  assert.equal(afterSpecChanges.error, null);
+  assert.equal(afterSpecChanges.specComplianceReview?.verdict, 'approved');
+});
+
+test('Superpowers review keeps implementation defects actionable even with commit feedback', async () => {
+  const graph = buildSuperpowersRuntimeGraph();
+  const nodes = graph.nodes as typeof graph.nodes & {
+    specComplianceReview?: (state: ReturnType<typeof emptyAgentWorkflowState>) => Promise<ReturnType<typeof emptyAgentWorkflowState>>;
+  };
+  const baseState = emptyAgentWorkflowState({
+    workflowRunId: 'run-superpowers-runtime-review-mixed-feedback',
+    projectId: 'project-superpowers-runtime-review-mixed-feedback',
+    roomId: 'room-superpowers-runtime-review-mixed-feedback',
+    taskId: 'task-superpowers-runtime-review-mixed-feedback',
+    userGoal: 'Review mixed implementation and commit feedback',
+    projectPath: '/tmp/open-deep-sea-superpowers-runtime-review-mixed-feedback',
+  });
+
+  const afterSpecChanges = await nodes.specComplianceReview!({
+    ...baseState,
+    specComplianceReview: {
+      verdict: 'changes_requested',
+      findings: [
+        'src/index.ts:12 缺少测试覆盖，当前行为回归风险仍未解决。',
+        '.git:1 缺少提交闭环证据，git commit 尚未执行。',
+      ],
+      reviewedAt: null,
+    },
+  });
+
+  assert.equal(afterSpecChanges.reviewVerdict, 'changes_requested');
+  assert.equal(afterSpecChanges.error, 'Superpowers spec compliance review requested changes');
+  assert.equal(afterSpecChanges.specComplianceReview, null);
+});
+
 test('Superpowers review nodes invoke current room reviewer agent and parse JSON verdict', async () => {
   const projectPath = `/tmp/superpowers-review-runtime-project-${Date.now()}`;
   mkdirSync(projectPath, { recursive: true });

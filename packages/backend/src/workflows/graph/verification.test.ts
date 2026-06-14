@@ -23,8 +23,11 @@ const { createGraphNodes } = await import('./nodes.js');
 const { createGraphTools } = await import('./tools.js');
 
 test('verification allowlist accepts known safe npm commands', () => {
+  assert.equal(isAllowedVerificationCommand('npm test'), true);
+  assert.equal(isAllowedVerificationCommand('npm run test'), true);
   assert.equal(isAllowedVerificationCommand('npm run test -w @openclaw-room/backend'), true);
   assert.equal(isAllowedVerificationCommand('npm run build'), true);
+  assert.equal(isAllowedVerificationCommand('git diff --check'), true);
   assert.equal(isAllowedVerificationCommand('git status --short'), true);
 });
 

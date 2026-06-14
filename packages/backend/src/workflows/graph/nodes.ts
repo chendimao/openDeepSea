@@ -194,11 +194,12 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
     async approvalNode(state) {
       const context = tools.readWorkflowContext(state.workflowRunId);
       if (!state.plan) throw new Error('approval requires plan');
-      const needsApproval = state.plan.needsApproval;
+      const planArtifactApproved = hasApprovedPlanArtifactForState(tools, context.run.id, state);
+      const needsApproval = state.plan.needsApproval && !planArtifactApproved;
       const nextState: AgentWorkflowState = {
         ...state,
         currentNode: 'approval',
-        approval: needsApproval ? 'pending' : 'not_required',
+        approval: planArtifactApproved ? 'approved' : needsApproval ? 'pending' : 'not_required',
         status: needsApproval ? 'awaiting_approval' : state.status,
       };
       tools.updateRun(context.run.id, {
@@ -2597,6 +2598,22 @@ function recordStructuredAgentEvent(input: {
     ...input.state,
     agentEvents: [...(input.state.agentEvents ?? []), input.event],
   };
+}
+
+function hasApprovedPlanArtifactForState(
+  tools: GraphTools,
+  workflowRunId: string,
+  state: AgentWorkflowState,
+): boolean {
+  if (!state.selectedIntent || !state.selectedPath?.includes('route_skills')) return false;
+  if (!state.approvedPlanArtifactVersionId) return false;
+  const artifact = tools.getArtifactVersion(state.approvedPlanArtifactVersionId);
+  if (!artifact) return false;
+  return (
+    artifact.workflow_run_id === workflowRunId &&
+    artifact.artifact_type === 'plan' &&
+    artifact.status === 'approved'
+  );
 }
 
 function recordAgentStartedOnce(input: {

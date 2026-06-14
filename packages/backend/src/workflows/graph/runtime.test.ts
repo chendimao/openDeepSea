@@ -343,7 +343,7 @@ test('low-risk README docs plan passes approval gate without awaiting approval',
   assert.equal(planMetadata.approval_card, null);
 });
 
-test('medium-risk workflow plan waits for approval with approval card and decision request artifact', async () => {
+test('approved plan artifact lets medium-risk Superpowers workflow continue past approval gate', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-medium-risk-workflow-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Runtime Medium Risk Workflow', path: projectPath });
@@ -400,22 +400,17 @@ test('medium-risk workflow plan waits for approval with approval card and decisi
 
   const latestRun = workflowRepo.getRun(run.id);
   const state = parseGraphState(latestRun?.graph_state ?? null);
-  const decisionArtifact = workflowRepo.listArtifacts(run.id)
-    .find((artifact) => artifact.artifact_type === 'decision_request');
-  const decisionMetadata = parseArtifactMetadata(decisionArtifact);
   const planArtifact = workflowRepo.listArtifacts(run.id).find((artifact) => artifact.artifact_type === 'plan');
   const planMetadata = parseArtifactMetadata(planArtifact);
 
-  assert.equal(latestRun?.status, 'awaiting_approval');
-  assert.equal(state?.approval, 'pending');
+  assert.notEqual(latestRun?.status, 'awaiting_approval');
+  assert.equal(state?.approval, 'approved');
   assert.equal(state?.riskAssessment?.riskLevel, 'medium');
   assert.equal(state?.approvalCard?.riskLevel, 'medium');
   assert.equal(state?.plan?.needsApproval, true);
-  assert.equal(decisionMetadata.approval_card?.riskLevel, 'medium');
-  assert.equal(decisionMetadata.risk_assessment?.riskLevel, 'medium');
   assert.equal(planMetadata.approval_card?.riskLevel, 'medium');
-  assert.deepEqual(agentRunStages.filter((stage) => stage === 'implementation'), []);
-  assert.equal(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'dispatch'), false);
+  assert.ok(agentRunStages.some((stage) => stage === 'implementation'));
+  assert.equal(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'dispatch'), true);
 });
 
 test('planner risk metadata is preserved while missing fields are filled by risk assessment', async () => {

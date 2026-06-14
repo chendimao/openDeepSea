@@ -8,10 +8,13 @@ const SHELL_META_PATTERN = /[;&|`$<>]/;
 const DESTRUCTIVE_PATTERN = /\b(rm|mv|chmod|chown|dd|mkfs|shutdown|reboot)\b|\brm\s+-rf\b/i;
 
 const ALLOWED_COMMANDS = new Set([
+  'npm test',
+  'npm run test',
   'npm run test -w @openclaw-room/backend',
   'npm run build -w @openclaw-room/backend',
   'npm run build -w @openclaw-room/frontend',
   'npm run build',
+  'git diff --check',
   'git status --short',
 ]);
 
