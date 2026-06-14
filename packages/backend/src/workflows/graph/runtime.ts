@@ -38,7 +38,11 @@ import {
   type SuperpowersRuntimeGraph,
 } from './superpowers-runtime.js';
 import type { SuperpowersExecutionNodeName, SuperpowersPlanningNodeName } from './superpowers-nodes.js';
-import { createSuperpowersRoutingNodes } from './superpowers-routing-nodes.js';
+import {
+  createSuperpowersRoutingNodes,
+  parseRoutingPlannerEvidence,
+  type SuperpowersRoutingPlannerStage,
+} from './superpowers-routing-nodes.js';
 import { createGraphTools, type GraphRuntimeDeps } from './tools.js';
 import { mapVerificationResultsToEvidence } from './verification.js';
 import { applySuperpowersEvidencePatch, parseSuperpowersEvidence } from './superpowers-evidence.js';
@@ -1056,6 +1060,15 @@ async function runSuperpowersRoutingNode(
     createAssistantMessage(input) {
       return tools.createWorkflowSessionMessage(input);
     },
+    invokePlannerStage(input) {
+      return invokeRoutingPlannerStage({
+        tools,
+        state: input.state,
+        stageId: input.stageId,
+        requiredFields: input.requiredFields,
+        fallbackEvidence: input.fallbackEvidence,
+      });
+    },
     listAvailableWorkflowAgents() {
       const context = tools.readWorkflowContext(state.workflowRunId);
       const provisioning = ensureWorkflowAgentsForRun({
@@ -1105,6 +1118,91 @@ async function runSuperpowersRoutingNode(
   if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
   tools.updateGraphState(context.run.id, serializeGraphState(nextState));
   return nextState;
+}
+
+async function invokeRoutingPlannerStage(input: {
+  tools: ReturnType<typeof createGraphTools>;
+  state: AgentWorkflowState;
+  stageId: SuperpowersRoutingPlannerStage;
+  requiredFields: string[];
+  fallbackEvidence: Record<string, unknown>;
+}): Promise<Record<string, unknown> | null> {
+  const context = input.tools.readWorkflowContext(input.state.workflowRunId);
+  const planner = input.tools.selectAgentForRole('planner', context.agents);
+  if (!planner) return null;
+
+  const prompt = [
+    `当前 Superpowers 路由阶段：${input.stageId}`,
+    '你是 planner controller。请分析用户消息、项目上下文和当前 workflow state，然后输出 fenced JSON evidence。',
+    '不要执行代码修改，不要替 worker/reviewer/verifier 完成后续阶段。',
+    '',
+    '用户目标：',
+    input.state.userGoal,
+    '',
+    '当前 workflow state 摘要：',
+    JSON.stringify({
+      selectedIntent: input.state.selectedIntent,
+      selectedPath: input.state.selectedPath,
+      activeSuperpowersStage: input.state.activeSuperpowersStage,
+      artifactChangeRequestMessageId: input.state.artifactChangeRequestMessageId,
+      artifactChangeRequestArtifactVersionId: input.state.artifactChangeRequestArtifactVersionId,
+    }, null, 2),
+    '',
+    '项目上下文：',
+    context.workflowContext || '(empty)',
+    '',
+    '必须输出 JSON 字段：',
+    ...input.requiredFields.map((field) => `- ${field}`),
+  ].join('\n');
+  const step = input.tools.createGraphStep({
+    workflow_run_id: context.run.id,
+    task_id: context.task.id,
+    stage: inferStageForRoutingNode(input.stageId),
+    node_name: input.stageId,
+    status: 'running',
+    room_agent_id: planner.id,
+    assigned_room_agent_id: planner.id,
+    prompt,
+    sort_order: input.tools.nextStepSortOrder(context.run.id),
+  });
+  input.tools.broadcastStepCreated(context.room.id, step);
+  try {
+    const runResult = await input.tools.runAcpAgent({
+      agent: planner,
+      projectPath: context.project.path,
+      roomId: context.room.id,
+      prompt,
+      taskId: context.task.id,
+      workflowRunId: context.run.id,
+      workflowStepId: step.id,
+      workflowStage: inferStageForRoutingNode(input.stageId),
+    });
+    const output = runResult.run.stdout || runResult.message.content;
+    const evidence = runResult.status === 'completed'
+      ? parseRoutingPlannerEvidence(output)
+      : null;
+    const missing = evidence
+      ? input.requiredFields.filter((field) => !Object.prototype.hasOwnProperty.call(evidence, field))
+      : input.requiredFields;
+    const completedStep = input.tools.updateGraphStep(step.id, {
+      status: evidence && missing.length === 0 ? 'completed' : 'skipped',
+      agent_run_id: runResult.run.id,
+      result: output,
+      result_message_id: runResult.message.id,
+      error: evidence && missing.length === 0
+        ? null
+        : `Routing planner evidence incomplete; fallback used for ${input.stageId}`,
+    });
+    if (completedStep) input.tools.broadcastStepUpdated(context.room.id, completedStep);
+    return evidence && missing.length === 0 ? evidence : null;
+  } catch (error) {
+    const skippedStep = input.tools.updateGraphStep(step.id, {
+      status: 'skipped',
+      error: `Routing planner invocation failed; fallback used for ${input.stageId}: ${(error as Error).message}`,
+    });
+    if (skippedStep) input.tools.broadcastStepUpdated(context.room.id, skippedStep);
+    return null;
+  }
 }
 
 function inferStageForRoutingNode(node: SuperpowersRoutingNodeName): WorkflowStage {

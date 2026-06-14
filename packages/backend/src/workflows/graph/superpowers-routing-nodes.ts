@@ -5,6 +5,13 @@ import {
 } from '../agent-assignment.js';
 import { inferTaskProfile } from '../task-profile.js';
 import type { AgentWorkflowState, SuperpowersSelectedIntent } from './state.js';
+export type SuperpowersRoutingPlannerStage =
+  | 'intake'
+  | 'answer'
+  | 'analysis_plan'
+  | 'lightweight_plan'
+  | 'debug_plan'
+  | 'review_plan';
 
 export interface SuperpowersRoutingNodeTools {
   createArtifactVersionDraft(input: {
@@ -20,23 +27,40 @@ export interface SuperpowersRoutingNodeTools {
     content: string;
   }): { id: string };
   listAvailableWorkflowAgents?(): AvailableWorkflowAgent[];
+  invokePlannerStage?(input: {
+    stageId: SuperpowersRoutingPlannerStage;
+    state: AgentWorkflowState;
+    requiredFields: string[];
+    fallbackEvidence: Record<string, unknown>;
+  }): Promise<Record<string, unknown> | null>;
 }
 
 export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools) {
   return {
     async intake(state: AgentWorkflowState): Promise<AgentWorkflowState> {
-      const intent = state.selectedIntent ?? inferIntentFromGoal(state.userGoal);
-      const evidence = {
-        intent,
-        confidence: intent === 'answer' ? 0.7 : 0.6,
+      const fallbackIntent = state.selectedIntent ?? inferIntentFromGoal(state.userGoal);
+      const fallbackEvidence = {
+        intent: fallbackIntent,
+        confidence: fallbackIntent === 'answer' ? 0.7 : 0.6,
         reason: '根据用户消息和 session mode 生成初始路由。',
+      };
+      const evidence = await invokePlannerStageOrFallback(tools, {
+        stageId: 'intake',
+        state,
+        requiredFields: ['intent', 'confidence', 'reason'],
+        fallbackEvidence,
+      });
+      const intent = normalizeSelectedIntent(evidence.intent) ?? fallbackIntent;
+      const routingEvidence = {
+        ...evidence,
+        intent,
       };
       const artifact = tools.createArtifactVersionDraft({
         workflow_run_id: state.workflowRunId,
         artifact_type: 'intent_routing',
         title: 'Intent Routing',
-        content: formatJson(evidence),
-        structured_data: evidence,
+        content: formatJson(routingEvidence),
+        structured_data: routingEvidence,
         created_by_agent_id: 'planner',
       });
       return {
@@ -62,9 +86,20 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
     },
 
     async answer(state: AgentWorkflowState): Promise<AgentWorkflowState> {
+      const fallbackEvidence = {
+        answer: `已通过 workflow-first answer 路径处理：${state.userGoal}`,
+      };
+      const evidence = await invokePlannerStageOrFallback(tools, {
+        stageId: 'answer',
+        state,
+        requiredFields: ['answer'],
+        fallbackEvidence,
+      });
       const message = tools.createAssistantMessage({
         workflowRunId: state.workflowRunId,
-        content: `已通过 workflow-first answer 路径处理：${state.userGoal}`,
+        content: typeof evidence.answer === 'string' && evidence.answer.trim()
+          ? evidence.answer.trim()
+          : fallbackEvidence.answer,
       });
       return {
         ...state,
@@ -88,12 +123,18 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
     },
 
     async analysisPlan(state: AgentWorkflowState): Promise<AgentWorkflowState> {
-      const evidence = {
+      const fallbackEvidence = {
         conclusion: '已进入只读分析路径。',
         evidence: [],
         risks: [],
         recommendations: [],
       };
+      const evidence = await invokePlannerStageOrFallback(tools, {
+        stageId: 'analysis_plan',
+        state,
+        requiredFields: ['conclusion'],
+        fallbackEvidence,
+      });
       const artifact = tools.createArtifactVersionDraft({
         workflow_run_id: state.workflowRunId,
         artifact_type: 'analysis',
@@ -114,7 +155,7 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
 
     async lightweightPlan(state: AgentWorkflowState): Promise<AgentWorkflowState> {
       const lightweightDefaults = inferLightweightPlanDefaults(state.userGoal);
-      const plan = buildSingleTaskPlan({
+      const fallbackPlan = buildSingleTaskPlan({
         goal: state.userGoal,
         summary: '轻量任务走最小执行计划，用户确认后进入执行。',
         taskTitle: '执行轻量任务',
@@ -125,6 +166,13 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
         scopeWrite: lightweightDefaults.scopeWrite,
         needsApproval: false,
       });
+      const plannerEvidence = await invokePlannerStageOrFallback(tools, {
+        stageId: 'lightweight_plan',
+        state,
+        requiredFields: ['plan'],
+        fallbackEvidence: { plan: fallbackPlan },
+      });
+      const plan = normalizePlannerPlan(plannerEvidence.plan) ?? fallbackPlan;
       const structuredData = {
         ...plan,
         skipFullSpecReason: '轻量任务走最小计划，但仍需用户确认。',
@@ -155,7 +203,7 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
     },
 
     async debugPlan(state: AgentWorkflowState): Promise<AgentWorkflowState> {
-      const plan = buildSingleTaskPlan({
+      const fallbackPlan = buildSingleTaskPlan({
         goal: state.userGoal,
         summary: '系统化排查失败并修复根因。',
         taskTitle: '执行系统化调试',
@@ -164,6 +212,13 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
         verificationReason: 'post-debug verification',
         needsApproval: false,
       });
+      const plannerEvidence = await invokePlannerStageOrFallback(tools, {
+        stageId: 'debug_plan',
+        state,
+        requiredFields: ['plan'],
+        fallbackEvidence: { plan: fallbackPlan },
+      });
+      const plan = normalizePlannerPlan(plannerEvidence.plan) ?? fallbackPlan;
       const structuredData = {
         ...plan,
         mode: 'debug',
@@ -187,12 +242,18 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
     },
 
     async reviewPlan(state: AgentWorkflowState): Promise<AgentWorkflowState> {
-      const structuredData = {
+      const fallbackEvidence = {
         goal: state.userGoal,
         mode: 'review_only',
         reviewScope: [],
         verificationRequired: false,
       };
+      const structuredData = await invokePlannerStageOrFallback(tools, {
+        stageId: 'review_plan',
+        state,
+        requiredFields: ['goal', 'mode'],
+        fallbackEvidence,
+      });
       const artifact = tools.createArtifactVersionDraft({
         workflow_run_id: state.workflowRunId,
         artifact_type: 'plan',
@@ -290,6 +351,52 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
       };
     },
   };
+}
+
+async function invokePlannerStageOrFallback(
+  tools: SuperpowersRoutingNodeTools,
+  input: {
+    stageId: SuperpowersRoutingPlannerStage;
+    state: AgentWorkflowState;
+    requiredFields: string[];
+    fallbackEvidence: Record<string, unknown>;
+  },
+): Promise<Record<string, unknown>> {
+  if (!tools.invokePlannerStage) return input.fallbackEvidence;
+  const evidence = await tools.invokePlannerStage(input);
+  if (!evidence) return input.fallbackEvidence;
+  const missing = input.requiredFields.filter((field) =>
+    !Object.prototype.hasOwnProperty.call(evidence, field)
+  );
+  return missing.length === 0 ? evidence : input.fallbackEvidence;
+}
+
+export function parseRoutingPlannerEvidence(output: string): Record<string, unknown> | null {
+  for (const candidate of extractRoutingJsonCandidates(output)) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return null;
+}
+
+function normalizeSelectedIntent(value: unknown): SuperpowersSelectedIntent | null {
+  if (
+    value === 'answer' ||
+    value === 'analysis' ||
+    value === 'lightweight_task' ||
+    value === 'standard_development' ||
+    value === 'debug' ||
+    value === 'review_only'
+  ) {
+    return value;
+  }
+  return null;
 }
 
 function selectSupervisorHintedAgent(input: {
@@ -429,6 +536,92 @@ function buildSingleTaskPlan(input: {
     risks: [],
     needsApproval: input.needsApproval,
   };
+}
+
+function normalizePlannerPlan(value: unknown): NonNullable<AgentWorkflowState['plan']> | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Partial<NonNullable<AgentWorkflowState['plan']>>;
+  if (typeof candidate.goal !== 'string' || typeof candidate.summary !== 'string') return null;
+  if (!Array.isArray(candidate.tasks) || candidate.tasks.length === 0) return null;
+  const tasks = candidate.tasks.map((task) => normalizePlannerTask(task)).filter((task): task is NonNullable<AgentWorkflowState['plan']>['tasks'][number] => task !== null);
+  if (tasks.length === 0) return null;
+  const verificationCommands = Array.isArray(candidate.verificationCommands)
+    ? candidate.verificationCommands
+      .map((command) => normalizeVerificationCommand(command))
+      .filter((command): command is NonNullable<AgentWorkflowState['plan']>['verificationCommands'][number] => command !== null)
+    : [];
+  const verification = Array.isArray(candidate.verification)
+    ? candidate.verification.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : verificationCommands.map((item) => item.command);
+  return {
+    goal: candidate.goal,
+    summary: candidate.summary,
+    assumptions: Array.isArray(candidate.assumptions) ? candidate.assumptions.filter(isNonEmptyString) : [],
+    tasks,
+    reviewFocus: Array.isArray(candidate.reviewFocus) ? candidate.reviewFocus.filter(isNonEmptyString) : [],
+    verification,
+    verificationCommands,
+    risks: Array.isArray(candidate.risks) ? candidate.risks.filter(isNonEmptyString) : [],
+    needsApproval: candidate.needsApproval === true,
+  };
+}
+
+function normalizePlannerTask(value: unknown): NonNullable<AgentWorkflowState['plan']>['tasks'][number] | null {
+  if (!value || typeof value !== 'object') return null;
+  const task = value as Partial<NonNullable<AgentWorkflowState['plan']>['tasks'][number]>;
+  if (typeof task.title !== 'string' || typeof task.description !== 'string') return null;
+  return {
+    title: task.title,
+    description: task.description,
+    suggestedRole: normalizePlannerTaskRole(task.suggestedRole),
+    priority: task.priority === 'high' || task.priority === 'low' ? task.priority : 'normal',
+    acceptance: Array.isArray(task.acceptance) ? task.acceptance.filter(isNonEmptyString) : [],
+    scopeRead: Array.isArray(task.scopeRead) ? task.scopeRead.filter(isNonEmptyString) : [],
+    scopeWrite: Array.isArray(task.scopeWrite) ? task.scopeWrite.filter(isNonEmptyString) : [],
+    dependsOn: Array.isArray(task.dependsOn) ? task.dependsOn.filter(isNonEmptyString) : [],
+  };
+}
+
+function normalizeVerificationCommand(value: unknown): NonNullable<AgentWorkflowState['plan']>['verificationCommands'][number] | null {
+  if (!value || typeof value !== 'object') return null;
+  const command = value as Partial<NonNullable<AgentWorkflowState['plan']>['verificationCommands'][number]>;
+  if (typeof command.command !== 'string' || command.command.trim().length === 0) return null;
+  return {
+    command: command.command,
+    reason: typeof command.reason === 'string' && command.reason.trim().length > 0 ? command.reason : 'planner verification',
+    required: command.required !== false,
+  };
+}
+
+function normalizePlannerTaskRole(value: unknown): NonNullable<AgentWorkflowState['plan']>['tasks'][number]['suggestedRole'] {
+  if (
+    value === 'analyst' ||
+    value === 'planner' ||
+    value === 'coordinator' ||
+    value === 'executor' ||
+    value === 'reviewer' ||
+    value === 'acceptor'
+  ) {
+    return value;
+  }
+  return 'executor';
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function extractRoutingJsonCandidates(output: string): string[] {
+  const candidates: string[] = [];
+  const fenced = output.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi);
+  for (const match of fenced) {
+    if (match[1]?.trim()) candidates.push(match[1].trim());
+  }
+  const firstBrace = output.indexOf('{');
+  const lastBrace = output.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) candidates.push(output.slice(firstBrace, lastBrace + 1));
+  candidates.push(output.trim());
+  return candidates;
 }
 
 function inferLightweightPlanDefaults(goal: string): {

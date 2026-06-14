@@ -16,6 +16,8 @@ if (process.env.OPENCLAW_FAKE_ACP_PID_FILE) {
 
 if (process.env.OPENCLAW_FAKE_ACP_IGNORE_SIGTERM === '1') {
   process.on('SIGTERM', () => undefined);
+} else {
+  process.on('SIGTERM', () => process.exit(0));
 }
 
 class FakeAgent implements Agent {
@@ -273,6 +275,9 @@ function fakeWorkflowStageOutput(params: PromptRequest): string | null {
     .join('\n');
   if (!prompt) return null;
 
+  const routingPlannerOutput = fakeRoutingPlannerStageOutput(prompt);
+  if (routingPlannerOutput) return routingPlannerOutput;
+
   if (prompt.includes('代码审查智能体') || prompt.includes('spec_compliance_review') || prompt.includes('code_quality_review')) {
     return JSON.stringify({
       verdict: 'pass',
@@ -289,6 +294,31 @@ function fakeWorkflowStageOutput(params: PromptRequest): string | null {
       failedCriteria: [],
       notes: 'Accepted by fake ACP workflow stage output.',
     });
+  }
+
+  if (prompt.includes('brainstorming 阶段智能体')) {
+    return JSON.stringify({
+      superpowers: {
+        designDocPath: 'docs/superpowers/specs/fake-workflow-design.md',
+        designReviewVerdict: 'approved',
+      },
+    });
+  }
+
+  if (prompt.includes('writing_plans 阶段智能体')) {
+    return [
+      '```json',
+      JSON.stringify(fakeWritingPlansPlan(prompt)),
+      '```',
+      '```json',
+      JSON.stringify({
+        superpowers: {
+          implementationPlanPath: 'docs/superpowers/plans/fake-workflow-plan.md',
+          planReviewVerdict: 'approved',
+        },
+      }),
+      '```',
+    ].join('\n');
   }
 
   if (prompt.includes('执行智能体') || prompt.includes('tdd_execute')) {
@@ -308,24 +338,6 @@ function fakeWorkflowStageOutput(params: PromptRequest): string | null {
     ].join('\n');
   }
 
-  if (prompt.includes('brainstorming 阶段智能体')) {
-    return JSON.stringify({
-      superpowers: {
-        designDocPath: 'docs/superpowers/specs/fake-workflow-design.md',
-        designReviewVerdict: 'approved',
-      },
-    });
-  }
-
-  if (prompt.includes('writing_plans 阶段智能体')) {
-    return JSON.stringify({
-      superpowers: {
-        implementationPlanPath: 'docs/superpowers/plans/fake-workflow-plan.md',
-        planReviewVerdict: 'approved',
-      },
-    });
-  }
-
   if (prompt.includes('worktree 阶段智能体')) {
     return JSON.stringify({
       superpowers: {
@@ -339,4 +351,113 @@ function fakeWorkflowStageOutput(params: PromptRequest): string | null {
   }
 
   return null;
+}
+
+function fakeRoutingPlannerStageOutput(prompt: string): string | null {
+  const stage = prompt.match(/当前 Superpowers 路由阶段：([a-z_]+)/u)?.[1];
+  if (!stage) return null;
+  const goal = prompt.match(/用户目标：\n([\s\S]*?)\n\n当前 workflow state 摘要：/u)?.[1]?.trim() ?? '';
+  if (stage === 'intake') {
+    return fencedJson({
+      intent: inferFakeRoutingIntent(goal),
+      confidence: 0.97,
+      reason: 'fake ACP planner routing evidence',
+    });
+  }
+  if (stage === 'answer') {
+    return fencedJson({
+      answer: `fake ACP planner answer: ${goal}`,
+    });
+  }
+  if (stage === 'analysis_plan') {
+    return fencedJson({
+      conclusion: `fake ACP planner analysis: ${goal}`,
+      evidence: ['fake ACP routing planner evidence'],
+      risks: [],
+      recommendations: ['continue with workflow-first evidence'],
+    });
+  }
+  if (stage === 'lightweight_plan') {
+    return fencedJson({ plan: fakeSingleTaskPlan(goal, 'fake ACP lightweight plan', 'lightweight-executor') });
+  }
+  if (stage === 'debug_plan') {
+    return fencedJson({ plan: fakeSingleTaskPlan(goal, 'fake ACP debug plan', 'debug-executor') });
+  }
+  if (stage === 'review_plan') {
+    return fencedJson({
+      goal,
+      mode: 'review_only',
+      reviewScope: ['fake ACP review scope'],
+      verificationRequired: false,
+    });
+  }
+  return null;
+}
+
+function inferFakeRoutingIntent(goal: string): string {
+  const normalized = goal.toLowerCase();
+  if (/怎么|为什么|解释|what|why|how/.test(normalized)) return 'answer';
+  if (/分析|调研|评估|audit|analysis/.test(normalized)) return 'analysis';
+  if (/debug|报错|失败|异常|排查|修复.*bug/.test(normalized)) return 'debug';
+  if (/review|审查|代码审查/.test(normalized)) return 'review_only';
+  if (/文案|readme|轻量|小改|配置/.test(normalized)) return 'lightweight_task';
+  return 'standard_development';
+}
+
+function fakeSingleTaskPlan(goal: string, summary: string, suggestedRole: string) {
+  return {
+    goal,
+    summary,
+    assumptions: ['fake ACP deterministic browser validation'],
+    tasks: [{
+      title: summary,
+      description: goal,
+      suggestedRole,
+      priority: 'normal',
+      acceptance: ['workflow artifact can be approved from the browser'],
+      scopeRead: ['.'],
+      scopeWrite: [],
+      dependsOn: [],
+    }],
+    reviewFocus: ['routing evidence'],
+    verification: ['npm run build -w @openclaw-room/backend'],
+    verificationCommands: [{
+      command: 'npm run build -w @openclaw-room/backend',
+      reason: 'backend compilation',
+      required: true,
+    }],
+    risks: [],
+    needsApproval: false,
+  };
+}
+
+function fakeWritingPlansPlan(prompt: string) {
+  const goal = prompt.match(/任务：\n([\s\S]*?)\n\n/u)?.[1]?.trim() ||
+    prompt.match(/用户目标：\n([\s\S]*?)\n\n/u)?.[1]?.trim() ||
+    'fake ACP writing plans task';
+  return {
+    goal,
+    summary: 'fake ACP writing plans implementation plan',
+    assumptions: ['fake ACP deterministic browser validation'],
+    steps: [{
+      title: 'Implement workflow-first routing',
+      intent: goal,
+      assigneeRole: 'executor',
+      scopeRead: ['packages/backend/src/workflows'],
+      scopeWrite: ['packages/backend/src/workflows'],
+      acceptance: ['workflow-first path can proceed after plan approval'],
+      dependsOn: [],
+    }],
+    risks: [],
+    verification: [{
+      command: 'npm run build -w @openclaw-room/backend',
+      reason: 'backend compilation',
+      required: true,
+    }],
+    needsApproval: false,
+  };
+}
+
+function fencedJson(value: unknown): string {
+  return ['```json', JSON.stringify(value), '```'].join('\n');
 }

@@ -38,6 +38,80 @@ test('routeSkills records answer route and completes through answer node', async
   assert.equal(createdArtifacts.some((artifact) => artifact.artifact_type === 'intent_routing'), true);
 });
 
+test('routing planner evidence overrides heuristic templates when available', async () => {
+  const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, any> }> = [];
+  const messages: string[] = [];
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft(input) {
+      createdArtifacts.push({ artifact_type: input.artifact_type, structured_data: input.structured_data });
+      return { id: `artifact-${createdArtifacts.length}` };
+    },
+    createAssistantMessage(input) {
+      messages.push(input.content);
+      return { id: 'message-planner-answer' };
+    },
+    async invokePlannerStage(input) {
+      if (input.stageId === 'intake') {
+        return { intent: 'analysis', confidence: 0.94, reason: 'planner selected analysis path' };
+      }
+      if (input.stageId === 'answer') {
+        return { answer: 'planner answer content' };
+      }
+      if (input.stageId === 'analysis_plan') {
+        return { conclusion: 'planner analysis', evidence: ['repo'], risks: ['risk'], recommendations: ['next'] };
+      }
+      if (input.stageId === 'lightweight_plan') {
+        return {
+          plan: {
+            goal: 'planner lightweight goal',
+            summary: 'planner lightweight summary',
+            assumptions: ['small scope'],
+            tasks: [{
+              title: 'Planner task',
+              description: 'Use planner generated task',
+              suggestedRole: 'custom-lightweight-agent',
+              priority: 'high',
+              acceptance: ['planner acceptance'],
+              scopeRead: ['README.md'],
+              scopeWrite: ['README.md'],
+              dependsOn: [],
+            }],
+            reviewFocus: ['planner review'],
+            verification: ['git diff --check'],
+            verificationCommands: [{ command: 'git diff --check', reason: 'planner selected check', required: true }],
+            risks: ['planner risk'],
+            needsApproval: false,
+          },
+        };
+      }
+      return input.fallbackEvidence;
+    },
+  });
+  const initial = emptyAgentWorkflowState({
+    workflowRunId: 'run-planner-routing',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-1',
+    userGoal: '为什么 workflow 这么设计？',
+    projectPath: '/tmp/project',
+  });
+
+  const intake = await nodes.intake(initial);
+  const answer = await nodes.answer({ ...initial, selectedIntent: 'answer' });
+  const analysis = await nodes.analysisPlan({ ...initial, selectedIntent: 'analysis' });
+  const lightweight = await nodes.lightweightPlan({ ...initial, selectedIntent: 'lightweight_task' });
+
+  assert.equal(intake.selectedIntent, 'analysis');
+  assert.equal(createdArtifacts[0]?.structured_data.confidence, 0.94);
+  assert.equal(messages[0], 'planner answer content');
+  assert.equal(analysis.analysisArtifactVersionId, 'artifact-2');
+  assert.equal(createdArtifacts[1]?.structured_data.conclusion, 'planner analysis');
+  assert.equal(lightweight.plan?.summary, 'planner lightweight summary');
+  assert.equal(lightweight.plan?.tasks[0]?.title, 'Planner task');
+  assert.equal(lightweight.plan?.tasks[0]?.suggestedRole, 'executor');
+  assert.equal(lightweight.plan?.verificationCommands[0]?.command, 'git diff --check');
+});
+
 test('lightweightPlan creates a confirmable lightweight plan artifact', async () => {
   const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, unknown> }> = [];
   const nodes = createSuperpowersRoutingNodes({

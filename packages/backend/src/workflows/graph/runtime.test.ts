@@ -17,6 +17,7 @@ const { workflowArtifactVersionRepo } = await import('../../repos/workflows.js')
 const { agentRunRepo } = await import('../../repos/agent-runs.js');
 const { messageRepo } = await import('../../repos/messages.js');
 const { settingsRepo } = await import('../../repos/settings.js');
+const { sessionRepo, sessionMessageRepo } = await import('../../repos/sessions.js');
 const { taskEventRepo } = await import('../../repos/task-events.js');
 const { workflowDefinitionRepo } = await import('../../repos/workflow-definitions.js');
 const { createGraphNodes } = await import('./nodes.js');
@@ -744,6 +745,74 @@ test('Superpowers dispatch blocks when implementation plan is missing or unappro
   assert.match(unapprovedLatest.error ?? '', /plan review/i);
   assert.equal(unapprovedState?.superpowersPhase, 'plan_review');
   assert.equal(workflowRepo.listSteps(unapprovedRun.id).some((step) => step.node_name === 'dispatch'), false);
+});
+
+test('Superpowers routing runtime uses planner evidence before heuristic fallback', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-routing-planner-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Routing Planner', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Runtime Routing Planner Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner')
+    ?? roomAgentRepo.add({ room_id: room.id, agent_id: 'planner', agent_name: 'Planner' });
+  roomAgentRepo.setWorkflowRole(planner.id, 'planner');
+  roomAgentRepo.setCapabilitiesAndRuntime(planner.id, {
+    capabilities: ['planning'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Runtime routing planner session' });
+  const sourceMessage = sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    content: '这个项目的 workflow 是怎么工作的？',
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '这个项目的 workflow 是怎么工作的？',
+    source_message_id: sourceMessage.id,
+  });
+
+  const latest = await startGraphWorkflow(task.id, {
+    supervisor: lowConfidenceSupervisor,
+    runAcpAgent: async (input) => {
+      if (input.workflowStage === 'analysis') {
+        return createCompletedAgentRun(room.id, input, {
+          analysisOutput: [
+            '```json',
+            JSON.stringify({
+              intent: 'analysis',
+              confidence: 0.98,
+              reason: 'planner chose analysis rather than direct answer',
+              conclusion: 'planner analysis conclusion',
+              evidence: ['workflow graph evidence'],
+              risks: [],
+              recommendations: ['read workflow panel'],
+            }),
+            '```',
+          ].join('\n'),
+        });
+      }
+      return createCompletedAgentRun(room.id, input);
+    },
+  });
+  const state = parseGraphState(latest.graph_state);
+  const artifacts = workflowArtifactVersionRepo.listByRun(latest.id);
+  const routingArtifact = artifacts.find((artifact) => artifact.artifact_type === 'intent_routing');
+  const analysisArtifact = artifacts.find((artifact) => artifact.artifact_type === 'analysis');
+  const routingData = parseStructuredData(routingArtifact?.structured_data);
+  const analysisData = parseStructuredData(analysisArtifact?.structured_data);
+  const routingStep = workflowRepo.listSteps(latest.id).find((step) => step.node_name === 'intake');
+
+  assert.equal(latest.status, 'completed');
+  assert.equal(state?.selectedIntent, 'analysis');
+  assert.equal(state?.currentNode, 'analysis_plan');
+  assert.equal(routingData.intent, 'analysis');
+  assert.equal(routingData.confidence, 0.98);
+  assert.equal(analysisData.conclusion, 'planner analysis conclusion');
+  assert.equal(routingStep?.status, 'completed');
 });
 
 test('Superpowers actual runtime executes TDD, two-stage reviews, verify, and waits at finish branch decision', async () => {
@@ -2306,9 +2375,10 @@ test('graph workflow invites required built-in agents when the room only has pla
     children.find((child) => child.title === 'Update API route')?.assigned_agent_id,
     agents.find((agent) => agent.agent_id === 'backend-executor')?.id,
   );
+  assert.ok(calls.some((call) => call.stage === 'analysis' && call.agentId === 'planner'));
   assert.deepEqual(
     calls
-      .filter((call) => call.stage !== 'planning')
+      .filter((call) => call.stage === 'implementation' || call.stage === 'code_review')
       .map((call) => `${call.stage}:${call.agentId}`),
     [
       'implementation:frontend-executor',
@@ -4406,6 +4476,12 @@ function parseArtifactMetadata(artifact: { metadata: string | null } | undefined
   return artifact.metadata ? JSON.parse(artifact.metadata) as Record<string, any> : {};
 }
 
+function parseStructuredData(value: string | Record<string, unknown> | null | undefined): Record<string, any> {
+  if (!value) return {};
+  if (typeof value === 'string') return JSON.parse(value) as Record<string, any>;
+  return value as Record<string, any>;
+}
+
 function createTestWorkflowDefinition(): WorkflowDefinitionGraph {
   return {
     nodes: [
@@ -4437,7 +4513,7 @@ function createTestWorkflowDefinition(): WorkflowDefinitionGraph {
 function createCompletedAgentRun(
   roomId: string,
   input: RespondAsAgentInput,
-  options: { includeTddEvidence?: boolean; codeReviewOutput?: string; implementationOutput?: string } = {},
+  options: { includeTddEvidence?: boolean; codeReviewOutput?: string; implementationOutput?: string; analysisOutput?: string } = {},
 ) {
   const content = outputForStage(
     input.workflowStage,
@@ -4469,9 +4545,10 @@ function createCompletedAgentRun(
 
 function outputForStage(
   stage: WorkflowStage | null | undefined,
-  options: { includeTddEvidence?: boolean; codeReviewOutput?: string; implementationOutput?: string } = {},
+  options: { includeTddEvidence?: boolean; codeReviewOutput?: string; implementationOutput?: string; analysisOutput?: string } = {},
   prompt = '',
 ): string {
+  if (stage === 'analysis' && options.analysisOutput) return options.analysisOutput;
   if (stage === 'planning') {
     if (/当前 Superpowers 阶段：writing_plans/.test(prompt)) {
       return JSON.stringify({
