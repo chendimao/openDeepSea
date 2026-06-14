@@ -1053,6 +1053,18 @@ async function runSuperpowersRoutingNode(
   state: AgentWorkflowState,
   tools: ReturnType<typeof createGraphTools>,
 ): Promise<AgentWorkflowState> {
+  const context = tools.readWorkflowContext(state.workflowRunId);
+  const routingStep = nodeToRun === 'agent_assignment' || nodeToRun === 'reviewer_assignment'
+    ? tools.createGraphStep({
+      workflow_run_id: context.run.id,
+      task_id: context.task.id,
+      stage: inferStageForRoutingNode(nodeToRun),
+      node_name: nodeToRun as never,
+      status: 'running',
+      sort_order: tools.nextStepSortOrder(context.run.id),
+    })
+    : null;
+  if (routingStep) tools.broadcastStepCreated(context.room.id, routingStep);
   const nodes = createSuperpowersRoutingNodes({
     createArtifactVersionDraft(input) {
       return tools.createArtifactVersionDraft(input);
@@ -1109,13 +1121,19 @@ async function runSuperpowersRoutingNode(
   else if (nodeToRun === 'agent_assignment') nextState = await nodes.agentAssignment(state);
   else nextState = await nodes.passthrough(state, nodeToRun);
 
-  const context = tools.readWorkflowContext(state.workflowRunId);
   const updatedRun = tools.updateRun(context.run.id, {
     status: nextState.status,
     current_stage: inferStageForRoutingNode(nodeToRun),
     error: nextState.error,
   });
   if (updatedRun) tools.broadcastWorkflowUpdated(updatedRun);
+  if (routingStep) {
+    const completedStep = tools.updateGraphStep(routingStep.id, {
+      status: nextState.status === 'blocked' ? 'failed' : 'completed',
+      error: nextState.status === 'blocked' ? nextState.error : null,
+    });
+    if (completedStep) tools.broadcastStepUpdated(context.room.id, completedStep);
+  }
   tools.updateGraphState(context.run.id, serializeGraphState(nextState));
   return nextState;
 }
@@ -2148,10 +2166,21 @@ function nextNodeFromDefinition(
   const node = nodeJustRun ?? currentRouteNodeFromState(state, plan);
   if (!node) return plan.start;
   const outgoing = plan.next.get(node) ?? [];
-  if (outgoing.length === 0) return null;
+  if (outgoing.length === 0) {
+    if (node === 'agent_assignment') {
+      return state.selectedIntent === 'debug' ? 'systematic_debugging' : 'dispatch';
+    }
+    return null;
+  }
+  if (node === 'approval' && state.runtimeProfile === 'superpowers' && !state.agentAssignmentArtifactVersionId) {
+    const route = routeAfterApproval(state);
+    if (route === END) return null;
+    return 'agent_assignment';
+  }
   if (outgoing.length === 1 && !outgoing[0]!.condition) return outgoing[0]!.to;
   const routed = routeRuntimeNode(node, state);
   if (routed) {
+    if (node === 'approval' && routed === 'agent_assignment') return routed;
     const matching = outgoing.find((edge) => edge.to === routed);
     if (matching) return matching.to;
     if (node !== 'approval') return null;
@@ -2214,6 +2243,11 @@ function routeRuntimeNode(
     if (node === 'finish_branch') return state.finishBranchDecision?.decision ? 'acceptance' : null;
   }
   if (node === 'approval') {
+    if (state.runtimeProfile === 'superpowers') {
+      const route = routeAfterApproval(state);
+      if (route === END) return null;
+      return state.agentAssignmentArtifactVersionId ? route : 'agent_assignment';
+    }
     const route = routeAfterApproval(state);
     return route === END ? null : route;
   }
@@ -2305,9 +2339,15 @@ function nextNodeAfter(
   if (node === 'context') return 'planning';
   if (node === 'planning') return 'approval';
   if (node === 'approval') {
+    if (state.runtimeProfile === 'superpowers') {
+      const route = routeAfterApproval(state);
+      if (route === END) return null;
+      return state.agentAssignmentArtifactVersionId ? route : 'agent_assignment';
+    }
     const route = routeAfterApproval(state);
     return route === END ? null : route;
   }
+  if (node === 'agent_assignment') return state.selectedIntent === 'debug' ? 'systematic_debugging' : 'dispatch';
   if (node === 'dispatch') return 'execute';
   if (node === 'execute') {
     const route = routeAfterExecute(state);

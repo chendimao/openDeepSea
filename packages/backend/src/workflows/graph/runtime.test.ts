@@ -854,7 +854,8 @@ test('Superpowers actual runtime executes TDD, two-stage reviews, verify, and wa
   const state = parseGraphState(latest.graph_state);
   const nodeNames = listRawStepNodeNames(run.id);
 
-  assert.deepEqual(nodeNames.slice(0, 6), [
+  assert.deepEqual(nodeNames.slice(0, 7), [
+    'agent_assignment',
     'dispatch',
     'tdd_execute',
     'spec_compliance_review',
@@ -867,6 +868,8 @@ test('Superpowers actual runtime executes TDD, two-stage reviews, verify, and wa
   assert.equal(state?.specComplianceReview?.verdict, 'approved');
   assert.equal(state?.codeQualityReview?.verdict, 'approved');
   assert.equal(state?.finishBranchDecision?.decision, null);
+  assert.ok(state?.agentAssignmentArtifactVersionId);
+  assert.equal(workflowArtifactVersionRepo.listByRun(run.id).some((artifact) => artifact.artifact_type === 'agent_assignment'), true);
   assert.equal(nodeNames.includes('review'), false);
 });
 
