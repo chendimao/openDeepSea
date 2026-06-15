@@ -158,6 +158,11 @@ test('renders task execution json as workflow command flow instead of generic js
   );
 
   assert.match(html, /data-workflow-task-execution-flow="true"/);
+  assert.match(html, /data-flow-map="task-execution"/);
+  assert.match(html, /flow-path-parallel/);
+  assert.match(html, /Parallel Execution 并行执行/);
+  assert.match(html, /workflow-command-agent-card/);
+  assert.match(html, /agent-active-pulse/);
   assert.match(html, /Workflow Dispatch/);
   assert.match(html, /任务消息 workflow 流转/);
   assert.match(html, /意图判断/);

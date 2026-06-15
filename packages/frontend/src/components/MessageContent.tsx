@@ -515,10 +515,12 @@ function TaskExecutionFlowPanel({
 }): JSX.Element {
   const steps = decision.next_steps;
   const stageItems = buildTaskExecutionStageItems(decision);
+  const blocked = decision.state === 'blocked' || decision.status === 'blocked' || decision.status === 'needs_fix';
   const completedCount = decision.status === 'completed'
     ? Math.max(steps.length, 1)
     : steps.filter((step) => step.agent_id && decision.status === 'dispatching').length;
   const activeCount = decision.status === 'dispatching' ? Math.max(steps.length, 1) : 0;
+  const flowHeight = Math.max(176, 96 + Math.ceil(Math.max(steps.length, 1) / 2) * 76);
 
   return (
     <section
@@ -530,7 +532,7 @@ function TaskExecutionFlowPanel({
     >
       <header className="workflow-command-header">
         <div className="workflow-command-title">
-          <span className="workflow-command-mark" aria-hidden="true">
+          <span className={`workflow-command-mark${blocked ? ' is-blocked' : ' agent-active-pulse'}`} aria-hidden="true">
             {decision.state === 'blocked' || decision.status === 'blocked'
               ? <AlertTriangle className="h-4 w-4" />
               : <GitBranch className="h-4 w-4" />}
@@ -546,14 +548,16 @@ function TaskExecutionFlowPanel({
         </div>
       </header>
 
-      <ol className="workflow-command-stage-rail" aria-label="Workflow 阶段流转">
-        {stageItems.map((item) => (
-          <li key={item.key} data-state={item.state}>
-            <span>{item.label}</span>
-            <strong>{item.caption}</strong>
-          </li>
-        ))}
-      </ol>
+      <div className="workflow-command-stage-wrap">
+        <ol className="workflow-command-stage-rail" aria-label="Workflow 阶段流转">
+          {stageItems.map((item) => (
+            <li key={item.key} data-state={item.state}>
+              <span>{item.label}</span>
+              <strong>{item.caption}</strong>
+            </li>
+          ))}
+        </ol>
+      </div>
 
       <div className="workflow-command-body">
         <div className="workflow-command-metrics" aria-label="Workflow 执行摘要">
@@ -562,20 +566,66 @@ function TaskExecutionFlowPanel({
           <WorkflowCommandMetric icon={<Check className="h-3.5 w-3.5" />} label="已完成" value={String(completedCount)} />
         </div>
 
-        <div className="workflow-command-agent-flow" aria-label="Agent run 流转">
-          {steps.length > 0 ? steps.map((step, index) => (
-            <TaskExecutionStepRow
-              key={`${step.agent_id}:${index}`}
-              step={step}
-              index={index}
-              status={decision.status}
-              agentNameById={agentNameById}
-            />
-          )) : (
-            <div className="workflow-command-empty">
-              {decision.status === 'completed' ? '本轮 workflow 已收束，暂无新的 agent run。' : '等待 planner 生成下一批 agent run。'}
+        <div className="workflow-command-flow-map" data-flow-map="task-execution" aria-label="Agent run 流转">
+          <svg
+            className="workflow-command-flow-lines"
+            viewBox={`0 0 640 ${flowHeight}`}
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <path className="flow-path-parallel" d="M 34 18 L 34 64 L 172 64" fill="none" />
+            <path className="flow-path-parallel" d="M 34 64 L 516 64" fill="none" />
+            <path className="flow-path-sequential" d={`M 34 64 L 34 ${flowHeight - 16}`} fill="none" />
+          </svg>
+          <div className="workflow-command-phase-label">
+            <span>Parallel Execution 并行执行</span>
+          </div>
+          <div className="workflow-command-flow-node is-distribution">
+            <span className="workflow-command-flow-dot" aria-hidden="true" />
+            <div className="workflow-command-flow-heading">
+              <span>1. 任务分配与并行启动</span>
+              <strong>{blocked ? '需处理' : decision.status === 'completed' ? '完成' : '就绪'}</strong>
             </div>
-          )}
+            <div className="workflow-command-agent-grid">
+              {steps.length > 0 ? steps.map((step, index) => (
+                <TaskExecutionStepRow
+                  key={`${step.agent_id}:${index}`}
+                  step={step}
+                  index={index}
+                  status={decision.status}
+                  agentNameById={agentNameById}
+                />
+              )) : (
+                <div className="workflow-command-empty">
+                  {decision.status === 'completed' ? '本轮 workflow 已收束，暂无新的 agent run。' : '等待 planner 生成下一批 agent run。'}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="workflow-command-flow-node is-progress">
+            <span className="workflow-command-flow-dot is-active" aria-hidden="true" />
+            <div className="workflow-command-flow-heading">
+              <span>2. 并行开发进度</span>
+              <strong>{formatTaskExecutionStatus(decision.status)}</strong>
+            </div>
+            <div className="workflow-command-code-grid">
+              {buildTaskExecutionProgressCards(decision, steps).map((card) => (
+                <article key={card.file} className="workflow-command-code-card">
+                  <div className="workflow-command-code-head">
+                    <span>{card.file}</span>
+                    <strong>{card.status}</strong>
+                  </div>
+                  <div className="workflow-command-code-lines" aria-hidden="true">
+                    <span>{card.lineOne}</span>
+                    <span>{card.lineTwo}</span>
+                  </div>
+                  <div className="workflow-command-code-progress">
+                    <span style={{ width: `${card.progress}%` }} />
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -616,18 +666,62 @@ function TaskExecutionStepRow({
   agentNameById?: Map<string, string>;
 }): JSX.Element {
   const agentName = agentNameById?.get(step.agent_id) ?? step.agent_id;
+  const progress = getTaskExecutionStepProgress(status, index);
+  const icon = index % 2 === 0 ? 'terminal' : 'palette';
   return (
-    <article className="workflow-command-agent-row" data-status={status}>
-      <span className="workflow-command-agent-index">{String(index + 1).padStart(2, '0')}</span>
+    <article className="workflow-command-agent-card" data-status={status}>
+      <span className="workflow-command-agent-index" data-icon={icon}>{String(index + 1).padStart(2, '0')}</span>
       <div className="workflow-command-agent-main">
         <div className="workflow-command-agent-head">
           <strong title={step.agent_id}>{agentName}</strong>
           <span>{formatTaskExecutionStatus(status)}</span>
         </div>
         <p>{step.goal}</p>
+        <div className="workflow-command-agent-progress" aria-label={`进度 ${progress}%`}>
+          <span style={{ width: `${progress}%` }} />
+        </div>
       </div>
     </article>
   );
+}
+
+type TaskExecutionProgressCard = {
+  file: string;
+  status: string;
+  lineOne: string;
+  lineTwo: string;
+  progress: number;
+};
+
+function buildTaskExecutionProgressCards(
+  decision: TaskExecutionDecision,
+  steps: TaskExecutionStep[],
+): TaskExecutionProgressCard[] {
+  const sourceSteps = steps.length > 0
+    ? steps.slice(0, 2)
+    : [
+      { agent_id: 'planner', goal: decision.summary || formatTaskExecutionState(decision.state) },
+      { agent_id: 'verifier', goal: decision.reason || formatTaskExecutionStatus(decision.status) },
+    ];
+  return sourceSteps.map((step, index) => {
+    const agentKey = step.agent_id.split(/[-_.]/).filter(Boolean)[0] || `agent${index + 1}`;
+    const file = index % 2 === 0 ? `${agentKey}_handler.ts` : `${agentKey}_view.tsx`;
+    const progress = getTaskExecutionStepProgress(decision.status, index);
+    return {
+      file,
+      progress,
+      status: decision.status === 'completed' ? 'Done' : decision.status === 'blocked' || decision.status === 'needs_fix' ? 'Paused' : 'Coding...',
+      lineOne: index % 2 === 0 ? '+ async function executeFlow() {' : '+ const FlowNode = () => {',
+      lineTwo: step.goal.slice(0, 34) || '  return nextState',
+    };
+  });
+}
+
+function getTaskExecutionStepProgress(status: TaskExecutionDecision['status'], index: number): number {
+  if (status === 'completed') return 100;
+  if (status === 'blocked' || status === 'needs_fix') return index === 0 ? 72 : 38;
+  if (status === 'dispatching') return index === 0 ? 65 : 44;
+  return index === 0 ? 24 : 18;
 }
 
 type TaskExecutionStageItem = {
