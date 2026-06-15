@@ -1653,6 +1653,12 @@ function WorkflowChatMessage({
         <span className="deepsea-status-chip" data-tone="ok">Planner</span>
         <time className="deepsea-mono">{formatClock(group.updatedAt)}</time>
         <strong>{formatWorkflowFlowStatus(status)}</strong>
+        <WorkflowViewToggle
+          mode={viewMode}
+          onModeChange={setViewMode}
+          label="Workflow 显示模式"
+          className="deepsea-workflow-view-toggle--chat"
+        />
       </header>
       <div className="deepsea-message-body deepsea-workflow-chat">
         <div className="deepsea-workflow-chat__summary">
@@ -1660,12 +1666,6 @@ function WorkflowChatMessage({
             <span className="deepsea-status-chip" data-tone="ok">动态监控</span>
             <p className="deepsea-workflow-chat__summary-text" title={summary}>{summary}</p>
           </div>
-          <WorkflowViewToggle
-            mode={viewMode}
-            onModeChange={setViewMode}
-            label="Workflow 显示模式"
-            className="deepsea-workflow-view-toggle--chat"
-          />
         </div>
         <div className="deepsea-workflow-chat__badges" aria-label="Workflow 摘要">
           <span>{formatWorkflowIntentLabel(group.controller?.selected_intent)}</span>
@@ -1945,7 +1945,6 @@ function WorkflowFlowMap({
       </svg>
       <div className="deepsea-workflow-flow__phase">
         <span>{phaseLabel}</span>
-        {kind === 'mission' ? <strong>{summary}</strong> : null}
       </div>
       <div className="deepsea-workflow-flow__node">
         <span className="deepsea-workflow-flow__dot" aria-hidden="true" data-tone={status} />
