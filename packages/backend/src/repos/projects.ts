@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
+import type { SessionRunStatus } from '../session-types.js';
 import type { AgentRunStatus, MessageRoutingMode, Project, WorkflowStatus, WorkflowStepStatus } from '../types.js';
 
 export type DeleteProjectResult =
@@ -14,6 +15,7 @@ export type DeleteProjectResult =
     };
 
 const ACTIVE_AGENT_RUN_STATUSES: AgentRunStatus[] = ['running', 'queued', 'retrying'];
+const ACTIVE_SESSION_RUN_STATUSES: SessionRunStatus[] = ['queued', 'running', 'retrying', 'paused'];
 const ACTIVE_WORKFLOW_STATUSES: WorkflowStatus[] = ['draft', 'running', 'awaiting_decision', 'awaiting_approval', 'blocked'];
 const ACTIVE_WORKFLOW_STEP_STATUSES: WorkflowStepStatus[] = ['pending', 'running', 'awaiting_approval'];
 const PROJECT_DELETE_CANCELLATION_ERROR = 'Project deleted before run completed';
@@ -149,6 +151,27 @@ export const projectRepo = {
         timestamp,
         projectId,
         ...ACTIVE_AGENT_RUN_STATUSES,
+      );
+      db.prepare(
+        `UPDATE session_runs
+         SET status = 'cancelled',
+             error = COALESCE(error, ?),
+             stderr = CASE
+               WHEN stderr = '' THEN ?
+               ELSE stderr || ?
+             END,
+             updated_at = ?,
+             completed_at = ?
+         WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?)
+           AND status IN (${ACTIVE_SESSION_RUN_STATUSES.map(() => '?').join(', ')})`,
+      ).run(
+        PROJECT_DELETE_CANCELLATION_ERROR,
+        PROJECT_DELETE_CANCELLATION_ERROR,
+        `\n${PROJECT_DELETE_CANCELLATION_ERROR}`,
+        timestamp,
+        timestamp,
+        projectId,
+        ...ACTIVE_SESSION_RUN_STATUSES,
       );
       db.prepare(
         `UPDATE workflow_steps

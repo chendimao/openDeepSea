@@ -11,6 +11,7 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-pr
 
 const { projectRepo } = await import('./repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
+const { sessionRepo, sessionRunRepo } = await import('./repos/sessions.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { workflowRepo } = await import('./repos/workflows.js');
@@ -131,6 +132,48 @@ test('delete project stops active workflow runs and tasks before removing projec
   assert.notEqual(remainingStep?.status, 'running');
   const remainingTask = taskRepo.getIncludingDeleted(task.id);
   assert.notEqual(remainingTask?.status, 'in_progress');
+});
+
+test('delete project stops active session runs before removing project', async () => {
+  const { project } = createProjectFixture('active-session-run');
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Active Session Run',
+    provider: 'codex',
+    mode: 'code',
+  });
+  sessionRunRepo.create({
+    session_id: session.id,
+    provider: 'codex',
+    status: 'running',
+    mode: 'code',
+    prompt: 'work',
+  });
+  db.exec(`
+    CREATE TEMP TABLE session_run_delete_events (
+      run_id TEXT NOT NULL,
+      old_status TEXT NOT NULL,
+      new_status TEXT NOT NULL
+    );
+    CREATE TEMP TRIGGER record_project_delete_session_run_update
+    AFTER UPDATE ON session_runs
+    WHEN old.status IN ('queued', 'running', 'retrying', 'paused')
+      AND new.status NOT IN ('queued', 'running', 'retrying', 'paused')
+    BEGIN
+      INSERT INTO session_run_delete_events (run_id, old_status, new_status)
+      VALUES (old.id, old.status, new.status);
+    END;
+  `);
+
+  const res = await request(`/api/projects/${project.id}`, { method: 'DELETE' });
+
+  assert.equal(res.status, 204);
+  assert.equal(projectRepo.get(project.id), undefined);
+  const events = db.prepare('SELECT old_status, new_status FROM session_run_delete_events').all() as Array<{
+    old_status: string;
+    new_status: string;
+  }>;
+  assert.deepEqual(events, [{ old_status: 'running', new_status: 'cancelled' }]);
 });
 
 test('delete project removes internal records and scoped settings only', async () => {
