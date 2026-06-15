@@ -1,5 +1,5 @@
 import { Children, isValidElement, cloneElement, useMemo, useState, type ReactElement, type ReactNode } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { AlertTriangle, Check, CircleDot, Copy, GitBranch, Users } from 'lucide-react';
 import ReactMarkdown, { type Components, type UrlTransform } from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
@@ -11,7 +11,7 @@ import {
   type StructuredJsonValue,
 } from './structuredJson';
 import { useI18n } from '../lib/i18n';
-import type { Agent, MessageTrace, RoomAgent, Task } from '../lib/types';
+import type { Agent, MessageTrace, RoomAgent, Task, TaskExecutionDecision, TaskExecutionStep } from '../lib/types';
 import { buildAgentTranscript, type AgentTranscriptModel } from './agent-timeline/transcript';
 
 type MessagePart =
@@ -363,6 +363,16 @@ export function MarkdownPreview({
             })) {
               return null;
             }
+            const taskExecution = getTaskExecutionDecision(parsedJson.value);
+            if (taskExecution) {
+              return (
+                <TaskExecutionFlowPanel
+                  key={`preview-task-execution-${index}`}
+                  decision={taskExecution}
+                  agentNameById={agentNameById}
+                />
+              );
+            }
             return (
               <JsonBlock
                 key={`preview-json-${index}`}
@@ -496,6 +506,169 @@ function JsonBlock({
   );
 }
 
+function TaskExecutionFlowPanel({
+  decision,
+  agentNameById,
+}: {
+  decision: TaskExecutionDecision;
+  agentNameById?: Map<string, string>;
+}): JSX.Element {
+  const steps = decision.next_steps;
+  const stageItems = buildTaskExecutionStageItems(decision);
+  const completedCount = decision.status === 'completed'
+    ? Math.max(steps.length, 1)
+    : steps.filter((step) => step.agent_id && decision.status === 'dispatching').length;
+  const activeCount = decision.status === 'dispatching' ? Math.max(steps.length, 1) : 0;
+
+  return (
+    <section
+      className="workflow-task-bubble workflow-task-bubble--execution"
+      data-workflow-task-execution-flow="true"
+      data-state={decision.state}
+      data-status={decision.status}
+      aria-label="任务消息 workflow 流转"
+    >
+      <header className="workflow-command-header">
+        <div className="workflow-command-title">
+          <span className="workflow-command-mark" aria-hidden="true">
+            {decision.state === 'blocked' || decision.status === 'blocked'
+              ? <AlertTriangle className="h-4 w-4" />
+              : <GitBranch className="h-4 w-4" />}
+          </span>
+          <div>
+            <span>Workflow Dispatch</span>
+            <strong>{decision.summary || formatTaskExecutionState(decision.state)}</strong>
+          </div>
+        </div>
+        <div className="workflow-command-status">
+          <span className={`workflow-flow-status-pill is-${decision.status}`}>{formatTaskExecutionStatus(decision.status)}</span>
+          <span>{steps.length} agents</span>
+        </div>
+      </header>
+
+      <ol className="workflow-command-stage-rail" aria-label="Workflow 阶段流转">
+        {stageItems.map((item) => (
+          <li key={item.key} data-state={item.state}>
+            <span>{item.label}</span>
+            <strong>{item.caption}</strong>
+          </li>
+        ))}
+      </ol>
+
+      <div className="workflow-command-body">
+        <div className="workflow-command-metrics" aria-label="Workflow 执行摘要">
+          <WorkflowCommandMetric icon={<Users className="h-3.5 w-3.5" />} label="待派发" value={String(steps.length)} />
+          <WorkflowCommandMetric icon={<CircleDot className="h-3.5 w-3.5" />} label="进行中" value={String(activeCount)} />
+          <WorkflowCommandMetric icon={<Check className="h-3.5 w-3.5" />} label="已完成" value={String(completedCount)} />
+        </div>
+
+        <div className="workflow-command-agent-flow" aria-label="Agent run 流转">
+          {steps.length > 0 ? steps.map((step, index) => (
+            <TaskExecutionStepRow
+              key={`${step.agent_id}:${index}`}
+              step={step}
+              index={index}
+              status={decision.status}
+              agentNameById={agentNameById}
+            />
+          )) : (
+            <div className="workflow-command-empty">
+              {decision.status === 'completed' ? '本轮 workflow 已收束，暂无新的 agent run。' : '等待 planner 生成下一批 agent run。'}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {decision.reason ? (
+        <p className="workflow-command-reason">{decision.reason}</p>
+      ) : null}
+    </section>
+  );
+}
+
+function WorkflowCommandMetric({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+}): JSX.Element {
+  return (
+    <div>
+      <span aria-hidden="true">{icon}</span>
+      <small>{label}</small>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function TaskExecutionStepRow({
+  step,
+  index,
+  status,
+  agentNameById,
+}: {
+  step: TaskExecutionStep;
+  index: number;
+  status: TaskExecutionDecision['status'];
+  agentNameById?: Map<string, string>;
+}): JSX.Element {
+  const agentName = agentNameById?.get(step.agent_id) ?? step.agent_id;
+  return (
+    <article className="workflow-command-agent-row" data-status={status}>
+      <span className="workflow-command-agent-index">{String(index + 1).padStart(2, '0')}</span>
+      <div className="workflow-command-agent-main">
+        <div className="workflow-command-agent-head">
+          <strong title={step.agent_id}>{agentName}</strong>
+          <span>{formatTaskExecutionStatus(status)}</span>
+        </div>
+        <p>{step.goal}</p>
+      </div>
+    </article>
+  );
+}
+
+type TaskExecutionStageItem = {
+  key: string;
+  label: string;
+  caption: string;
+  state: 'done' | 'active' | 'blocked' | 'pending';
+};
+
+function buildTaskExecutionStageItems(decision: TaskExecutionDecision): TaskExecutionStageItem[] {
+  const blocked = decision.state === 'blocked' || decision.status === 'blocked' || decision.status === 'needs_fix';
+  const completed = decision.status === 'completed';
+  const dispatching = decision.status === 'dispatching';
+  return [
+    {
+      key: 'analysis',
+      label: '意图判断',
+      caption: blocked || completed || dispatching || decision.status === 'suggested' ? '已完成' : '等待',
+      state: blocked || completed || dispatching || decision.status === 'suggested' ? 'done' : 'pending',
+    },
+    {
+      key: 'planning',
+      label: '派发决策',
+      caption: blocked ? '需处理' : completed || dispatching ? '已确认' : '待确认',
+      state: blocked ? 'blocked' : completed || dispatching ? 'done' : 'active',
+    },
+    {
+      key: 'dispatch',
+      label: 'Agent Run',
+      caption: blocked ? '暂停' : completed ? '已完成' : dispatching ? '运行中' : '待启动',
+      state: blocked ? 'blocked' : completed ? 'done' : dispatching ? 'active' : 'pending',
+    },
+    {
+      key: 'review',
+      label: '回收验证',
+      caption: completed ? '已收束' : blocked ? '等待恢复' : '排队',
+      state: completed ? 'done' : blocked ? 'blocked' : 'pending',
+    },
+  ];
+}
+
 function TaskReadinessSummary({ readiness }: { readiness: JsonObject }): JSX.Element {
   const title = typeof readiness.title === 'string' ? readiness.title : '未命名任务';
   const ready = typeof readiness.ready === 'boolean' ? readiness.ready : null;
@@ -542,6 +715,69 @@ function getTaskExecution(data: JsonValue): JsonObject | null {
   if (!isStructuredJsonObject(data)) return null;
   const value = data.task_execution;
   return isStructuredJsonObject(value) ? value : null;
+}
+
+function getTaskExecutionDecision(data: JsonValue): TaskExecutionDecision | null {
+  const execution = getTaskExecution(data);
+  if (!execution) return null;
+  const state = typeof execution.state === 'string' ? execution.state : null;
+  const status = typeof execution.status === 'string' ? execution.status : null;
+  const summary = typeof execution.summary === 'string' ? execution.summary : '';
+  if (!isTaskExecutionState(state) || !isTaskExecutionStatus(status)) return null;
+  const nextSteps = Array.isArray(execution.next_steps)
+    ? execution.next_steps.flatMap((step): TaskExecutionStep[] => {
+      if (!isStructuredJsonObject(step)) return [];
+      const agentId = typeof step.agent_id === 'string' ? step.agent_id.trim() : '';
+      const goal = typeof step.goal === 'string' ? step.goal.trim() : '';
+      if (!agentId || !goal) return [];
+      return [{ agent_id: agentId, goal }];
+    })
+    : [];
+  return {
+    state,
+    status,
+    summary,
+    ...(typeof execution.reason === 'string' ? { reason: execution.reason } : {}),
+    next_steps: nextSteps,
+  };
+}
+
+function isTaskExecutionState(value: string | null): value is TaskExecutionDecision['state'] {
+  return value === 'ready_to_execute' ||
+    value === 'needs_choice' ||
+    value === 'needs_boundary_confirmation' ||
+    value === 'analysis_only' ||
+    value === 'blocked';
+}
+
+function isTaskExecutionStatus(value: string | null): value is TaskExecutionDecision['status'] {
+  return value === 'suggested' ||
+    value === 'dispatching' ||
+    value === 'completed' ||
+    value === 'blocked' ||
+    value === 'needs_fix';
+}
+
+function formatTaskExecutionState(state: TaskExecutionDecision['state']): string {
+  const labels: Record<TaskExecutionDecision['state'], string> = {
+    ready_to_execute: '准备执行',
+    needs_choice: '等待选择',
+    needs_boundary_confirmation: '等待边界确认',
+    analysis_only: '仅分析',
+    blocked: '已阻塞',
+  };
+  return labels[state];
+}
+
+function formatTaskExecutionStatus(status: TaskExecutionDecision['status']): string {
+  const labels: Record<TaskExecutionDecision['status'], string> = {
+    suggested: '待确认',
+    dispatching: '派发中',
+    completed: '已完成',
+    blocked: '阻塞',
+    needs_fix: '需修复',
+  };
+  return labels[status];
 }
 
 function shouldHideWorkflowJsonBlock(

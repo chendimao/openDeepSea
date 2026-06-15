@@ -130,7 +130,7 @@ test('only compact-renders short scalar json rows', () => {
   assert.match(html, /json-tree-row is-nested[\s\S]*nested/);
 });
 
-test('renders task execution json as generic structured json without a duplicate task execution summary card', () => {
+test('renders task execution json as workflow command flow instead of generic json', () => {
   const content = [
     '```json',
     JSON.stringify({
@@ -157,14 +157,15 @@ test('renders task execution json as generic structured json without a duplicate
     </I18nProvider>,
   );
 
-  assert.match(html, /json-tree/);
-  assert.match(html, /task_execution/);
-  assert.match(html, /ready_to_execute/);
-  assert.match(html, /suggested/);
-  assert.doesNotMatch(html, /下一步数量/);
-  assert.match(html, /runtime-inspector/);
+  assert.match(html, /data-workflow-task-execution-flow="true"/);
+  assert.match(html, /Workflow Dispatch/);
+  assert.match(html, /任务消息 workflow 流转/);
+  assert.match(html, /意图判断/);
+  assert.match(html, /Agent Run/);
+  assert.match(html, /运行时检查员/);
   assert.match(html, /检查 Codex CLI 是否加载/);
-  assert.doesNotMatch(html, /json-planner-summary/);
+  assert.doesNotMatch(html, /json-tree/);
+  assert.doesNotMatch(html, /task_execution/);
 });
 
 test('can suppress task execution json when an outer action panel renders it', () => {
