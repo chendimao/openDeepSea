@@ -43,6 +43,7 @@ import { getProviderSuperpowersStatus } from './provider-superpowers.js';
 import { buildProjectUsedAgents } from './project-used-agents.js';
 import { resourceAssetRepo } from './repos/resource-assets.js';
 import { roomAgentRepo, roomRepo } from './repos/rooms.js';
+import { sessionRunRepo } from './repos/sessions.js';
 import { settingsRepo } from './repos/settings.js';
 import { taskEventRepo } from './repos/task-events.js';
 import { taskExecutorRepo } from './repos/task-executors.js';
@@ -1984,14 +1985,13 @@ router.put('/projects/:id/routing', (req, res) => {
 });
 
 router.delete('/projects/:id', (req, res) => {
+  for (const run of sessionRunRepo.listActiveByProject(req.params.id)) {
+    runRegistry.cancel(run.id);
+  }
   const result = projectRepo.delete(req.params.id);
   if (result.ok) return res.status(204).end();
   if (result.reason === 'not_found') return res.status(404).json({ error: 'not found' });
-  return res.status(409).json({
-    error: 'project has active runs',
-    active_agent_run_count: result.activeAgentRunCount,
-    active_workflow_run_count: result.activeWorkflowRunCount,
-  });
+  return res.status(500).json({ error: 'project delete failed' });
 });
 
 // ---------- Rooms ----------

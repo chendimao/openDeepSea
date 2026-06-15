@@ -11,12 +11,13 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-pr
 
 const { projectRepo } = await import('./repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
-const { sessionRepo, sessionRunRepo } = await import('./repos/sessions.js');
+const { sessionAgentRuntimeRepo, sessionRepo, sessionRunRepo } = await import('./repos/sessions.js');
 const { taskRepo } = await import('./repos/tasks.js');
 const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { workflowRepo } = await import('./repos/workflows.js');
 const { settingsRepo } = await import('./repos/settings.js');
 const { db } = await import('./db.js');
+const { runRegistry } = await import('./run-registry.js');
 const { router } = await import('./routes.js');
 const express = (await import('express')).default;
 
@@ -136,44 +137,129 @@ test('delete project stops active workflow runs and tasks before removing projec
 
 test('delete project stops active session runs before removing project', async () => {
   const { project } = createProjectFixture('active-session-run');
+  const { project: otherProject } = createProjectFixture('other-active-session-run');
   const session = sessionRepo.create({
     project_id: project.id,
     title: 'Active Session Run',
     provider: 'codex',
     mode: 'code',
   });
-  sessionRunRepo.create({
+  const run = sessionRunRepo.create({
+    agent_id: 'planner',
     session_id: session.id,
     provider: 'codex',
     status: 'running',
     mode: 'code',
     prompt: 'work',
   });
+  const controller = runRegistry.create(run.id);
+  sessionAgentRuntimeRepo.upsert({
+    session_id: session.id,
+    agent_id: run.agent_id,
+    provider: run.provider,
+    status: 'running',
+    current_run_id: run.id,
+  });
+  const otherSession = sessionRepo.create({
+    project_id: otherProject.id,
+    title: 'Other Active Session Run',
+    provider: 'codex',
+    mode: 'code',
+  });
+  const otherRun = sessionRunRepo.create({
+    session_id: otherSession.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    status: 'running',
+    mode: 'code',
+    prompt: 'other work',
+  });
+  const otherController = runRegistry.create(otherRun.id);
   db.exec(`
     CREATE TEMP TABLE session_run_delete_events (
       run_id TEXT NOT NULL,
       old_status TEXT NOT NULL,
-      new_status TEXT NOT NULL
+      new_status TEXT NOT NULL,
+      completed_at INTEGER
     );
     CREATE TEMP TRIGGER record_project_delete_session_run_update
     AFTER UPDATE ON session_runs
     WHEN old.status IN ('queued', 'running', 'retrying', 'paused')
       AND new.status NOT IN ('queued', 'running', 'retrying', 'paused')
     BEGIN
-      INSERT INTO session_run_delete_events (run_id, old_status, new_status)
-      VALUES (old.id, old.status, new.status);
+      INSERT INTO session_run_delete_events (run_id, old_status, new_status, completed_at)
+      VALUES (old.id, old.status, new.status, new.completed_at);
+    END;
+    CREATE TEMP TABLE session_runtime_delete_events (
+      session_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      old_status TEXT NOT NULL,
+      new_status TEXT NOT NULL,
+      old_current_run_id TEXT,
+      new_current_run_id TEXT
+    );
+    CREATE TEMP TRIGGER record_project_delete_session_runtime_update
+    AFTER UPDATE ON session_agent_runtimes
+    WHEN old.current_run_id IS NOT NULL
+      AND new.current_run_id IS NULL
+    BEGIN
+      INSERT INTO session_runtime_delete_events (
+        session_id, agent_id, provider, old_status, new_status, old_current_run_id, new_current_run_id
+      )
+      VALUES (
+        old.session_id, old.agent_id, old.provider, old.status, new.status, old.current_run_id, new.current_run_id
+      );
     END;
   `);
 
   const res = await request(`/api/projects/${project.id}`, { method: 'DELETE' });
 
   assert.equal(res.status, 204);
+  assert.equal(await res.text(), '');
   assert.equal(projectRepo.get(project.id), undefined);
-  const events = db.prepare('SELECT old_status, new_status FROM session_run_delete_events').all() as Array<{
+  assert.equal(controller.signal.aborted, true);
+  assert.equal(runRegistry.getAbortReason(run.id), 'cancelled');
+  assert.equal(otherController.signal.aborted, false);
+  assert.equal(sessionRunRepo.get(otherRun.id)?.status, 'running');
+  assert.notEqual(projectRepo.get(otherProject.id), undefined);
+  const events = db.prepare('SELECT run_id, old_status, new_status, completed_at FROM session_run_delete_events').all() as Array<{
+    run_id: string;
     old_status: string;
     new_status: string;
+    completed_at: number | null;
   }>;
-  assert.deepEqual(events, [{ old_status: 'running', new_status: 'cancelled' }]);
+  assert.equal(events.length, 1);
+  const event = events[0];
+  assert.ok(event);
+  assert.deepEqual(event, {
+    run_id: run.id,
+    old_status: 'running',
+    new_status: 'cancelled',
+    completed_at: event.completed_at,
+  });
+  assert.equal(typeof event.completed_at, 'number');
+  const runtimeEvents = db.prepare(`
+    SELECT session_id, agent_id, provider, old_status, new_status, old_current_run_id, new_current_run_id
+    FROM session_runtime_delete_events
+  `).all() as Array<{
+    session_id: string;
+    agent_id: string;
+    provider: string;
+    old_status: string;
+    new_status: string;
+    old_current_run_id: string | null;
+    new_current_run_id: string | null;
+  }>;
+  assert.deepEqual(runtimeEvents, [{
+    session_id: session.id,
+    agent_id: run.agent_id,
+    provider: run.provider,
+    old_status: 'running',
+    new_status: 'idle',
+    old_current_run_id: run.id,
+    new_current_run_id: null,
+  }]);
 });
 
 test('delete project removes internal records and scoped settings only', async () => {

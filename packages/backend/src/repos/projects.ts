@@ -6,13 +6,7 @@ import type { AgentRunStatus, MessageRoutingMode, Project, WorkflowStatus, Workf
 
 export type DeleteProjectResult =
   | { ok: true }
-  | { ok: false; reason: 'not_found' }
-  | {
-      ok: false;
-      reason: 'active_runs';
-      activeAgentRunCount: number;
-      activeWorkflowRunCount: number;
-    };
+  | { ok: false; reason: 'not_found' };
 
 const ACTIVE_AGENT_RUN_STATUSES: AgentRunStatus[] = ['running', 'queued', 'retrying'];
 const ACTIVE_SESSION_RUN_STATUSES: SessionRunStatus[] = ['queued', 'running', 'retrying', 'paused'];
@@ -173,6 +167,14 @@ export const projectRepo = {
         projectId,
         ...ACTIVE_SESSION_RUN_STATUSES,
       );
+      db.prepare(
+        `UPDATE session_agent_runtimes
+         SET status = 'idle',
+             current_run_id = NULL,
+             updated_at = ?
+         WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?)
+           AND current_run_id IS NOT NULL`,
+      ).run(timestamp, projectId);
       db.prepare(
         `UPDATE workflow_steps
          SET status = 'cancelled',

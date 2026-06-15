@@ -321,6 +321,17 @@ export const sessionRunRepo = {
     `).get(sessionId) as SessionRun | undefined;
   },
 
+  listActiveByProject(projectId: string): SessionRun[] {
+    return db.prepare(`
+      SELECT session_runs.*
+      FROM session_runs
+      JOIN sessions ON sessions.id = session_runs.session_id
+      WHERE sessions.project_id = ?
+        AND session_runs.status IN (${ACTIVE_SESSION_RUN_STATUSES.map(() => '?').join(', ')})
+      ORDER BY session_runs.started_at ASC, session_runs.rowid ASC
+    `).all(projectId, ...ACTIVE_SESSION_RUN_STATUSES) as SessionRun[];
+  },
+
   appendStdout(id: string, chunk: string): SessionRun | undefined {
     db.prepare('UPDATE session_runs SET stdout = stdout || ?, updated_at = ? WHERE id = ?').run(chunk, now(), id);
     return this.get(id);

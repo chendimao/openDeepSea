@@ -16,6 +16,7 @@ const {
   setSessionRuntimeAdapterForTest,
   setSessionRuntimeGenerateImageToolDepsForTest,
 } = await import('./session-runtime.js');
+const { runRegistry } = await import('./run-registry.js');
 const { wsHub } = await import('./ws-hub.js');
 const { imageGenerationJobRepo } = await import('./image-generation/jobs.js');
 const { imageProviderProfileRepo } = await import('./image-generation/provider-profiles.js');
@@ -65,6 +66,61 @@ test('runSessionAgent writes run, stream output and evidence', async () => {
   const streamEvents = sent.map((payload) => JSON.parse(payload) as { type: string; agentEvent?: { event_type: string } });
   assert.ok(streamEvents.some((event) => event.type === 'session_run:stream' && event.agentEvent?.event_type === 'tool_call'));
   wsHub.removeSocket(socket);
+});
+
+test('runSessionAgent quietly finishes a cancelled run after project deletion removes its session records', async () => {
+  const project = projectRepo.create({
+    name: 'runtime deleted project',
+    path: mkdtempSync(join(tmpdir(), 'session-runtime-deleted-project-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Runtime Deleted Project',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  let runId = '';
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ envOverrides, signal }) => {
+      runId = envOverrides?.OPENDEEPSEA_SESSION_RUN_ID ?? '';
+      markStarted();
+      const abortSignal = signal;
+      await new Promise<void>((resolve) => {
+        if (!abortSignal) {
+          resolve();
+          return;
+        }
+        if (abortSignal.aborted) {
+          resolve();
+          return;
+        }
+        abortSignal.addEventListener('abort', () => resolve(), { once: true });
+      });
+      return { exitCode: 1, sessionId: 'acp-deleted-project', stderr: '' };
+    },
+  });
+
+  const runPromise = runSessionAgent({ sessionId: session.id, prompt: '继续', provider: 'codex' });
+  await started;
+
+  assert.ok(runId);
+  assert.equal(runRegistry.cancel(runId), true);
+  const deleteResult = projectRepo.delete(project.id);
+
+  assert.equal(deleteResult.ok, true);
+  assert.equal(sessionRepo.get(session.id), undefined);
+  assert.equal(sessionRunRepo.get(runId), undefined);
+  const settledRun = await runPromise;
+  assert.equal(settledRun.id, runId);
+  assert.equal(settledRun.status, 'cancelled');
 });
 
 test('runSessionAgent reuses provider session for same business session agent and provider', async () => {

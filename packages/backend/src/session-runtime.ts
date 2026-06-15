@@ -5,6 +5,7 @@ import {
   type GenerateImageToolDeps,
 } from './image-generation/tool.js';
 import { providerConfigService } from './provider-configs/service.js';
+import { now } from './db.js';
 import { projectRepo } from './repos/projects.js';
 import { sessionEvidenceRepo } from './repos/session-evidence.js';
 import { sessionTokenUsageRepo } from './repos/session-token-usage.js';
@@ -181,6 +182,7 @@ export async function runSessionAgent(input: {
         continue;
       }
       return finishSessionRun({
+        runSnapshot: run,
         runId: run.id,
         agentId,
         provider: input.provider,
@@ -195,6 +197,7 @@ export async function runSessionAgent(input: {
     }
   } catch (err) {
     return finishSessionRun({
+      runSnapshot: run,
       runId: run.id,
       agentId,
       provider: input.provider,
@@ -920,6 +923,7 @@ function sumTokenNumbers(values: Array<number | null>): number | null {
 }
 
 function finishSessionRun(input: {
+  runSnapshot: SessionRun;
   runId: string;
   agentId: string;
   provider: AcpBackend;
@@ -934,7 +938,18 @@ function finishSessionRun(input: {
   const updated = sessionRunRepo.updateStatus(input.runId, input.status, {
     error: input.status === 'failed' ? input.error ?? null : null,
   });
-  if (!updated) throw new Error(`Session run ${input.runId} not found`);
+  if (!updated) {
+    if (shouldQuietlyFinishDeletedCancelledRun(input.runId, input.status)) {
+      return buildDeletedCancelledRunSnapshot(input.runSnapshot, input.error);
+    }
+    throw new Error(`Session run ${input.runId} not found`);
+  }
+  if (!sessionRepo.get(updated.session_id)) {
+    if (shouldQuietlyFinishDeletedCancelledRun(input.runId, input.status)) {
+      return buildDeletedCancelledRunSnapshot(updated, input.error);
+    }
+    throw new Error(`Session ${updated.session_id} not found for run ${input.runId}`);
+  }
   sessionAgentRuntimeRepo.upsert({
     session_id: updated.session_id,
     agent_id: input.agentId,
@@ -989,6 +1004,21 @@ function finishSessionRun(input: {
     broadcastActiveSessionUpsert(updated.session_id);
   }
   return updated;
+}
+
+function shouldQuietlyFinishDeletedCancelledRun(runId: string, status: SessionRunStatus): boolean {
+  return status === 'cancelled' && runRegistry.getAbortReason(runId) === 'cancelled';
+}
+
+function buildDeletedCancelledRunSnapshot(run: SessionRun, error: string | null | undefined): SessionRun {
+  const timestamp = now();
+  return {
+    ...run,
+    status: 'cancelled',
+    error: error ?? run.error,
+    updated_at: timestamp,
+    completed_at: timestamp,
+  };
 }
 
 function normalizeAgentId(agentId: string | null | undefined): string {
