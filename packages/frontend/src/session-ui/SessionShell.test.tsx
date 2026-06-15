@@ -214,12 +214,13 @@ test('SessionShell renders workflow spec and plan gates as read-only artifacts',
   }];
 
   const html = renderSessionShell(payload);
-  const panel = html.match(/<section[^>]+data-workflow-artifact-panel="true"[\s\S]*?<\/section>/)?.[0] ?? '';
+  const panel = html.match(/<section[^>]+data-workflow-mission-strip="true"[\s\S]*?<\/section>/)?.[0] ?? '';
 
   assert.match(html, /Plan v1/);
-  assert.match(html, /只读计划/);
-  assert.match(html, /请求 planner 修改/);
-  assert.match(html, /确认 plan/);
+  assert.match(html, /Workflow Mission/);
+  assert.match(html, /执行前必须确认 plan 版本/);
+  assert.match(html, /请求修改/);
+  assert.match(html, /确认/);
   assert.doesNotMatch(panel, /<textarea\b/);
   assert.match(sessionShellViewSource, /workflowArtifactChangeRequest:\s*\{/);
   assert.match(sessionShellViewSource, /workflowRunId:\s*artifact\.workflow_run_id/);
@@ -254,12 +255,66 @@ test('SessionShell renders workflow spec approval action', () => {
   }];
 
   const html = renderSessionShell(payload);
-  const panel = html.match(/<section[^>]+data-workflow-artifact-panel="true"[\s\S]*?<\/section>/)?.[0] ?? '';
+  const panel = html.match(/<section[^>]+data-workflow-mission-strip="true"[\s\S]*?<\/section>/)?.[0] ?? '';
 
   assert.match(panel, /等待用户确认/);
   assert.match(panel, /Spec v1/);
-  assert.match(panel, /确认 spec/);
+  assert.match(panel, /确认/);
   assert.match(panel, /data-workflow-artifact-action="approve"/);
+});
+
+test('SessionShell renders workflow mission strip with gate and agent summaries', () => {
+  const payload = createPayload();
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-1',
+    selected_intent: 'standard_development',
+    active_stage: 'planning',
+    controller: 'planner',
+    blocker: null,
+    next_action: '等待 plan gate',
+  };
+  payload.activeSession.workflowArtifacts = [{
+    id: 'artifact-plan-1',
+    workflow_run_id: 'workflow-run-1',
+    artifact_type: 'plan',
+    version: 1,
+    status: 'reviewing',
+    title: '实施计划',
+    content: '# Plan\n\n- step',
+    structured_data: null,
+    created_by_agent_id: 'planner',
+    change_request_message_id: null,
+    approved_by: null,
+    approved_at: null,
+    created_at: Date.now(),
+  }];
+  payload.activeSession.workflowGates = [{
+    kind: 'plan_confirm',
+    workflow_run_id: 'workflow-run-1',
+    artifact_version_id: 'artifact-plan-1',
+    status: 'pending',
+    reason: '需要用户确认',
+  }];
+  payload.activeSession.workflowAgentAssignments = [{
+    task_id: 'task-1',
+    task_title: '实现 Mission Strip',
+    role: 'executor',
+    execution_mode: 'serial',
+    assigned_agent_id: 'agent-codex',
+    assigned_agent_name: 'Codex',
+    backend: 'codex',
+    fallback_reason: null,
+    scope_write: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
+  }];
+
+  const html = renderSessionShell(payload, { onApproveWorkflowArtifact: () => undefined });
+  const mission = html.match(/<section[^>]+data-workflow-mission-strip="true"[\s\S]*?<\/section>/)?.[0] ?? '';
+
+  assert.match(mission, /Workflow Mission/);
+  assert.match(mission, /等待 plan gate/);
+  assert.match(mission, /1 个门禁/);
+  assert.match(mission, /Codex/);
+  assert.match(mission, /data-workflow-artifact-action="approve"/);
 });
 
 test('SessionShell surfaces workflow approval action in the inspector', () => {
@@ -359,13 +414,13 @@ test('SessionShell hides artifact confirm action after approval while keeping ch
   }];
 
   const html = renderSessionShell(payload);
-  const panel = html.match(/<section[^>]+data-workflow-artifact-panel="true"[\s\S]*?<\/section>/)?.[0] ?? '';
+  const panel = html.match(/<section[^>]+data-workflow-mission-strip="true"[\s\S]*?<\/section>/)?.[0] ?? '';
 
-  assert.match(panel, /已确认产物/);
+  assert.match(panel, /Workflow Mission/);
   assert.match(panel, /Plan v1/);
-  assert.match(panel, /请求 planner 修改/);
+  assert.match(panel, /请求修改/);
   assert.match(panel, /已确认/);
-  assert.doesNotMatch(panel, /确认 plan/);
+  assert.doesNotMatch(panel, /data-workflow-artifact-action="approve"/);
 });
 
 test('SessionShell renders workflow controller and agent assignment table', () => {
@@ -392,11 +447,45 @@ test('SessionShell renders workflow controller and agent assignment table', () =
 
   const html = renderSessionShell(payload);
 
-  assert.match(html, /data-workflow-controller-panel="true"/);
+  assert.match(html, /data-workflow-mission-strip="true"/);
   assert.match(html, /standard_development/);
-  assert.match(html, /data-agent-assignment-table="true"/);
+  assert.match(html, /Workflow Mission/);
   assert.match(html, /全栈工程师/);
   assert.match(html, /未找到更匹配/);
+});
+
+test('SessionShell renders agent run as flow capsule with event rail', () => {
+  const payload = createPayload();
+  const run = payload.activeSession.runs[0]!;
+  payload.activeSession.runs = [{
+    ...run,
+    id: 'run-flow-1',
+    agent_id: 'agent-codex',
+    status: 'running',
+    stdout: '执行输出正文',
+    stderr: '',
+    activity_log: '',
+    phase: 'implementing',
+  }];
+  payload.activeSession.agentEvents = [{
+    id: 'event-flow-1',
+    session_id: run.session_id,
+    agent_id: 'agent-codex',
+    run_id: 'run-flow-1',
+    seq: 1,
+    channel: 'event',
+    event_type: 'tool_call',
+    content: '读取 SessionShellView.tsx',
+    payload_json: null,
+    created_at: Date.now(),
+  }];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-run-flow-capsule="true"/);
+  assert.match(html, /data-run-event-rail="true"/);
+  assert.match(html, /implementing/);
+  assert.match(html, /执行输出正文/);
 });
 
 test('SessionShell renders active session change summaries in the sidebar rows', () => {
@@ -2266,7 +2355,7 @@ test('SessionShell keeps process-looking answer text in run body', () => {
   ];
 
   const html = renderSessionShell(payload);
-  const runLogIndex = html.indexOf('class="deepsea-run-log"');
+  const runLogIndex = html.indexOf('data-run-flow-capsule="true"');
 
   assert.ok(runLogIndex >= 0);
   assert.ok(html.indexOf('我会直接按上传文件读取图片') > runLogIndex);

@@ -34,7 +34,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { createPortal } from 'react-dom';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { DragEvent } from 'react';
+import type { DragEvent, ReactNode } from 'react';
 import type {
   ActiveSessionSummary,
   ApprovalCardMetadata,
@@ -1437,9 +1437,8 @@ function TranscriptCanvas({
     <section className="deepsea-transcript" aria-label="Active Session">
       <SessionTitleBar detail={detail} todoStats={todoStats} />
       <div className="deepsea-transcript__scroll" data-transcript-scroll="true" ref={transcriptRef}>
-        <WorkflowArtifactGatePanel
-          artifacts={detail.workflowArtifacts ?? []}
-          gates={detail.workflowGates ?? []}
+        <WorkflowMissionStrip
+          detail={detail}
           onApprove={onApproveWorkflowArtifact}
           onRequestChange={(artifact) => onSendMessage({
             content: buildWorkflowArtifactChangeRequestContent(artifact),
@@ -1450,8 +1449,6 @@ function TranscriptCanvas({
             },
           })}
         />
-        <WorkflowControllerPanel controller={detail.workflowController ?? null} />
-        <WorkflowAgentAssignmentTable assignments={detail.workflowAgentAssignments ?? []} />
         {timeline.length === 0 ? (
           <div className="deepsea-empty deepsea-empty--center">发送第一条消息开始当前会话。</div>
         ) : timeline.map((item) => {
@@ -1497,19 +1494,21 @@ function TranscriptCanvas({
           });
           return (
             <article key={item.key} className="deepsea-message deepsea-message--agent-run" data-role="assistant">
-              <section className="deepsea-run-log" aria-label={`${runLabel} 回复`}>
-                <div>
-                  <span className="deepsea-status-chip" data-tone={item.run.status === 'failed' ? 'danger' : 'ok'}>
-                    {runLabel}
-                  </span>
-                  <time className="deepsea-mono">{formatClock(item.run.started_at)}</time>
-                  <ThinkingDurationBadge run={item.run} agentEvents={runAgentEvents} now={nowTick} />
-                  <RunStatusBadge
-                    run={item.run}
-                    agentEvents={runAgentEvents}
-                    onRetryRun={latestTranscriptRunId === item.run.id ? onRetryRun : undefined}
-                  />
-                  <div className="deepsea-message-tools deepsea-message-tools--run">
+              <RunFlowCapsule
+                run={item.run}
+                runLabel={runLabel}
+                runAgentEvents={runAgentEvents}
+                runEvidence={runEvidence}
+                failureDetails={failureDetails}
+                output={output}
+                displayMode={displayMode}
+                streaming={isRunLive(item.run.status)}
+                now={nowTick}
+                latestTranscriptRunId={latestTranscriptRunId}
+                onRetryRun={onRetryRun}
+                onOpenWorkspaceFile={openWorkspaceFilePreview}
+                actions={(
+                  <>
                     <button
                       type="button"
                       className="deepsea-message__action"
@@ -1559,28 +1558,9 @@ function TranscriptCanvas({
                       mode={displayMode}
                       onModeChange={(mode) => setDisplayModeFor(item.key, mode)}
                     />
-                  </div>
-                </div>
-                <AgentThoughtPanel
-                  run={item.run}
-                  evidence={runEvidence}
-                  agentEvents={runAgentEvents}
-                  failureDetails={failureDetails}
-                />
-                <div className="deepsea-run-log-body">
-                  {displayMode === 'source' ? (
-                    <MessageContent content={output} mode={displayMode} suppressTraceEvents />
-                  ) : (
-                    <SessionRunTimeline
-                      events={runAgentEvents}
-                      fallbackText={output}
-                      streaming={isRunLive(item.run.status)}
-                      onOpenWorkspaceFile={openWorkspaceFilePreview}
-                    />
-                  )}
-                </div>
-                <GeneratedImageEvidencePanel evidence={runEvidence} />
-              </section>
+                  </>
+                )}
+              />
             </article>
           );
         })}
@@ -1602,6 +1582,204 @@ function TranscriptCanvas({
       />
     </section>
   );
+}
+
+type WorkflowMissionStageState = 'done' | 'active' | 'gate' | 'blocked' | 'failed' | 'pending';
+
+const WORKFLOW_STAGE_ORDER = ['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance'] as const;
+
+function WorkflowMissionStrip({
+  detail,
+  onApprove,
+  onRequestChange,
+}: {
+  detail: SessionDetail;
+  onApprove?: (artifactVersionId: string) => void;
+  onRequestChange: (artifact: WorkflowArtifactVersionView) => void;
+}): JSX.Element | null {
+  const controller = detail.workflowController ?? null;
+  const artifacts = detail.workflowArtifacts ?? [];
+  const gates = detail.workflowGates ?? [];
+  const assignments = detail.workflowAgentAssignments ?? [];
+  if (!controller && gates.length === 0 && assignments.length === 0) return null;
+
+  return (
+    <section className="deepsea-workflow-mission" data-workflow-mission-strip="true" aria-label="Workflow Mission">
+      <div className="deepsea-workflow-mission__header">
+        <div className="deepsea-workflow-mission__identity">
+          <span className="deepsea-status-chip" data-tone="ok">Workflow Mission</span>
+          <h3 title={detail.session.title}>{detail.session.title}</h3>
+          <p>{formatWorkflowMissionMeta(controller)}</p>
+        </div>
+        <div className="deepsea-workflow-mission__badges" aria-label="Workflow 摘要">
+          <span>{formatPendingGateCount(gates)}</span>
+          <span>{assignments.length} agents</span>
+        </div>
+      </div>
+      <WorkflowStageRail controller={controller} gates={gates} />
+      <WorkflowGateSummary artifacts={artifacts} gates={gates} onApprove={onApprove} onRequestChange={onRequestChange} />
+      <WorkflowAgentRoster assignments={assignments} />
+      {controller?.blocker ? <p className="deepsea-workflow-mission__blocker">{controller.blocker}</p> : null}
+    </section>
+  );
+}
+
+function WorkflowStageRail({
+  controller,
+  gates,
+}: {
+  controller: WorkflowControllerView | null;
+  gates: WorkflowGateView[];
+}): JSX.Element {
+  return (
+    <ol className="deepsea-workflow-stage-rail" aria-label="Workflow 阶段">
+      {WORKFLOW_STAGE_ORDER.map((stage) => {
+        const state = getWorkflowStageState(stage, controller, gates);
+        return (
+          <li key={stage} className="deepsea-workflow-stage-rail__item" data-state={state}>
+            <span>{formatWorkflowStageLabel(stage)}</span>
+            <strong>{formatWorkflowStageStateLabel(state)}</strong>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function WorkflowGateSummary({
+  artifacts,
+  gates,
+  onApprove,
+  onRequestChange,
+}: {
+  artifacts: WorkflowArtifactVersionView[];
+  gates: WorkflowGateView[];
+  onApprove?: (artifactVersionId: string) => void;
+  onRequestChange: (artifact: WorkflowArtifactVersionView) => void;
+}): JSX.Element | null {
+  const artifactById = new Map(artifacts.map((artifact) => [artifact.id, artifact]));
+  const gateItems = gates
+    .filter((gate) => gate.artifact_version_id)
+    .map((gate) => {
+      const artifact = gate.artifact_version_id ? artifactById.get(gate.artifact_version_id) : undefined;
+      return artifact ? { gate, artifact } : null;
+    })
+    .filter((item): item is { gate: WorkflowGateView; artifact: WorkflowArtifactVersionView } => Boolean(item));
+  if (gateItems.length === 0) return null;
+
+  return (
+    <div className="deepsea-workflow-gate-summary" aria-label="Workflow 门禁摘要">
+      {gateItems.map(({ gate, artifact }) => (
+        <article className="deepsea-workflow-gate-summary__item" key={`${gate.kind}:${artifact.id}`} data-status={gate.status}>
+          <div className="deepsea-workflow-gate-summary__body">
+            <strong>{formatWorkflowArtifactHeading(artifact)}</strong>
+            <span title={artifact.title}>{artifact.title}</span>
+            <small>{gate.reason}</small>
+          </div>
+          <div className="deepsea-workflow-gate-summary__actions">
+            <button
+              type="button"
+              data-workflow-artifact-action="request-change"
+              aria-label={`请求 planner 修改 ${formatWorkflowArtifactHeading(artifact)}`}
+              onClick={() => onRequestChange(artifact)}
+            >
+              <Edit3 aria-hidden="true" />
+              请求修改
+            </button>
+            {gate.status === 'pending' ? (
+              <button
+                type="button"
+                data-workflow-artifact-action="approve"
+                aria-label={`确认 ${formatWorkflowArtifactType(artifact.artifact_type)} v${artifact.version}`}
+                disabled={!onApprove}
+                onClick={() => onApprove?.(artifact.id)}
+              >
+                <Check aria-hidden="true" />
+                确认
+              </button>
+            ) : (
+              <span className="deepsea-status-chip" data-tone="success">已确认</span>
+            )}
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function WorkflowAgentRoster({
+  assignments,
+}: {
+  assignments: WorkflowAgentAssignmentView[];
+}): JSX.Element | null {
+  if (assignments.length === 0) return null;
+  return (
+    <div className="deepsea-workflow-agent-roster" aria-label="Workflow 子代理摘要">
+      {assignments.map((assignment) => (
+        <article className="deepsea-workflow-agent-roster__item" key={`${assignment.task_id}:${assignment.role}`}>
+          <strong title={assignment.task_title}>{assignment.assigned_agent_name ?? assignment.assigned_agent_id ?? assignment.role}</strong>
+          <span>{assignment.role} · {assignment.execution_mode}</span>
+          {assignment.fallback_reason ? <small title={assignment.fallback_reason}>{assignment.fallback_reason}</small> : null}
+          <code title={assignment.scope_write.join(', ')}>{assignment.scope_write.join(', ') || 'scopeWrite 未声明'}</code>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function getWorkflowStageState(
+  stage: (typeof WORKFLOW_STAGE_ORDER)[number],
+  controller: WorkflowControllerView | null,
+  gates: WorkflowGateView[],
+): WorkflowMissionStageState {
+  const activeStage = normalizeWorkflowStage(controller?.active_stage);
+  if (controller?.blocker && activeStage === stage) return 'blocked';
+  if (gates.some((gate) => gate.status === 'pending') && activeStage === stage) return 'gate';
+  if (activeStage === stage) return 'active';
+  const activeIndex = activeStage ? WORKFLOW_STAGE_ORDER.indexOf(activeStage) : -1;
+  const stageIndex = WORKFLOW_STAGE_ORDER.indexOf(stage);
+  if (activeIndex >= 0 && stageIndex >= 0 && stageIndex < activeIndex) return 'done';
+  return 'pending';
+}
+
+function normalizeWorkflowStage(stage: string | null | undefined): (typeof WORKFLOW_STAGE_ORDER)[number] | null {
+  if (stage === 'brainstorming') return 'analysis';
+  if (stage === 'agent_assignment') return 'assignment';
+  return WORKFLOW_STAGE_ORDER.find((knownStage) => knownStage === stage) ?? null;
+}
+
+function formatWorkflowMissionMeta(controller: WorkflowControllerView | null): string {
+  if (!controller) return 'controller: pending · next: 等待 workflow 数据';
+  return [
+    `intent: ${controller.selected_intent ?? 'workflow'}`,
+    `controller: ${controller.controller ?? 'planner'}`,
+    `next: ${controller.next_action ?? '等待推进'}`,
+  ].join(' · ');
+}
+
+function formatPendingGateCount(gates: WorkflowGateView[]): string {
+  const pending = gates.filter((gate) => gate.status === 'pending').length;
+  return pending > 0 ? `${pending} 个门禁` : '无待确认门禁';
+}
+
+function formatWorkflowStageLabel(stage: string | null | undefined): string {
+  if (stage === 'analysis') return '分析';
+  if (stage === 'planning') return '计划';
+  if (stage === 'assignment' || stage === 'agent_assignment') return '分派';
+  if (stage === 'implementation') return '实现';
+  if (stage === 'code_review') return '审查';
+  if (stage === 'acceptance') return '验收';
+  if (stage === 'brainstorming') return '分析';
+  return stage ?? 'general';
+}
+
+function formatWorkflowStageStateLabel(state: WorkflowMissionStageState): string {
+  if (state === 'done') return 'done';
+  if (state === 'active') return 'active';
+  if (state === 'gate') return 'gate';
+  if (state === 'blocked') return 'blocked';
+  if (state === 'failed') return 'failed';
+  return 'pending';
 }
 
 function WorkflowArtifactGatePanel({
@@ -2155,6 +2333,173 @@ export interface SessionRunTranscriptEvent {
   payloadJson: string | null;
 }
 
+type RunEventKind = 'context' | 'tool' | 'edit' | 'verify' | 'error' | 'done' | 'activity';
+
+interface RunEventRailItem {
+  id: string;
+  kind: RunEventKind;
+  label: string;
+  detail: string;
+  count: number;
+  events: SessionRunTranscriptEvent[];
+}
+
+function RunFlowCapsule({
+  run,
+  runLabel,
+  runAgentEvents,
+  runEvidence,
+  failureDetails,
+  output,
+  displayMode,
+  streaming,
+  now,
+  latestTranscriptRunId,
+  onRetryRun,
+  onOpenWorkspaceFile,
+  actions,
+}: {
+  run: SessionRun;
+  runLabel: string;
+  runAgentEvents: SessionAgentEvent[];
+  runEvidence: SessionEvidenceEvent[];
+  failureDetails: RunFailureDetail[];
+  output: string;
+  displayMode: SessionMessageDisplayMode;
+  streaming: boolean;
+  now: number;
+  latestTranscriptRunId: string | null;
+  onRetryRun?: (runId: string) => void;
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler;
+  actions: ReactNode;
+}): JSX.Element {
+  const railItems = buildRunEventRailItems(runAgentEvents);
+  return (
+    <section className="deepsea-run-log deepsea-run-capsule" data-run-flow-capsule="true" aria-label={`${runLabel} 执行流`}>
+      <header className="deepsea-run-capsule__header">
+        <div className="deepsea-run-capsule__identity">
+          <span className="deepsea-run-capsule__avatar" aria-hidden="true">{formatRunAvatarLabel(runLabel)}</span>
+          <div>
+            <strong title={runLabel}>{runLabel}</strong>
+            <span>{run.phase ?? run.mode} · {run.provider}</span>
+          </div>
+        </div>
+        <div className="deepsea-run-capsule__status">
+          <time className="deepsea-mono">{formatClock(run.started_at)}</time>
+          <ThinkingDurationBadge run={run} agentEvents={runAgentEvents} now={now} />
+          <RunStatusBadge
+            run={run}
+            agentEvents={runAgentEvents}
+            onRetryRun={latestTranscriptRunId === run.id ? onRetryRun : undefined}
+          />
+        </div>
+        <div className="deepsea-message-tools deepsea-message-tools--run">{actions}</div>
+      </header>
+      <AgentThoughtPanel
+        run={run}
+        evidence={runEvidence}
+        agentEvents={runAgentEvents}
+        failureDetails={failureDetails}
+      />
+      <div className="deepsea-run-capsule__body">
+        <RunEventRail items={railItems} />
+        <div className="deepsea-run-log-body">
+          {displayMode === 'source' ? (
+            <MessageContent content={output} mode={displayMode} suppressTraceEvents />
+          ) : (
+            <SessionRunTimeline
+              events={runAgentEvents}
+              fallbackText={output}
+              streaming={streaming}
+              onOpenWorkspaceFile={onOpenWorkspaceFile}
+            />
+          )}
+        </div>
+      </div>
+      <GeneratedImageEvidencePanel evidence={runEvidence} />
+    </section>
+  );
+}
+
+function RunEventRail({ items }: { items: RunEventRailItem[] }): JSX.Element | null {
+  const [selectedEvents, setSelectedEvents] = useState<SessionRunTranscriptEvent[] | null>(null);
+  if (items.length === 0) return null;
+  return (
+    <aside className="deepsea-run-event-rail" data-run-event-rail="true" aria-label="关键执行事件">
+      {items.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          className="deepsea-run-event-rail__item"
+          data-kind={item.kind}
+          onClick={() => setSelectedEvents(item.events)}
+        >
+          <strong>{item.label}{item.count > 1 ? ` x${item.count}` : ''}</strong>
+          <span title={item.detail}>{item.detail}</span>
+        </button>
+      ))}
+      {selectedEvents ? <SessionRunEventDetailDialog events={selectedEvents} onClose={() => setSelectedEvents(null)} /> : null}
+    </aside>
+  );
+}
+
+function buildRunEventRailItems(events: SessionAgentEvent[]): RunEventRailItem[] {
+  const grouped = new Map<RunEventKind, RunEventRailItem>();
+  for (const sourceEvent of [...events].sort((left, right) => left.seq - right.seq || left.created_at - right.created_at)) {
+    const marker = runEventMarker(sourceEvent);
+    if (!marker) continue;
+    const event = buildSessionRunTranscriptEvent(sourceEvent, marker);
+    const kind = inferRunEventKind(event);
+    const current = grouped.get(kind);
+    if (current) {
+      current.count += 1;
+      current.events.push(event);
+      if (!current.detail && event.detail) current.detail = event.detail;
+      continue;
+    }
+    grouped.set(kind, {
+      id: `${kind}:${event.id}`,
+      kind,
+      label: formatRunEventKindLabel(kind),
+      detail: formatRunEventRailDetail(event),
+      count: 1,
+      events: [event],
+    });
+  }
+  return Array.from(grouped.values());
+}
+
+function inferRunEventKind(event: SessionRunTranscriptEvent): RunEventKind {
+  const haystack = `${event.event_type} ${event.label} ${event.content} ${event.detail ?? ''}`.toLowerCase();
+  if (haystack.includes('error') || haystack.includes('failed') || haystack.includes('fatal')) return 'error';
+  if (haystack.includes('verify') || haystack.includes('test') || haystack.includes('build') || haystack.includes('检查')) return 'verify';
+  if (haystack.includes('edit') || haystack.includes('patch') || haystack.includes('write') || haystack.includes('修改')) return 'edit';
+  if (haystack.includes('tool') || haystack.includes('command') || haystack.includes('call')) return 'tool';
+  if (haystack.includes('context') || haystack.includes('read') || haystack.includes('search') || haystack.includes('读取')) return 'context';
+  if (haystack.includes('done') || haystack.includes('complete') || haystack.includes('完成')) return 'done';
+  return 'activity';
+}
+
+function formatRunEventKindLabel(kind: RunEventKind): string {
+  if (kind === 'context') return 'Context';
+  if (kind === 'tool') return 'Tool';
+  if (kind === 'edit') return 'Edit';
+  if (kind === 'verify') return 'Verify';
+  if (kind === 'error') return 'Error';
+  if (kind === 'done') return 'Done';
+  return 'Activity';
+}
+
+function formatRunEventRailDetail(event: SessionRunTranscriptEvent): string {
+  const detail = event.detail?.trim() || event.content.trim() || event.label;
+  return detail.slice(0, 96);
+}
+
+function formatRunAvatarLabel(runLabel: string): string {
+  const trimmed = runLabel.trim();
+  return (trimmed[0] ?? 'A').toUpperCase();
+}
+
 function SessionRunTimeline({
   events,
   fallbackText,
@@ -2321,6 +2666,10 @@ export function buildSessionRunTranscriptItems(
   if (items.length === 0) {
     const text = fallbackText.trim();
     return text ? [{ type: 'text', id: 'text-fallback', text, events: [] }] : [];
+  }
+  if (!items.some((item) => item.type === 'text')) {
+    const text = fallbackText.trim();
+    if (text) items.push({ type: 'text', id: 'text-fallback', text, events: [] });
   }
   return items;
 }
