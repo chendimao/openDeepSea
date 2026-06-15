@@ -313,9 +313,13 @@ test('SessionShell renders workflow chat message with gate and agent summaries',
   const transcriptScrollIndex = html.indexOf('data-transcript-scroll="true"');
 
   assert.match(html, /data-workflow-chat-message="true"/);
+  assert.match(html, /data-workflow-view-toggle="true"/);
+  assert.match(html, /规划师 \(Planner\)/);
+  assert.match(html, /Parallel Execution 并行执行/);
+  assert.match(html, /aria-label="展开当前对话中的全部可折叠内容"/);
   assert.match(html, /data-session-workflow-map="mission"/);
+  assert.match(html, /data-workflow-flow-root="true"/);
   assert.match(html, /flow-path-parallel/);
-  assert.match(html, /Workflow Monitor 动态监控/);
   assert.match(html, /等待 plan gate/);
   assert.match(html, /1 个门禁/);
   assert.match(html, /Codex/);
@@ -324,6 +328,44 @@ test('SessionShell renders workflow chat message with gate and agent summaries',
   assert.doesNotMatch(html, /data-workflow-mission-strip="true"/);
   assert.ok(workflowMessageIndex >= 0);
   assert.ok(workflowMessageIndex > transcriptScrollIndex);
+});
+
+test('SessionShell merges workflow events into a compact preview inside the transcript message', () => {
+  const payload = createPayload();
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-merge-1',
+    selected_intent: 'standard_development',
+    active_stage: 'planning',
+    controller: 'planner',
+    next_action: '等待用户确认当前 workflow artifact。',
+    blocker: null,
+  };
+  payload.activeSession.messages = [
+    ...payload.activeSession.messages,
+    ...Array.from({ length: 6 }, (_, index): SessionMessage => ({
+      id: `workflow-merge-${index + 1}`,
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'workflow',
+      sender_name: '工作流',
+      content: `workflow event ${index + 1}: ${'merged content '.repeat(8)}${index + 1}`,
+      message_type: 'system',
+      status: 'completed',
+      metadata: JSON.stringify({
+        workflow_run_id: 'workflow-run-merge-1',
+        event_type: `workflow_step_${index + 1}`,
+      }),
+      created_at: Date.now() + index,
+    })),
+  ];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /Execution Log 合并事件/);
+  assert.match(html, /已合并前 2 条 workflow 事件/);
+  assert.match(html, /workflow event 6:/);
+  assert.doesNotMatch(html, /workflow event 1:/);
+  assert.doesNotMatch(html, /workflow event 1:.*workflow event 2:.*workflow event 3:.*workflow event 4:.*workflow event 5:.*workflow event 6:/s);
 });
 
 test('SessionShell renders workflow as a transcript message instead of a top mission panel', () => {
@@ -594,8 +636,9 @@ test('SessionShell renders agent run as flow capsule with event rail', () => {
   assert.match(html, /data-run-dynamic-monitor="true"/);
   assert.match(html, /执行链路/);
   assert.match(html, /实时活动/);
-  assert.match(html, /data-session-workflow-map="run"/);
   assert.match(html, /Agent Run Flow 执行流转/);
+  assert.match(html, /data-workflow-flow-root="true"/);
+  assert.match(html, /data-session-workflow-map="run"/);
   assert.match(html, /flow-path-sequential/);
   assert.match(html, /deepsea-workflow-flow-card/);
   assert.match(html, /输出已流入消息时间线/);

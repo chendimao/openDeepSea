@@ -33,7 +33,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { createPortal } from 'react-dom';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, ReactNode } from 'react';
 import type {
   ActiveSessionSummary,
@@ -1433,9 +1433,32 @@ function TranscriptCanvas({
     transcriptEnd.scrollIntoView({ block: 'end' });
   }, [timelineFollowKey]);
 
+  const expandTranscriptDetails = useCallback(() => {
+    const transcript = transcriptRef.current;
+    if (!transcript) return;
+    transcript.querySelectorAll<HTMLDetailsElement>('details').forEach((details) => {
+      details.open = true;
+    });
+  }, []);
+
   return (
     <section className="deepsea-transcript" aria-label="Active Session">
       <SessionTitleBar detail={detail} todoStats={todoStats} />
+      <div className="deepsea-transcript__header">
+        <h3>
+          <MessageSquare aria-hidden="true" />
+          3. 对话记录 <span>(Transcript)</span>
+        </h3>
+        <button
+          type="button"
+          className="deepsea-transcript__expand"
+          aria-label="展开当前对话中的全部可折叠内容"
+          onClick={expandTranscriptDetails}
+        >
+          全部展开
+          <ChevronDown aria-hidden="true" />
+        </button>
+      </div>
       <div className="deepsea-transcript__scroll" data-transcript-scroll="true" ref={transcriptRef}>
         {timeline.length === 0 ? (
           <div className="deepsea-empty deepsea-empty--center">发送第一条消息开始当前会话。</div>
@@ -1591,8 +1614,10 @@ function TranscriptCanvas({
 }
 
 type WorkflowMissionStageState = 'done' | 'active' | 'gate' | 'blocked' | 'failed' | 'pending';
+type WorkflowViewMode = 'flow' | 'log';
 
 const WORKFLOW_STAGE_ORDER = ['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance'] as const;
+const WORKFLOW_EVENT_PREVIEW_LIMIT = 4;
 
 interface WorkflowChatGroup {
   id: string;
@@ -1618,6 +1643,7 @@ function WorkflowChatMessage({
 }): JSX.Element {
   const summary = formatWorkflowChatSummary(group);
   const status = getWorkflowChatStatus(group);
+  const [viewMode, setViewMode] = useState<WorkflowViewMode>('flow');
 
   return (
     <article
@@ -1627,7 +1653,7 @@ function WorkflowChatMessage({
       aria-label="工作流消息"
     >
       <header className="deepsea-workflow-chat__header">
-        <span>工作流</span>
+        <span className="deepsea-status-chip" data-tone="ok">Planner</span>
         <time className="deepsea-mono">{formatClock(group.updatedAt)}</time>
         <strong>{formatWorkflowFlowStatus(status)}</strong>
       </header>
@@ -1644,41 +1670,103 @@ function WorkflowChatMessage({
             <span>{group.assignments.length} agents</span>
           </div>
         </div>
-        <WorkflowFlowMap
-          kind="mission"
-          phaseLabel="Workflow Monitor 动态监控"
-          title="主流程协调与门禁"
-          status={status}
-          summary={summary}
-          lines={buildWorkflowFlowLines(group.assignments, group.gates, group.controller)}
-          cards={buildWorkflowFlowCards(group.controller, group.artifacts, group.gates, group.assignments)}
+        <WorkflowViewToggle
+          mode={viewMode}
+          onModeChange={setViewMode}
+          label="Workflow 显示模式"
         />
-        <WorkflowStageRail controller={group.controller} gates={group.gates} />
-        <WorkflowEventRows messages={group.messages} />
-        <WorkflowGateSummary artifacts={group.artifacts} gates={group.gates} onApprove={onApprove} onRequestChange={onRequestChange} />
-        <WorkflowAgentRoster assignments={group.assignments} />
+        {viewMode === 'flow' ? (
+          <>
+            <WorkflowFlowMap
+              kind="mission"
+              phaseLabel="Parallel Execution 并行执行"
+              title="规划师 (Planner)"
+              status={status}
+              summary={summary}
+              lines={buildWorkflowFlowLines(group.assignments, group.gates, group.controller)}
+              cards={buildWorkflowFlowCards(group.controller, group.artifacts, group.gates, group.assignments)}
+            />
+            <WorkflowStageRail controller={group.controller} gates={group.gates} />
+          </>
+        ) : null}
+        <WorkflowEventRows messages={group.messages} expanded={viewMode === 'log'} />
+        {viewMode === 'flow' ? (
+          <>
+            <WorkflowGateSummary artifacts={group.artifacts} gates={group.gates} onApprove={onApprove} onRequestChange={onRequestChange} />
+            <WorkflowAgentRoster assignments={group.assignments} />
+          </>
+        ) : null}
         {group.controller?.blocker ? <p className="deepsea-workflow-chat__blocker">{group.controller.blocker}</p> : null}
       </div>
     </article>
   );
 }
 
-function WorkflowEventRows({ messages }: { messages: SessionMessage[] }): JSX.Element | null {
-  if (messages.length === 0) return null;
+function WorkflowViewToggle({
+  mode,
+  onModeChange,
+  label,
+  className,
+}: {
+  mode: WorkflowViewMode;
+  onModeChange: (mode: WorkflowViewMode) => void;
+  label: string;
+  className?: string;
+}): JSX.Element {
   return (
-    <div className="deepsea-workflow-events" aria-label="连续工作流事件">
-      {messages.map((message, index) => (
+    <div
+      className={['deepsea-workflow-view-toggle', className].filter(Boolean).join(' ')}
+      data-workflow-view-toggle="true"
+      aria-label={label}
+    >
+      <button
+        type="button"
+        className={mode === 'flow' ? 'is-active' : undefined}
+        aria-pressed={mode === 'flow'}
+        onClick={() => onModeChange('flow')}
+      >
+        流程图
+      </button>
+      <button
+        type="button"
+        className={mode === 'log' ? 'is-active' : undefined}
+        aria-pressed={mode === 'log'}
+        onClick={() => onModeChange('log')}
+      >
+        日志
+      </button>
+    </div>
+  );
+}
+
+function WorkflowEventRows({ messages, expanded = false }: { messages: SessionMessage[]; expanded?: boolean }): JSX.Element | null {
+  if (messages.length === 0) return null;
+  const previewLimit = expanded ? messages.length : WORKFLOW_EVENT_PREVIEW_LIMIT;
+  const hiddenCount = Math.max(0, messages.length - previewLimit);
+  const visibleMessages = messages.slice(-previewLimit);
+  return (
+    <div className="deepsea-workflow-events" data-expanded={expanded ? 'true' : 'false'} aria-label="连续工作流事件">
+      <div className="deepsea-workflow-events__header">
+        <span>Execution Log 合并事件</span>
+        <strong>{messages.length} events</strong>
+      </div>
+      {visibleMessages.map((message, index) => (
         <article className="deepsea-workflow-event" key={message.id}>
-          <span className="deepsea-workflow-event__index">{String(index + 1).padStart(2, '0')}</span>
+          <span className="deepsea-workflow-event__index">{String(hiddenCount + index + 1).padStart(2, '0')}</span>
           <div className="deepsea-workflow-event__body">
             <div className="deepsea-workflow-event__meta">
               <strong>{formatWorkflowEventLabel(message)}</strong>
               <time className="deepsea-mono">{formatClock(message.created_at)}</time>
             </div>
-            <p>{message.content}</p>
+            <p title={message.content}>{formatWorkflowEventPreview(message.content)}</p>
           </div>
         </article>
       ))}
+      {hiddenCount > 0 ? (
+        <div className="deepsea-workflow-events__more">
+          已合并前 {hiddenCount} 条 workflow 事件，当前优先显示最近流转。
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1815,11 +1903,12 @@ function WorkflowFlowMap({
   lines: WorkflowFlowLine[];
   cards: WorkflowFlowCard[];
 }): JSX.Element {
-  const flowHeight = Math.max(164, 86 + Math.ceil(Math.max(cards.length, 1) / 2) * 74);
+  const flowHeight = Math.max(150, 74 + Math.ceil(Math.max(cards.length, 1) / 2) * 62);
   return (
     <div
       className="deepsea-workflow-flow"
       data-session-workflow-map={kind}
+      data-workflow-flow-root="true"
       aria-label="Workflow 流转"
       style={{ minHeight: flowHeight }}
     >
@@ -2267,6 +2356,16 @@ function formatWorkflowEventLabel(message: SessionMessage): string {
   return message.sender_name ?? message.sender_id;
 }
 
+function formatWorkflowEventPreview(content: string): string {
+  const normalized = content
+    .replace(/^```[a-zA-Z0-9_-]*\s*/g, '')
+    .replace(/```\s*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return 'workflow event recorded';
+  return normalized.length > 96 ? `${normalized.slice(0, 96).trimEnd()}...` : normalized;
+}
+
 function getLatestTimelineRunId(timeline: TranscriptTimelineItem[]): string | null {
   const latest = timeline.at(-1);
   return latest?.kind === 'run' ? latest.run.id : null;
@@ -2678,6 +2777,7 @@ function RunFlowCapsule({
   actions: ReactNode;
 }): JSX.Element {
   const railItems = buildRunEventRailItems(runAgentEvents);
+  const [viewMode, setViewMode] = useState<WorkflowViewMode>('flow');
   return (
     <section className="deepsea-run-log deepsea-run-capsule" data-run-flow-capsule="true" aria-label={`${runLabel} 执行流`}>
       <header className="deepsea-run-capsule__header">
@@ -2704,15 +2804,28 @@ function RunFlowCapsule({
           <span>执行链路</span>
           <strong>实时活动</strong>
         </div>
-        <WorkflowFlowMap
-          kind="run"
-          phaseLabel="Agent Run Flow 执行流转"
-          title="2. Agent Run 内部流转"
-          status={getRunFlowStatus(run.status)}
-          summary={formatRunFlowSummary(run)}
-          lines={buildRunFlowLines(runAgentEvents)}
-          cards={buildRunFlowCards(run, runAgentEvents, failureDetails)}
+        <WorkflowViewToggle
+          mode={viewMode}
+          onModeChange={setViewMode}
+          label="Run 显示模式"
+          className="deepsea-workflow-view-toggle--run"
         />
+        {viewMode === 'flow' ? (
+          <WorkflowFlowMap
+            kind="run"
+            phaseLabel="Agent Run Flow 执行流转"
+            title="2. Agent Run 内部流转"
+            status={getRunFlowStatus(run.status)}
+            summary={formatRunFlowSummary(run)}
+            lines={buildRunFlowLines(runAgentEvents)}
+            cards={buildRunFlowCards(run, runAgentEvents, failureDetails)}
+          />
+        ) : (
+          <div className="deepsea-run-log-mode" aria-label="Run 日志视图">
+            <strong>{railItems.length} groups</strong>
+            <span>日志已在下方执行事件与消息流中展开。</span>
+          </div>
+        )}
       </div>
       <AgentThoughtPanel
         run={run}

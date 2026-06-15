@@ -1666,6 +1666,59 @@
   overflow: hidden;
   --deepsea-transcript-tail-space: 12px;
   background: transparent;
+  gap: 8px;
+}
+.deepsea-transcript__header {
+  display: flex;
+  min-height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-border-subtle));
+  padding: 0 0 5px;
+}
+.deepsea-transcript__header h3 {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: rgba(67, 70, 84, 0.82);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.deepsea-transcript__header h3 svg {
+  width: 14px;
+  height: 14px;
+}
+.deepsea-transcript__header h3 span {
+  color: rgba(67, 70, 84, 0.42);
+  font-size: 9px;
+  font-weight: 520;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.deepsea-transcript__expand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--deepsea-primary);
+  padding: 0;
+  font-size: 9px;
+  font-weight: 820;
+  line-height: 1;
+  cursor: pointer;
+}
+.deepsea-transcript__expand svg {
+  width: 10px;
+  height: 10px;
 }
 .deepsea-session-titlebar {
   display: flex;
@@ -1742,7 +1795,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   padding: 0;
   scroll-padding-bottom: var(--deepsea-transcript-tail-space);
 }
@@ -2722,17 +2775,17 @@
   padding: 6px 10px 6px 12px;
 }
 .deepsea-message[data-role="assistant"] {
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.24);
   border-left: 2px solid var(--deepsea-ok);
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 .deepsea-message--agent-run {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .deepsea-message--agent-run .deepsea-run-log {
   border: 0;
@@ -2747,11 +2800,11 @@
 }
 .deepsea-message--workflow {
   border-left-color: var(--deepsea-primary);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.08));
+  background: rgba(255, 255, 255, 0.14);
 }
 .deepsea-message--workflow > header {
-  border-bottom: 1px solid color-mix(in srgb, var(--deepsea-primary) 10%, var(--deepsea-border-subtle));
-  padding-bottom: 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-border-subtle));
+  padding-bottom: 5px;
 }
 .deepsea-message header {
   display: flex;
@@ -2772,6 +2825,9 @@
 }
 .deepsea-message[data-role="assistant"] header > span:first-child {
   background: var(--deepsea-ok);
+}
+.deepsea-message--workflow > header > span:first-child {
+  background: var(--deepsea-primary);
 }
 .deepsea-message time {
   color: rgba(15, 23, 42, 0.38);
@@ -2970,40 +3026,96 @@
 .deepsea-run-log p {
   margin: 0;
   color: var(--deepsea-text);
-  font-size: 13px;
-  line-height: 19px;
+  font-size: 12px;
+  line-height: 18px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+.deepsea-workflow-view-toggle {
+  display: inline-flex;
+  align-self: flex-end;
+  justify-self: end;
+  gap: 2px;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 14%, var(--deepsea-border-subtle));
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.03);
+  padding: 2px;
+}
+.deepsea-workflow-view-toggle button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(67, 70, 84, 0.76);
+  padding: 4px 10px;
+  font-size: 9px;
+  font-weight: 820;
+  line-height: 1;
+  cursor: pointer;
+}
+.deepsea-workflow-view-toggle button.is-active {
+  background: var(--deepsea-primary);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0, 74, 198, 0.16);
+}
+.deepsea-workflow-view-toggle--run {
+  align-self: flex-start;
+  justify-self: start;
 }
 .deepsea-workflow-events {
   display: grid;
   gap: 6px;
-  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 10%, var(--deepsea-border-subtle));
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 12%, var(--deepsea-border-subtle));
   border-radius: 8px;
-  background: color-mix(in srgb, var(--deepsea-surface) 90%, var(--deepsea-primary) 3%);
-  padding: 8px;
+  background: color-mix(in srgb, var(--deepsea-surface) 92%, var(--deepsea-primary) 2%);
+  padding: 7px 8px;
+}
+.deepsea-workflow-events__header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--deepsea-muted);
+  font-size: 8px;
+  font-weight: 820;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.deepsea-workflow-events__header strong {
+  flex: 0 0 auto;
+  color: var(--deepsea-primary);
+  font-family: var(--deepsea-mono);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+}
+.deepsea-workflow-events__more {
+  border-top: 1px solid color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-border-subtle));
+  padding-top: 4px;
+  color: var(--deepsea-muted);
+  font-size: 9px;
+  line-height: 1.3;
 }
 .deepsea-workflow-event {
   display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 7px;
   min-width: 0;
 }
 .deepsea-workflow-event + .deepsea-workflow-event {
-  border-top: 1px solid color-mix(in srgb, var(--deepsea-primary) 10%, var(--deepsea-border-subtle));
-  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-border-subtle));
+  padding-top: 5px;
 }
 .deepsea-workflow-event__index {
   display: inline-grid;
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--deepsea-primary) 22%, var(--deepsea-border-subtle));
   border-radius: 999px;
   background: color-mix(in srgb, var(--deepsea-primary) 9%, var(--deepsea-surface));
   color: var(--deepsea-primary);
   font-family: var(--deepsea-mono);
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 900;
 }
 .deepsea-workflow-event__body {
@@ -3022,7 +3134,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--deepsea-text);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 840;
   line-height: 1.2;
   text-overflow: ellipsis;
@@ -3031,14 +3143,22 @@
 .deepsea-workflow-event__meta time {
   flex: 0 0 auto;
   color: rgba(15, 23, 42, 0.46);
-  font-size: 9px;
+  font-size: 8px;
 }
 .deepsea-workflow-event__body p {
   margin: 0;
+  overflow: hidden;
   color: var(--deepsea-text);
-  font-size: 12px;
-  line-height: 17px;
-  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deepsea-workflow-events[data-expanded="true"] .deepsea-workflow-event__body p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
 }
 .deepsea-message-body .message-content,
 .deepsea-run-log-body .message-content,
@@ -3349,7 +3469,7 @@
 .deepsea-workflow-chat {
   display: grid;
   min-width: 0;
-  gap: 10px;
+  gap: 8px;
 }
 .deepsea-workflow-chat__header {
   margin-bottom: 0;
@@ -3359,7 +3479,7 @@
   min-width: 0;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
 }
 .deepsea-workflow-chat__identity {
   display: grid;
@@ -3370,9 +3490,9 @@
   margin: 0;
   overflow: hidden;
   color: var(--deepsea-text);
-  font-size: 13px;
-  font-weight: 860;
-  line-height: 1.25;
+  font-size: 12px;
+  font-weight: 880;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3380,9 +3500,9 @@
 .deepsea-workflow-chat__blocker {
   margin: 0;
   color: var(--deepsea-muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  line-height: 1.35;
+  line-height: 1.3;
   overflow-wrap: anywhere;
 }
 .deepsea-workflow-chat__badges {
@@ -3396,32 +3516,32 @@
   border: 1px solid color-mix(in srgb, var(--deepsea-primary) 18%, var(--deepsea-border-subtle));
   border-radius: 999px;
   color: var(--deepsea-text);
-  padding: 4px 8px;
+  padding: 3px 7px;
   font-family: var(--deepsea-mono);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 820;
   white-space: nowrap;
 }
 .deepsea-workflow-flow {
   position: relative;
   display: grid;
-  gap: 10px;
+  gap: 7px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 12%, var(--deepsea-border-subtle));
-  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 14%, var(--deepsea-border-subtle));
+  border-radius: 6px;
   background:
-    radial-gradient(circle at 0% 0%, rgba(255, 255, 255, 0.82), rgba(232, 237, 244, 0.78) 48%, rgba(216, 229, 245, 0.72) 100%),
-    rgba(255, 255, 255, 0.52);
+    radial-gradient(circle at 0% 0%, rgba(255, 255, 255, 0.9), rgba(236, 241, 247, 0.84) 48%, rgba(224, 234, 247, 0.74) 100%),
+    rgba(255, 255, 255, 0.54);
   color: var(--deepsea-text);
-  padding: 10px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.66), 0 14px 32px rgba(15, 23, 42, 0.08);
+  padding: 9px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7), 0 8px 20px rgba(15, 23, 42, 0.06);
 }
 .deepsea-workflow-flow::before {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.28;
+  opacity: 0.22;
   background:
     linear-gradient(90deg, rgba(0, 74, 198, 0.08) 1px, transparent 1px),
     linear-gradient(180deg, rgba(0, 74, 198, 0.05) 1px, transparent 1px);
@@ -3438,16 +3558,16 @@
   pointer-events: none;
 }
 .deepsea-workflow-flow__lines .flow-path-parallel {
-  stroke: color-mix(in srgb, var(--deepsea-primary) 24%, #b4c5ff);
+  stroke: color-mix(in srgb, var(--deepsea-primary) 20%, #b4c5ff);
   stroke-width: 1.5;
-  stroke-dasharray: 4 6;
+  stroke-dasharray: 3 5;
   filter: drop-shadow(0 0 2px rgba(180, 197, 255, 0.72));
   animation: deepsea-flow-line-fast 0.8s linear infinite;
 }
 .deepsea-workflow-flow__lines .flow-path-sequential {
   stroke: var(--deepsea-primary);
   stroke-width: 1;
-  stroke-dasharray: 8 4;
+  stroke-dasharray: 7 4;
   filter: drop-shadow(0 0 1px rgba(0, 74, 198, 0.38));
   animation: deepsea-flow-line-slow 2s linear infinite;
 }
@@ -3460,26 +3580,26 @@
   display: inline-flex;
   border: 1px solid color-mix(in srgb, var(--deepsea-primary) 18%, var(--deepsea-border-subtle));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--deepsea-primary) 8%, transparent);
+  background: color-mix(in srgb, var(--deepsea-primary) 7%, transparent);
   color: var(--deepsea-primary);
-  padding: 3px 9px;
+  padding: 3px 8px;
   font-family: var(--deepsea-mono);
-  font-size: 9px;
-  font-weight: 820;
-  letter-spacing: 0.05em;
+  font-size: 8px;
+  font-weight: 840;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .deepsea-workflow-flow__node {
   display: grid;
-  gap: 8px;
-  padding-left: 18px;
+  gap: 7px;
+  padding-left: 16px;
 }
 .deepsea-workflow-flow__dot {
   position: absolute;
-  top: 4px;
+  top: 3px;
   left: -6px;
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
   border: 1px solid rgba(255, 255, 255, 0.84);
   border-radius: 999px;
   background: var(--deepsea-primary);
@@ -3500,46 +3620,46 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11px;
-  font-weight: 840;
+  font-size: 10px;
+  font-weight: 860;
 }
 .deepsea-workflow-flow__heading strong {
   color: var(--deepsea-ok);
   font-family: var(--deepsea-mono);
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 860;
   text-transform: uppercase;
 }
 .deepsea-workflow-flow__summary {
   margin: 0;
   color: var(--deepsea-muted);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  line-height: 1.45;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 .deepsea-workflow-flow__cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
 }
 .deepsea-workflow-flow-card {
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 14%, var(--deepsea-border-subtle));
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.72);
-  color: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.1);
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 16%, var(--deepsea-border-subtle));
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--deepsea-text);
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.05);
 }
 .deepsea-workflow-flow-card__head {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.06);
-  padding: 5px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.48);
+  background: rgba(255, 255, 255, 0.38);
+  padding: 4px 7px;
   font-family: var(--deepsea-mono);
-  font-size: 9px;
+  font-size: 8px;
 }
 .deepsea-workflow-flow-card__head span {
   min-width: 0;
@@ -3549,26 +3669,26 @@
   opacity: 0.72;
 }
 .deepsea-workflow-flow-card__head strong {
-  color: #9df4c8;
+  color: var(--deepsea-primary);
   font-size: 8px;
 }
 .deepsea-workflow-flow-card p {
   margin: 0;
-  color: rgba(157, 244, 200, 0.82);
-  padding: 7px 8px;
+  color: var(--deepsea-muted);
+  padding: 6px 7px;
   font-family: var(--deepsea-mono);
-  font-size: 9px;
+  font-size: 8px;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 .deepsea-workflow-flow-card__progress {
-  height: 2px;
-  background: rgba(255, 255, 255, 0.08);
+  height: 3px;
+  background: rgba(0, 74, 198, 0.08);
 }
 .deepsea-workflow-flow-card__progress span {
   display: block;
   height: 100%;
-  background: #9df4c8;
+  background: var(--deepsea-primary);
 }
 .deepsea-workflow-flow[data-session-workflow-map="run"] .deepsea-workflow-flow-card__progress span {
   background: var(--deepsea-ok);
@@ -3578,19 +3698,19 @@
 }
 .deepsea-workflow-stage-rail {
   display: grid;
-  grid-template-columns: repeat(6, minmax(92px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
-  overflow-x: auto;
+  overflow: hidden;
 }
 .deepsea-workflow-stage-rail__item {
-  min-width: 92px;
-  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 12%, var(--deepsea-border-subtle));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--deepsea-surface) 88%, var(--deepsea-primary) 3%);
-  padding: 8px;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 14%, var(--deepsea-border-subtle));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--deepsea-surface) 90%, var(--deepsea-primary) 2%);
+  padding: 7px 8px;
 }
 .deepsea-workflow-stage-rail__item span,
 .deepsea-workflow-stage-rail__item strong {
@@ -3601,14 +3721,14 @@
 }
 .deepsea-workflow-stage-rail__item span {
   color: var(--deepsea-text);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 820;
 }
 .deepsea-workflow-stage-rail__item strong {
-  margin-top: 4px;
+  margin-top: 3px;
   color: var(--deepsea-muted);
   font-family: var(--deepsea-mono);
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 860;
   text-transform: uppercase;
 }
@@ -3640,9 +3760,9 @@
 .deepsea-workflow-agent-roster__item {
   min-width: 0;
   border: 1px solid color-mix(in srgb, var(--deepsea-primary) 12%, var(--deepsea-border-subtle));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--deepsea-surface) 94%, var(--deepsea-primary) 2%);
-  padding: 9px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--deepsea-surface) 95%, var(--deepsea-primary) 2%);
+  padding: 8px;
 }
 .deepsea-workflow-gate-summary__item {
   display: grid;
@@ -4092,18 +4212,46 @@ button.deepsea-message-attachment {
 }
 .deepsea-run-capsule {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   border: 1px solid color-mix(in srgb, var(--deepsea-primary) 16%, var(--deepsea-border-subtle));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--deepsea-surface) 92%, var(--deepsea-primary) 3%);
-  padding: 12px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--deepsea-surface) 94%, var(--deepsea-primary) 2%);
+  padding: 9px;
 }
 .deepsea-run-capsule .deepsea-workflow-flow {
-  margin-top: -2px;
+  margin-top: -1px;
+}
+.deepsea-run-log-mode {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 12%, var(--deepsea-border-subtle));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--deepsea-surface) 94%, var(--deepsea-primary) 2%);
+  color: var(--deepsea-muted);
+  padding: 8px 9px;
+  font-size: 10px;
+  font-weight: 760;
+}
+.deepsea-run-log-mode strong {
+  flex: 0 0 auto;
+  color: var(--deepsea-primary);
+  font-family: var(--deepsea-mono);
+  font-size: 9px;
+  font-weight: 860;
+  text-transform: uppercase;
+}
+.deepsea-run-log-mode span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .deepsea-run-dynamic-monitor {
   display: grid;
-  gap: 8px;
+  gap: 5px;
   min-width: 0;
 }
 .deepsea-run-dynamic-monitor__header {
@@ -4115,8 +4263,8 @@ button.deepsea-message-attachment {
 }
 .deepsea-run-dynamic-monitor__header span {
   color: var(--deepsea-text);
-  font-size: 11px;
-  font-weight: 860;
+  font-size: 10px;
+  font-weight: 880;
   line-height: 1.2;
 }
 .deepsea-run-dynamic-monitor__header strong {
@@ -4126,17 +4274,17 @@ button.deepsea-message-attachment {
   background: var(--deepsea-ok-soft);
   color: var(--deepsea-ok);
   padding: 2px 7px;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 860;
   line-height: 1.2;
 }
 .deepsea-run-capsule__header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
-  border-bottom: 1px solid color-mix(in srgb, var(--deepsea-primary) 10%, var(--deepsea-border-subtle));
-  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-border-subtle));
+  padding-bottom: 8px;
 }
 .deepsea-run-capsule__identity {
   display: flex;
@@ -4167,15 +4315,15 @@ button.deepsea-message-attachment {
 }
 .deepsea-run-capsule__identity strong {
   color: var(--deepsea-text);
-  font-size: 13px;
-  font-weight: 860;
+  font-size: 12px;
+  font-weight: 880;
   line-height: 1.25;
 }
 .deepsea-run-capsule__identity span {
   margin-top: 2px;
   color: var(--deepsea-muted);
   font-family: var(--deepsea-mono);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 780;
 }
 .deepsea-run-capsule__status {
@@ -4187,23 +4335,23 @@ button.deepsea-message-attachment {
 }
 .deepsea-run-capsule__body {
   display: grid;
-  grid-template-columns: minmax(136px, 180px) minmax(0, 1fr);
+  grid-template-columns: minmax(128px, 168px) minmax(0, 1fr);
   align-items: start;
-  gap: 12px;
+  gap: 8px;
 }
 .deepsea-run-event-rail {
   display: grid;
-  gap: 8px;
-  border-right: 1px solid color-mix(in srgb, var(--deepsea-primary) 10%, var(--deepsea-border-subtle));
-  padding-right: 10px;
+  gap: 6px;
+  border-right: 1px solid color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-border-subtle));
+  padding-right: 7px;
 }
 .deepsea-run-event-rail__item {
   width: 100%;
   border: 1px solid color-mix(in srgb, var(--deepsea-primary) 12%, var(--deepsea-border-subtle));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--deepsea-surface) 94%, var(--deepsea-primary) 2%);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--deepsea-surface) 95%, var(--deepsea-primary) 2%);
   color: inherit;
-  padding: 8px;
+  padding: 6px 7px;
   text-align: left;
   cursor: pointer;
 }
@@ -4216,13 +4364,13 @@ button.deepsea-message-attachment {
 }
 .deepsea-run-event-rail__item strong {
   color: var(--deepsea-text);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 860;
 }
 .deepsea-run-event-rail__item span {
-  margin-top: 3px;
+  margin-top: 2px;
   color: var(--deepsea-muted);
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1.3;
 }
 .deepsea-run-event-rail__item[data-kind="error"] {
