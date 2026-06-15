@@ -513,18 +513,120 @@ test('SessionShell merges consecutive workflow transcript messages into one work
   assert.doesNotMatch(html, /data-workflow-mission-strip="true"/);
 });
 
+test('SessionShell only attaches live workflow state to the latest workflow chat group', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  payload.activeSession.runs = [];
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-current',
+    selected_intent: 'standard_development',
+    active_stage: 'agent_assignment',
+    controller: 'worker',
+    blocker: '等待人工处理。',
+    next_action: '等待人工处理。',
+  };
+  payload.activeSession.workflowAgentAssignments = [
+    {
+      task_id: 'task-current',
+      task_title: '实现当前流程',
+      role: 'executor',
+      execution_mode: 'parallel',
+      assigned_agent_id: 'agent-current',
+      assigned_agent_name: '当前执行者',
+      backend: 'codex',
+      fallback_reason: null,
+      scope_write: ['packages/backend/src/repos/projects.ts'],
+    },
+  ];
+  payload.activeSession.messages = [
+    {
+      id: 'msg-user-before-workflow',
+      session_id: payload.activeSession.session.id,
+      role: 'user',
+      sender_id: 'user',
+      sender_name: 'User',
+      content: '开始处理。',
+      message_type: 'text',
+      status: 'completed',
+      metadata: null,
+      created_at: now,
+    },
+    {
+      id: 'msg-workflow-old',
+      session_id: payload.activeSession.session.id,
+      role: 'system',
+      sender_id: 'workflow',
+      sender_name: '工作流',
+      content: '工作流已启动，进入 planning 阶段。',
+      message_type: 'text',
+      status: 'completed',
+      metadata: JSON.stringify({ event_type: 'workflow_started', workflow_run_id: 'workflow-run-current' }),
+      created_at: now + 1_000,
+    },
+    {
+      id: 'msg-user-change-request',
+      session_id: payload.activeSession.session.id,
+      role: 'user',
+      sender_id: 'user',
+      sender_name: 'User',
+      content: '请修改 spec v1：',
+      message_type: 'text',
+      status: 'completed',
+      metadata: null,
+      created_at: now + 2_000,
+    },
+    {
+      id: 'msg-workflow-latest',
+      session_id: payload.activeSession.session.id,
+      role: 'system',
+      sender_id: 'workflow',
+      sender_name: '工作流',
+      content: '产品经理检测到子任务异常：unknown。',
+      message_type: 'text',
+      status: 'completed',
+      metadata: JSON.stringify({ event_type: 'workflow_recovery_decided', workflow_run_id: 'workflow-run-current' }),
+      created_at: now + 3_000,
+    },
+  ];
+
+  const html = renderSessionShell(payload);
+  const transcriptScrollIndex = html.indexOf('data-transcript-scroll="true"');
+  const transcriptEndIndex = html.indexOf('class="deepsea-transcript__end"');
+  const transcriptHtml = transcriptScrollIndex >= 0 && transcriptEndIndex > transcriptScrollIndex
+    ? html.slice(transcriptScrollIndex, transcriptEndIndex)
+    : html;
+
+  assert.equal((transcriptHtml.match(/data-workflow-chat-message="true"/g) ?? []).length, 2);
+  assert.equal((transcriptHtml.match(/data-workflow-flow-root="true"/g) ?? []).length, 1);
+  assert.match(transcriptHtml, /工作流已启动/);
+  assert.match(transcriptHtml, /产品经理检测到子任务异常/);
+  const firstWorkflowIndex = transcriptHtml.indexOf('data-workflow-chat-message="true"');
+  const secondWorkflowIndex = transcriptHtml.indexOf('data-workflow-chat-message="true"', firstWorkflowIndex + 1);
+  assert.ok(firstWorkflowIndex >= 0);
+  assert.ok(secondWorkflowIndex > firstWorkflowIndex);
+  const firstWorkflowHtml = transcriptHtml.slice(firstWorkflowIndex, secondWorkflowIndex);
+  const latestWorkflowHtml = transcriptHtml.slice(secondWorkflowIndex);
+  assert.doesNotMatch(firstWorkflowHtml, /data-workflow-flow-root="true"/);
+  assert.doesNotMatch(firstWorkflowHtml, /data-workflow-view-toggle="true"/);
+  assert.doesNotMatch(firstWorkflowHtml, /当前执行者/);
+  assert.match(latestWorkflowHtml, /data-workflow-flow-root="true"/);
+  assert.match(latestWorkflowHtml, /data-workflow-view-toggle="true"/);
+  assert.match(latestWorkflowHtml, /当前执行者/);
+});
+
 test('SessionShell keeps workflow chat layout compact by default', () => {
-  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\s*\{[^}]*width:\s*min\(100%,\s*760px\)/s);
+  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\s*\{[^}]*width:\s*min\(100%,\s*720px\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-flow__step\[data-step="distribution"\]\s*\{[^}]*padding-bottom:\s*4px/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-flow__step\[data-step="distribution"\]\s*\{[^}]*padding-bottom:\s*2px/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-flow__cards\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(136px,\s*1fr\)\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow__step\[data-step="distribution"\]\s+\.deepsea-workflow-flow__cards\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-flow-card\s*\{[^}]*grid-template-columns:\s*20px\s+minmax\(0,\s*1fr\)/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-flow-card\s*\{[^}]*grid-template-columns:\s*18px\s+minmax\(0,\s*1fr\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow-card p\s*\{[^}]*-webkit-line-clamp:\s*1/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow__step\[data-step="execution"\]\s+\.deepsea-workflow-flow__cards\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow__heading\s*\{[^}]*display:\s*none/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-flow__track\s*\{[^}]*background:\s*linear-gradient/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-text\s*\{[^}]*white-space:\s*normal/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact\s*\{[^}]*grid-template-columns:\s*auto\s+auto\s+minmax\(0,\s*1fr\)\s+auto/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact\s*\{[^}]*grid-template-columns:\s*minmax\(112px,\s*auto\)\s+auto\s+minmax\(0,\s*1fr\)\s+auto/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-events__compact span\s*\{[^}]*text-overflow:\s*ellipsis/s);
 });
 
@@ -638,6 +740,7 @@ test('SessionShell hides artifact confirm action after approval while keeping ch
 
 test('SessionShell renders workflow controller and agent assignment table', () => {
   const payload = createPayload();
+  payload.activeSession.runs = [];
   payload.activeSession.workflowController = {
     workflow_run_id: 'workflow-1',
     selected_intent: 'standard_development',
@@ -661,9 +764,11 @@ test('SessionShell renders workflow controller and agent assignment table', () =
   const html = renderSessionShell(payload);
 
   assert.match(html, /data-workflow-chat-message="true"/);
-  assert.match(html, /标准开发/);
-  assert.match(html, /分派/);
-  assert.match(html, /工作流/);
+  assert.match(html, /data-workflow-flow-root="true"/);
+  assert.match(html, /Parallel Execution 并行执行/);
+  assert.match(html, /1\. 任务分配与并行启动/);
+  assert.match(html, /2\. 并行执行进度/);
+  assert.doesNotMatch(html, /Execution Log/);
   assert.match(html, /全栈工程师/);
   assert.match(html, /未找到更匹配/);
 });

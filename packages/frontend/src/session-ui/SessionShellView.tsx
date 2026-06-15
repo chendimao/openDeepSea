@@ -1640,7 +1640,9 @@ function WorkflowChatMessage({
 }): JSX.Element {
   const summary = formatWorkflowChatSummary(group);
   const status = getWorkflowChatStatus(group);
+  const hasLiveWorkflowState = hasWorkflowChatState(group);
   const [viewMode, setViewMode] = useState<WorkflowViewMode>('flow');
+  const showWorkflowMeta = hasLiveWorkflowState && viewMode === 'log';
 
   return (
     <article
@@ -1656,24 +1658,28 @@ function WorkflowChatMessage({
         </span>
         <time className="deepsea-mono">{formatClock(group.updatedAt)}</time>
         <strong>{formatWorkflowFlowStatus(status)}</strong>
-        <WorkflowViewToggle
-          mode={viewMode}
-          onModeChange={setViewMode}
-          label="Workflow 显示模式"
-          className="deepsea-workflow-view-toggle--chat"
-        />
+        {hasLiveWorkflowState ? (
+          <WorkflowViewToggle
+            mode={viewMode}
+            onModeChange={setViewMode}
+            label="Workflow 显示模式"
+            className="deepsea-workflow-view-toggle--chat"
+          />
+        ) : null}
       </header>
       <div className="deepsea-message-body deepsea-workflow-chat">
         <div className="deepsea-workflow-chat__summary-row">
           <p className="deepsea-workflow-chat__summary-text" title={summary}>{summary}</p>
-          <div className="deepsea-workflow-chat__badges" aria-label="Workflow 摘要">
-            <span>{formatWorkflowIntentLabel(group.controller?.selected_intent)}</span>
-            <span>{formatWorkflowStageLabel(group.controller?.active_stage)}</span>
-            <span>{formatPendingGateCount(group.gates)}</span>
-            <span>{group.assignments.length} agents</span>
-          </div>
+          {showWorkflowMeta ? (
+            <div className="deepsea-workflow-chat__badges" aria-label="Workflow 摘要">
+              <span>{formatWorkflowIntentLabel(group.controller?.selected_intent)}</span>
+              <span>{formatWorkflowStageLabel(group.controller?.active_stage)}</span>
+              <span>{formatPendingGateCount(group.gates)}</span>
+              <span>{group.assignments.length} agents</span>
+            </div>
+          ) : null}
         </div>
-        {viewMode === 'flow' ? (
+        {hasLiveWorkflowState && viewMode === 'flow' ? (
           <WorkflowFlowMap
             kind="mission"
             phaseLabel="Parallel Execution 并行执行"
@@ -1681,14 +1687,14 @@ function WorkflowChatMessage({
             status={status}
             summary={formatWorkflowFlowTimelineLabel(group.controller, group.messages)}
             lines={buildWorkflowFlowLines(group.assignments, group.gates, group.controller)}
-            cards={buildWorkflowFlowCards(group.controller, group.artifacts, group.gates, group.assignments, group.messages)}
+            cards={buildWorkflowFlowCards(group.controller, group.artifacts, group.gates, group.assignments)}
           />
         ) : null}
         <WorkflowEventRows
           messages={group.messages}
           expanded={viewMode === 'log'}
         />
-        {viewMode === 'flow' ? (
+        {hasLiveWorkflowState && viewMode === 'flow' ? (
           <WorkflowGateSummary artifacts={group.artifacts} gates={group.gates} onApprove={onApprove} onRequestChange={onRequestChange} />
         ) : null}
       </div>
@@ -1733,6 +1739,10 @@ function WorkflowViewToggle({
   );
 }
 
+function hasWorkflowChatState(group: WorkflowChatGroup): boolean {
+  return Boolean(group.controller || group.artifacts.length > 0 || group.gates.length > 0 || group.assignments.length > 0);
+}
+
 function WorkflowEventRows({
   messages,
   expanded = false,
@@ -1754,7 +1764,7 @@ function WorkflowEventRows({
           <strong>{formatWorkflowEventLabel(latestMessage)}</strong>
           <time className="deepsea-mono">{formatClock(latestMessage.created_at)}</time>
           <span title={latestMessage.content}>{formatWorkflowEventPreview(latestMessage.content)}</span>
-          <em>已合并前 {hiddenCount} 条 workflow 事件</em>
+          <em title={`已合并前 ${hiddenCount} 条 workflow 事件`}>{hiddenCount > 0 ? `+${hiddenCount} 旧事件` : '最新事件'}</em>
         </div>
       </div>
     );
@@ -1927,7 +1937,7 @@ function WorkflowFlowMap({
 }): JSX.Element {
   const columns = kind === 'mission' ? 3 : 2;
   const flowHeight = kind === 'mission'
-    ? Math.max(166, 48 + Math.ceil(Math.max(cards.length, 1) / 2) * 52)
+    ? Math.max(142, 42 + Math.ceil(Math.max(cards.length, 1) / 2) * 44)
     : Math.max(164, 54 + Math.ceil(Math.max(cards.length, 1) / columns) * 62);
   if (kind === 'mission') {
     const distributionCards = cards.slice(0, 2);
@@ -2062,7 +2072,6 @@ function buildWorkflowFlowCards(
   artifacts: WorkflowArtifactVersionView[],
   gates: WorkflowGateView[],
   assignments: WorkflowAgentAssignmentView[],
-  messages: SessionMessage[] = [],
 ): WorkflowFlowCard[] {
   const pendingGate = gates.find((gate) => gate.status === 'pending' && gate.artifact_version_id);
   const pendingGateArtifact = pendingGate?.artifact_version_id
@@ -2096,17 +2105,6 @@ function buildWorkflowFlowCards(
       : '等待 agent 分派',
     progress: assignments.length > 0 ? 64 : 20,
   };
-  const latestWorkflowMessage = messages[messages.length - 1];
-  const eventCard: WorkflowFlowCard = {
-    icon: MessageSquare,
-    tone: 'event',
-    title: 'Execution Log',
-    status: formatWorkflowEventCount(messages),
-    detail: latestWorkflowMessage
-      ? `${formatWorkflowEventLabel(latestWorkflowMessage)} · ${formatWorkflowEventPreview(latestWorkflowMessage.content)}`
-      : '等待 workflow 事件写入',
-    progress: messages.length > 0 ? 72 : 18,
-  };
   const assignmentCards = assignments.slice(0, 2).map((assignment): WorkflowFlowCard => ({
     icon: GitFork,
     tone: 'agent',
@@ -2118,7 +2116,7 @@ function buildWorkflowFlowCards(
   const distributionCards = assignmentCards.length > 0
     ? [...assignmentCards, gateCard].slice(0, 2)
     : [controllerCard, gateCard];
-  return [...distributionCards, agentCard, eventCard];
+  return [...distributionCards, agentCard];
 }
 
 function formatWorkflowIntentLabel(intent: string | null | undefined): string {
@@ -2395,7 +2393,7 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
       kind: 'workflow-group',
       key: `workflow-group:${pendingWorkflowMessages.map((message) => message.id).join(':')}`,
       timestamp: pendingWorkflowMessages[0]?.created_at ?? Date.now(),
-      group: buildWorkflowChatGroup(detail, pendingWorkflowMessages),
+      group: buildWorkflowChatGroup(detail, pendingWorkflowMessages, { includeWorkflowState: false }),
     });
     pendingWorkflowMessages = [];
   };
@@ -2410,7 +2408,30 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
   }
   flushWorkflowMessages();
   if (workflowStateItem) timeline.push(workflowStateItem);
+  attachWorkflowStateToLatestGroup(timeline, detail);
   return timeline.sort((left, right) => left.timestamp - right.timestamp || left.key.localeCompare(right.key));
+}
+
+function attachWorkflowStateToLatestGroup(timeline: TranscriptTimelineItem[], detail: SessionDetail): void {
+  if (!hasWorkflowState(detail)) return;
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const item = timeline[index];
+    if (item.kind !== 'workflow-group') continue;
+    timeline[index] = {
+      ...item,
+      group: buildWorkflowChatGroup(detail, item.group.messages, { includeWorkflowState: true }),
+    };
+    return;
+  }
+}
+
+function hasWorkflowState(detail: SessionDetail): boolean {
+  return Boolean(
+    detail.workflowController ||
+    (detail.workflowArtifacts ?? []).length > 0 ||
+    (detail.workflowGates ?? []).length > 0 ||
+    (detail.workflowAgentAssignments ?? []).length > 0
+  );
 }
 
 function buildWorkflowStateChatGroup(detail: SessionDetail): TranscriptTimelineItem | null {
@@ -2431,18 +2452,21 @@ function buildWorkflowStateChatGroup(detail: SessionDetail): TranscriptTimelineI
   };
 }
 
-function buildWorkflowChatGroup(detail: SessionDetail, messages: SessionMessage[]): WorkflowChatGroup {
-  const artifacts = detail.workflowArtifacts ?? [];
-  const createdAt = Math.min(
-    ...messages.map((message) => message.created_at),
-    ...artifacts.map((artifact) => artifact.created_at),
-    detail.session.updated_at,
-  );
-  const updatedAt = Math.max(
-    ...messages.map((message) => message.created_at),
-    ...artifacts.map((artifact) => artifact.created_at),
-    detail.session.updated_at,
-  );
+function buildWorkflowChatGroup(
+  detail: SessionDetail,
+  messages: SessionMessage[],
+  options: { includeWorkflowState?: boolean } = {},
+): WorkflowChatGroup {
+  const includeWorkflowState = options.includeWorkflowState ?? true;
+  const artifacts = includeWorkflowState ? detail.workflowArtifacts ?? [] : [];
+  const messageTimes = messages.map((message) => message.created_at);
+  const stateTimes = artifacts.map((artifact) => artifact.created_at);
+  const createdAt = messageTimes.length > 0
+    ? Math.min(...messageTimes)
+    : Math.min(...stateTimes, detail.session.updated_at);
+  const updatedAt = messageTimes.length > 0
+    ? Math.max(...messageTimes)
+    : Math.max(...stateTimes, detail.session.updated_at);
   return {
     id: messages.length > 0
       ? messages.map((message) => message.id).join(':')
@@ -2450,10 +2474,10 @@ function buildWorkflowChatGroup(detail: SessionDetail, messages: SessionMessage[
     createdAt,
     updatedAt,
     messages,
-    controller: detail.workflowController ?? null,
+    controller: includeWorkflowState ? detail.workflowController ?? null : null,
     artifacts,
-    gates: detail.workflowGates ?? [],
-    assignments: detail.workflowAgentAssignments ?? [],
+    gates: includeWorkflowState ? detail.workflowGates ?? [] : [],
+    assignments: includeWorkflowState ? detail.workflowAgentAssignments ?? [] : [],
   };
 }
 
