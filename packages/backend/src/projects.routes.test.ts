@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
+import { IncomingMessage, ServerResponse } from 'node:http';
+import type { Socket } from 'node:net';
+import { Duplex } from 'node:stream';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -21,17 +24,7 @@ app.use(express.json());
 app.use('/api', router);
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
-  const server = app.listen(0);
-  try {
-    const address = server.address();
-    assert(address && typeof address === 'object');
-    return await fetch(`http://127.0.0.1:${address.port}${path}`, {
-      ...init,
-      headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
-    });
-  } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  }
+  return dispatchExpressRequest(path, init);
 }
 
 test('delete project returns 404 for missing project', async () => {
@@ -84,10 +77,10 @@ test('reorder projects updates order and returns stats', async () => {
   assert.equal(typeof bRow?.stats.rooms, 'number');
 });
 
-test('delete project rejects active agent runs', async () => {
+test('delete project stops active agent runs before removing project', async () => {
   const { project, room } = createProjectFixture('active-agent-run');
   const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'planner-delete-test', agent_name: 'Planner Delete Test' });
-  agentRunRepo.create({
+  const run = agentRunRepo.create({
     room_id: room.id,
     room_agent_id: agent.id,
     agent_id: agent.agent_id,
@@ -98,32 +91,46 @@ test('delete project rejects active agent runs', async () => {
 
   const res = await request(`/api/projects/${project.id}`, { method: 'DELETE' });
 
-  assert.equal(res.status, 409);
-  const body = await res.json() as { error: string; active_agent_run_count: number; active_workflow_run_count: number };
-  assert.equal(body.error, 'project has active runs');
-  assert.equal(body.active_agent_run_count, 1);
-  assert.equal(body.active_workflow_run_count, 0);
-  assert.ok(projectRepo.get(project.id));
+  assert.equal(res.status, 204);
+  assert.equal(projectRepo.get(project.id), undefined);
+  const remainingRun = agentRunRepo.get(run.id);
+  assert.notEqual(remainingRun?.status, 'running');
+  assert.notEqual(remainingRun?.status, 'queued');
+  assert.notEqual(remainingRun?.status, 'retrying');
 });
 
-test('delete project rejects active workflow runs', async () => {
+test('delete project stops active workflow runs and tasks before removing project', async () => {
   const { project, room } = createProjectFixture('active-workflow-run');
   const task = taskRepo.create({ room_id: room.id, project_id: project.id, title: 'Workflow Task' });
-  workflowRepo.createRun({
+  taskRepo.updateStatus(task.id, 'in_progress');
+  const run = workflowRepo.createRun({
     room_id: room.id,
     project_id: project.id,
     task_id: task.id,
     status: 'awaiting_approval',
   });
+  const step = workflowRepo.createStep({
+    workflow_run_id: run.id,
+    task_id: task.id,
+    stage: 'implementation',
+    status: 'running',
+    sort_order: 1,
+  });
 
   const res = await request(`/api/projects/${project.id}`, { method: 'DELETE' });
 
-  assert.equal(res.status, 409);
-  const body = await res.json() as { error: string; active_agent_run_count: number; active_workflow_run_count: number };
-  assert.equal(body.error, 'project has active runs');
-  assert.equal(body.active_agent_run_count, 0);
-  assert.equal(body.active_workflow_run_count, 1);
-  assert.ok(projectRepo.get(project.id));
+  assert.equal(res.status, 204);
+  assert.equal(projectRepo.get(project.id), undefined);
+  const remainingRun = workflowRepo.getRun(run.id);
+  assert.notEqual(remainingRun?.status, 'draft');
+  assert.notEqual(remainingRun?.status, 'running');
+  assert.notEqual(remainingRun?.status, 'awaiting_decision');
+  assert.notEqual(remainingRun?.status, 'awaiting_approval');
+  assert.notEqual(remainingRun?.status, 'blocked');
+  const remainingStep = workflowRepo.getStep(step.id);
+  assert.notEqual(remainingStep?.status, 'running');
+  const remainingTask = taskRepo.getIncludingDeleted(task.id);
+  assert.notEqual(remainingTask?.status, 'in_progress');
 });
 
 test('delete project removes internal records and scoped settings only', async () => {
@@ -150,4 +157,79 @@ function createProjectFixture(name: string) {
   const project = projectRepo.create({ name: `Project Delete ${name}`, path: projectPath });
   const room = roomRepo.create({ project_id: project.id, name: `${name} Room` });
   return { project, room, projectPath };
+}
+
+function dispatchExpressRequest(path: string, init: RequestInit = {}): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const method = init.method ?? 'GET';
+    const body = typeof init.body === 'string' ? Buffer.from(init.body) : null;
+    const socket = new Duplex({
+      read() {},
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+    const req = new IncomingMessage(socket as unknown as Socket);
+    req.method = method;
+    req.url = path;
+    req.headers = {
+      'content-type': 'application/json',
+      ...(body ? { 'content-length': String(body.length) } : {}),
+      ...headersInitToRecord(init.headers),
+    };
+
+    const res = new ServerResponse(req);
+    const chunks: Buffer[] = [];
+
+    res.write = ((chunk: unknown, encoding?: BufferEncoding, callback?: (error?: Error | null) => void) => {
+      if (chunk) chunks.push(toBuffer(chunk, encoding));
+      callback?.();
+      return true;
+    }) as typeof res.write;
+
+    res.end = ((chunk?: unknown, encoding?: BufferEncoding, callback?: () => void) => {
+      if (chunk) chunks.push(toBuffer(chunk, encoding));
+      const headers = new Headers();
+      for (const [key, value] of Object.entries(res.getHeaders())) {
+        if (Array.isArray(value)) {
+          for (const item of value) headers.append(key, String(item));
+        } else if (value !== undefined) {
+          headers.set(key, String(value));
+        }
+      }
+      const emptyBodyStatus = res.statusCode === 204 || res.statusCode === 205 || res.statusCode === 304;
+      resolve(new Response(emptyBodyStatus ? null : Buffer.concat(chunks), {
+        status: res.statusCode,
+        statusText: res.statusMessage,
+        headers,
+      }));
+      callback?.();
+      return res;
+    }) as typeof res.end;
+
+    (app as unknown as {
+      handle: (request: IncomingMessage, response: ServerResponse, done: (error?: unknown) => void) => void;
+    }).handle(req, res, (error: unknown) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(new Response(null, { status: 404 }));
+    });
+    if (body) req.push(body);
+    req.push(null);
+  });
+}
+
+function headersInitToRecord(headers: HeadersInit | undefined): Record<string, string> {
+  if (!headers) return {};
+  if (headers instanceof Headers) return Object.fromEntries(headers.entries());
+  if (Array.isArray(headers)) return Object.fromEntries(headers);
+  return headers;
+}
+
+function toBuffer(chunk: unknown, encoding?: BufferEncoding): Buffer {
+  if (Buffer.isBuffer(chunk)) return chunk;
+  if (chunk instanceof Uint8Array) return Buffer.from(chunk);
+  return Buffer.from(String(chunk), encoding);
 }

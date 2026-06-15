@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { nanoid } from 'nanoid';
 import { db, now } from '../db.js';
-import type { MessageRoutingMode, Project } from '../types.js';
+import type { AgentRunStatus, MessageRoutingMode, Project, WorkflowStatus, WorkflowStepStatus } from '../types.js';
 
 export type DeleteProjectResult =
   | { ok: true }
@@ -13,7 +13,10 @@ export type DeleteProjectResult =
       activeWorkflowRunCount: number;
     };
 
-const ACTIVE_WORKFLOW_STATUSES = ['draft', 'running', 'awaiting_decision', 'awaiting_approval', 'blocked'];
+const ACTIVE_AGENT_RUN_STATUSES: AgentRunStatus[] = ['running', 'queued', 'retrying'];
+const ACTIVE_WORKFLOW_STATUSES: WorkflowStatus[] = ['draft', 'running', 'awaiting_decision', 'awaiting_approval', 'blocked'];
+const ACTIVE_WORKFLOW_STEP_STATUSES: WorkflowStepStatus[] = ['pending', 'running', 'awaiting_approval'];
+const PROJECT_DELETE_CANCELLATION_ERROR = 'Project deleted before run completed';
 
 export const projectRepo = {
   list(): Project[] {
@@ -124,38 +127,68 @@ export const projectRepo = {
   delete(id: string): DeleteProjectResult {
     if (!this.get(id)) return { ok: false, reason: 'not_found' };
 
-    const activeAgentRunCount = (
-      db
-        .prepare(
-          `SELECT COUNT(*) AS count
-           FROM agent_runs
-           JOIN rooms ON rooms.id = agent_runs.room_id
-           WHERE rooms.project_id = ?
-             AND agent_runs.status IN ('running', 'queued', 'retrying')`,
-        )
-        .get(id) as { count: number }
-    ).count;
-    const activeWorkflowRunCount = (
-      db
-        .prepare(
-          `SELECT COUNT(*) AS count
-           FROM workflow_runs
-           WHERE project_id = ?
-             AND status IN (${ACTIVE_WORKFLOW_STATUSES.map(() => '?').join(', ')})`,
-        )
-        .get(id, ...ACTIVE_WORKFLOW_STATUSES) as { count: number }
-    ).count;
-
-    if (activeAgentRunCount > 0 || activeWorkflowRunCount > 0) {
-      return {
-        ok: false,
-        reason: 'active_runs',
-        activeAgentRunCount,
-        activeWorkflowRunCount,
-      };
-    }
-
     const removeProject = db.transaction((projectId: string) => {
+      const timestamp = now();
+      db.prepare(
+        `UPDATE agent_runs
+         SET status = 'cancelled',
+             error = COALESCE(error, ?),
+             stderr = CASE
+               WHEN stderr = '' THEN ?
+               ELSE stderr || ?
+             END,
+             updated_at = ?,
+             completed_at = ?
+         WHERE room_id IN (SELECT id FROM rooms WHERE project_id = ?)
+           AND status IN (${ACTIVE_AGENT_RUN_STATUSES.map(() => '?').join(', ')})`,
+      ).run(
+        PROJECT_DELETE_CANCELLATION_ERROR,
+        PROJECT_DELETE_CANCELLATION_ERROR,
+        `\n${PROJECT_DELETE_CANCELLATION_ERROR}`,
+        timestamp,
+        timestamp,
+        projectId,
+        ...ACTIVE_AGENT_RUN_STATUSES,
+      );
+      db.prepare(
+        `UPDATE workflow_steps
+         SET status = 'cancelled',
+             error = COALESCE(error, ?),
+             updated_at = ?,
+             completed_at = COALESCE(completed_at, ?)
+         WHERE workflow_run_id IN (SELECT id FROM workflow_runs WHERE project_id = ?)
+           AND status IN (${ACTIVE_WORKFLOW_STEP_STATUSES.map(() => '?').join(', ')})`,
+      ).run(
+        PROJECT_DELETE_CANCELLATION_ERROR,
+        timestamp,
+        timestamp,
+        projectId,
+        ...ACTIVE_WORKFLOW_STEP_STATUSES,
+      );
+      db.prepare(
+        `UPDATE workflow_runs
+         SET status = 'cancelled',
+             error = COALESCE(error, ?),
+             updated_at = ?,
+             completed_at = COALESCE(completed_at, ?)
+         WHERE project_id = ?
+           AND status IN (${ACTIVE_WORKFLOW_STATUSES.map(() => '?').join(', ')})`,
+      ).run(
+        PROJECT_DELETE_CANCELLATION_ERROR,
+        timestamp,
+        timestamp,
+        projectId,
+        ...ACTIVE_WORKFLOW_STATUSES,
+      );
+      db.prepare(
+        `UPDATE tasks
+         SET status = 'failed',
+             updated_at = ?,
+             completed_at = COALESCE(completed_at, ?)
+         WHERE project_id = ?
+           AND deleted_at IS NULL
+           AND status IN ('in_progress', 'review')`,
+      ).run(timestamp, timestamp, projectId);
       db.prepare(
         `DELETE FROM settings
          WHERE scope = 'room'
