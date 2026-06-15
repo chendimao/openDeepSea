@@ -65,6 +65,62 @@ test('executeRecoveryDecision retries same agent and records recovery message', 
   assert.match(latestRecoveryMessage(fixture.room.id), /retry_same_agent/);
 });
 
+test('executeRecoveryDecision reuses one recovery message for repeated workflow gate failures', async () => {
+  const fixture = createFixture('repeat gate failure');
+  assert.ok(fixture.agent);
+  const firstStep = workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.childTask.id,
+    stage: 'planning',
+    node_name: 'brainstorming',
+    status: 'failed',
+    room_agent_id: fixture.agent.id,
+    prompt: 'first planning attempt',
+    sort_order: 1,
+  });
+  workflowRepo.updateStep(firstStep.id, { error: 'missing required evidence: designDocPath' });
+  const firstIncident = createIncident(fixture, {
+    workflow_step_id: firstStep.id,
+    child_task_id: null,
+    incident_type: 'planner_output_invalid',
+    error: 'missing required evidence: designDocPath',
+  });
+
+  await executeRecoveryDecision({
+    incident: firstIncident,
+    decision: decision('retry_same_agent'),
+    retryWorkflowStep: retryWithoutStartingAgent,
+  });
+
+  const secondStep = workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.childTask.id,
+    stage: 'planning',
+    node_name: 'brainstorming',
+    status: 'failed',
+    room_agent_id: fixture.agent.id,
+    prompt: 'second planning attempt',
+    sort_order: 2,
+  });
+  workflowRepo.updateStep(secondStep.id, { error: 'missing required evidence: designDocPath' });
+  const secondIncident = createIncident(fixture, {
+    workflow_step_id: secondStep.id,
+    child_task_id: null,
+    incident_type: 'planner_output_invalid',
+    error: 'missing required evidence: designDocPath',
+  });
+
+  await executeRecoveryDecision({
+    incident: secondIncident,
+    decision: decision('retry_same_agent'),
+    retryWorkflowStep: retryWithoutStartingAgent,
+  });
+
+  const messages = recoveryMessages(fixture.room.id);
+  assert.equal(messages.length, 1);
+  assert.equal(workflowIncidentRepo.get(secondIncident.id)?.last_message_id, messages[0]?.id);
+});
+
 test('executeRecoveryDecision provisions global executor then retries workflow', async () => {
   const fixture = createFixture('global retry', { createAgent: false });
   const incident = createIncident(fixture, {

@@ -226,6 +226,42 @@ test('SessionShell renders workflow spec and plan gates as read-only artifacts',
   assert.match(sessionShellViewSource, /artifactVersionId:\s*artifact\.id/);
 });
 
+test('SessionShell renders workflow spec approval action', () => {
+  const payload = createPayload();
+  payload.activeSession.workflowArtifacts = [
+    {
+      id: 'artifact-spec-1',
+      workflow_run_id: 'workflow-run-spec-1',
+      artifact_type: 'spec',
+      version: 1,
+      status: 'draft',
+      title: '项目删除修复规格',
+      content: '确认删除项目前停止 active runs。',
+      structured_data: null,
+      created_by_agent_id: 'planner',
+      change_request_message_id: null,
+      approved_by: null,
+      approved_at: null,
+      created_at: Date.now(),
+    },
+  ];
+  payload.activeSession.workflowGates = [{
+    kind: 'spec_confirm',
+    workflow_run_id: 'workflow-run-spec-1',
+    artifact_version_id: 'artifact-spec-1',
+    status: 'pending',
+    reason: '等待用户确认 planner 生成的需求/设计规格。',
+  }];
+
+  const html = renderSessionShell(payload);
+  const panel = html.match(/<section[^>]+data-workflow-artifact-panel="true"[\s\S]*?<\/section>/)?.[0] ?? '';
+
+  assert.match(panel, /等待用户确认/);
+  assert.match(panel, /Spec v1/);
+  assert.match(panel, /确认 spec/);
+  assert.match(panel, /data-workflow-artifact-action="approve"/);
+});
+
 test('SessionShell hides artifact confirm action after approval while keeping change request action', () => {
   const payload = createPayload();
   payload.activeSession.workflowArtifacts = [

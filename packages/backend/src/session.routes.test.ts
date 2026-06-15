@@ -392,6 +392,85 @@ test('session workspace payload exposes workflow artifact versions and approval 
   assert.equal(payload.activeSession.workflowGates?.some((gate) => gate.kind === 'plan_confirm'), true);
 });
 
+test('session workspace payload exposes spec approval gate while workflow waits for spec approval', () => {
+  const project = projectRepo.create({
+    name: 'spec approval project',
+    path: mkdtempSync(join(tmpdir(), 'session-spec-approval-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Spec Approval Room' });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Spec Approval Session',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const sourceMessage = sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: null,
+    content: '修复删除项目 active runs',
+    metadata: {},
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Spec approval workflow',
+    source_message_id: sourceMessage.id,
+    created_from: 'chat_plan',
+  });
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: sourceMessage.content,
+    projectPath: project.path,
+  });
+  const workflow = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'awaiting_approval',
+    current_stage: 'planning',
+    approval_required: true,
+    graph_version: 'superpowers-v2',
+    graph_state: serializeGraphState({
+      ...state,
+      status: 'awaiting_approval',
+      activeSuperpowersStage: 'brainstorming',
+    }),
+  });
+  const draft = workflowArtifactVersionRepo.createDraft({
+    workflow_run_id: workflow.id,
+    artifact_type: 'spec',
+    title: 'Spec',
+    content: '# Spec',
+    structured_data: { designDocPath: 'docs/superpowers/specs/spec.md' },
+    created_by_agent_id: 'planner',
+  });
+  workflowRepo.updateGraphState(workflow.id, serializeGraphState({
+    ...state,
+    workflowRunId: workflow.id,
+    status: 'awaiting_approval',
+    activeSuperpowersStage: 'brainstorming',
+    draftSpecArtifactVersionId: draft.id,
+    designDocPath: 'docs/superpowers/specs/spec.md',
+  }));
+
+  const payload = buildWorkspacePayload(project, session);
+
+  assert.equal(payload.activeSession.workflowArtifacts?.some((artifact) => artifact.id === draft.id), true);
+  assert.deepEqual(payload.activeSession.workflowGates?.find((gate) => gate.kind === 'spec_confirm'), {
+    kind: 'spec_confirm',
+    workflow_run_id: workflow.id,
+    artifact_version_id: draft.id,
+    status: 'pending',
+    reason: '等待用户确认 planner 生成的需求/设计规格。',
+  });
+});
+
 test('session workspace payload exposes workflow controller and agent assignments', () => {
   const project = projectRepo.create({
     name: 'assignment payload project',

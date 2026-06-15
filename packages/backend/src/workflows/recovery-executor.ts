@@ -124,6 +124,11 @@ async function retryWorkflow(
   }
 
   await retryWorkflowStep(run.id);
+  const existingMessage = findEquivalentRecoveryMessage(run.room_id, incident);
+  if (existingMessage) {
+    workflowIncidentRepo.markResolved(incident.id, existingMessage.id);
+    return { status: 'executed', messageId: existingMessage.id, detail: 'equivalent recovery message already exists' };
+  }
   const recorded = writeRecoveryMessage(incident, decision, run, task, '已决定恢复执行并重新推进工作流。');
   workflowIncidentRepo.markResolved(incident.id, recorded.message.id);
   return { status: 'executed', messageId: recorded.message.id };
@@ -268,6 +273,7 @@ function writeRecoveryMessage(
     metadata: {
       incident_id: incident.id,
       incident_type: incident.incident_type,
+      incident_error: incident.error ?? null,
       recovery_action: decision.action,
       confidence: decision.confidence,
     },
@@ -294,6 +300,21 @@ function findExistingRecoveryMessage(roomId: string, incidentId: string) {
     try {
       const metadata = JSON.parse(message.metadata) as Record<string, unknown>;
       return metadata.event_type === 'workflow_recovery_decided' && metadata.incident_id === incidentId;
+    } catch {
+      return false;
+    }
+  }) ?? null;
+}
+
+function findEquivalentRecoveryMessage(roomId: string, incident: WorkflowIncident) {
+  return messageRepo.listByRoom(roomId, 200).find((message) => {
+    if (!message.metadata) return false;
+    try {
+      const metadata = JSON.parse(message.metadata) as Record<string, unknown>;
+      return metadata.event_type === 'workflow_recovery_decided' &&
+        metadata.workflow_run_id === incident.workflow_run_id &&
+        metadata.incident_type === incident.incident_type &&
+        metadata.incident_error === (incident.error ?? null);
     } catch {
       return false;
     }
