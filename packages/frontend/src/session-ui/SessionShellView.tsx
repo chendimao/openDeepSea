@@ -1436,18 +1436,6 @@ function TranscriptCanvas({
   return (
     <section className="deepsea-transcript" aria-label="Active Session">
       <SessionTitleBar detail={detail} todoStats={todoStats} />
-      <WorkflowMissionStrip
-        detail={detail}
-        onApprove={onApproveWorkflowArtifact}
-        onRequestChange={(artifact) => onSendMessage({
-          content: buildWorkflowArtifactChangeRequestContent(artifact),
-          workflowArtifactChangeRequest: {
-            workflowRunId: artifact.workflow_run_id,
-            artifactVersionId: artifact.id,
-            artifactType: artifact.artifact_type,
-          },
-        })}
-      />
       <div className="deepsea-transcript__scroll" data-transcript-scroll="true" ref={transcriptRef}>
         {timeline.length === 0 ? (
           <div className="deepsea-empty deepsea-empty--center">发送第一条消息开始当前会话。</div>
@@ -1470,6 +1458,24 @@ function TranscriptCanvas({
                 onOpenWorkspaceFile={openWorkspaceFilePreview}
                 onSubmitRiskApprovalDecision={submitRiskApprovalDecision}
                 approvalStatusBySourceMessageId={approvalStatusBySourceMessageId}
+              />
+            );
+          }
+          if (item.kind === 'workflow-group') {
+            return (
+              <WorkflowChatMessage
+                key={item.key}
+                group={item.group}
+                sessionTitle={detail.session.title}
+                onApprove={onApproveWorkflowArtifact}
+                onRequestChange={(artifact) => onSendMessage({
+                  content: buildWorkflowArtifactChangeRequestContent(artifact),
+                  workflowArtifactChangeRequest: {
+                    workflowRunId: artifact.workflow_run_id,
+                    artifactVersionId: artifact.id,
+                    artifactType: artifact.artifact_type,
+                  },
+                })}
               />
             );
           }
@@ -1588,48 +1594,92 @@ type WorkflowMissionStageState = 'done' | 'active' | 'gate' | 'blocked' | 'faile
 
 const WORKFLOW_STAGE_ORDER = ['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance'] as const;
 
-function WorkflowMissionStrip({
-  detail,
+interface WorkflowChatGroup {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: SessionMessage[];
+  controller: WorkflowControllerView | null;
+  artifacts: WorkflowArtifactVersionView[];
+  gates: WorkflowGateView[];
+  assignments: WorkflowAgentAssignmentView[];
+}
+
+function WorkflowChatMessage({
+  group,
+  sessionTitle,
   onApprove,
   onRequestChange,
 }: {
-  detail: SessionDetail;
+  group: WorkflowChatGroup;
+  sessionTitle: string;
   onApprove?: (artifactVersionId: string) => void;
   onRequestChange: (artifact: WorkflowArtifactVersionView) => void;
-}): JSX.Element | null {
-  const controller = detail.workflowController ?? null;
-  const artifacts = detail.workflowArtifacts ?? [];
-  const gates = detail.workflowGates ?? [];
-  const assignments = detail.workflowAgentAssignments ?? [];
-  if (!controller && gates.length === 0 && assignments.length === 0) return null;
+}): JSX.Element {
+  const summary = formatWorkflowChatSummary(group);
+  const status = getWorkflowChatStatus(group);
 
   return (
-    <section className="deepsea-workflow-mission" data-workflow-mission-strip="true" aria-label="Workflow Mission">
-      <div className="deepsea-workflow-mission__header">
-        <div className="deepsea-workflow-mission__identity">
-          <span className="deepsea-status-chip" data-tone="ok">Workflow Mission</span>
-          <h3 title={detail.session.title}>{detail.session.title}</h3>
-          <p>{formatWorkflowMissionMeta(controller)}</p>
+    <article
+      className="deepsea-message deepsea-message--workflow"
+      data-role="assistant"
+      data-workflow-chat-message="true"
+      aria-label="工作流消息"
+    >
+      <header className="deepsea-workflow-chat__header">
+        <span>工作流</span>
+        <time className="deepsea-mono">{formatClock(group.updatedAt)}</time>
+        <strong>{formatWorkflowFlowStatus(status)}</strong>
+      </header>
+      <div className="deepsea-message-body deepsea-workflow-chat">
+        <div className="deepsea-workflow-chat__summary">
+          <div className="deepsea-workflow-chat__identity">
+            <span className="deepsea-status-chip" data-tone="ok">动态监控</span>
+            <h3 title={sessionTitle}>{sessionTitle}</h3>
+            <p>{summary}</p>
+          </div>
+          <div className="deepsea-workflow-chat__badges" aria-label="Workflow 摘要">
+            <span>{formatWorkflowEventCount(group.messages)}</span>
+            <span>{formatPendingGateCount(group.gates)}</span>
+            <span>{group.assignments.length} agents</span>
+          </div>
         </div>
-        <div className="deepsea-workflow-mission__badges" aria-label="Workflow 摘要">
-          <span>{formatPendingGateCount(gates)}</span>
-          <span>{assignments.length} agents</span>
-        </div>
+        <WorkflowFlowMap
+          kind="mission"
+          phaseLabel="Workflow Monitor 动态监控"
+          title="主流程协调与门禁"
+          status={status}
+          summary={summary}
+          lines={buildWorkflowFlowLines(group.assignments, group.gates, group.controller)}
+          cards={buildWorkflowFlowCards(group.controller, group.artifacts, group.gates, group.assignments)}
+        />
+        <WorkflowStageRail controller={group.controller} gates={group.gates} />
+        <WorkflowEventRows messages={group.messages} />
+        <WorkflowGateSummary artifacts={group.artifacts} gates={group.gates} onApprove={onApprove} onRequestChange={onRequestChange} />
+        <WorkflowAgentRoster assignments={group.assignments} />
+        {group.controller?.blocker ? <p className="deepsea-workflow-chat__blocker">{group.controller.blocker}</p> : null}
       </div>
-      <WorkflowFlowMap
-        kind="mission"
-        phaseLabel="Parallel Execution 并行执行"
-        title="1. Mission 协调与门禁"
-        status={controller?.blocker ? 'blocked' : controller ? 'active' : 'pending'}
-        summary={controller?.next_action ?? formatWorkflowMissionMeta(controller)}
-        lines={buildWorkflowFlowLines(assignments, gates, controller)}
-        cards={buildWorkflowFlowCards(controller, artifacts, gates, assignments)}
-      />
-      <WorkflowStageRail controller={controller} gates={gates} />
-      <WorkflowGateSummary artifacts={artifacts} gates={gates} onApprove={onApprove} onRequestChange={onRequestChange} />
-      <WorkflowAgentRoster assignments={assignments} />
-      {controller?.blocker ? <p className="deepsea-workflow-mission__blocker">{controller.blocker}</p> : null}
-    </section>
+    </article>
+  );
+}
+
+function WorkflowEventRows({ messages }: { messages: SessionMessage[] }): JSX.Element | null {
+  if (messages.length === 0) return null;
+  return (
+    <div className="deepsea-workflow-events" aria-label="连续工作流事件">
+      {messages.map((message, index) => (
+        <article className="deepsea-workflow-event" key={message.id}>
+          <span className="deepsea-workflow-event__index">{String(index + 1).padStart(2, '0')}</span>
+          <div className="deepsea-workflow-event__body">
+            <div className="deepsea-workflow-event__meta">
+              <strong>{formatWorkflowEventLabel(message)}</strong>
+              <time className="deepsea-mono">{formatClock(message.created_at)}</time>
+            </div>
+            <p>{message.content}</p>
+          </div>
+        </article>
+      ))}
+    </div>
   );
 }
 
@@ -2080,10 +2130,15 @@ function formatWorkflowArtifactType(type: WorkflowArtifactVersionView['artifact_
 
 type TranscriptTimelineItem =
   | { kind: 'message'; key: string; timestamp: number; message: SessionMessage }
+  | { kind: 'run'; key: string; timestamp: number; run: SessionRun }
+  | { kind: 'workflow-group'; key: string; timestamp: number; group: WorkflowChatGroup };
+
+type SourceTranscriptTimelineItem =
+  | { kind: 'message'; key: string; timestamp: number; message: SessionMessage }
   | { kind: 'run'; key: string; timestamp: number; run: SessionRun };
 
 function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[] {
-  return [
+  const sourceTimeline: SourceTranscriptTimelineItem[] = [
     ...detail.messages.map((message) => ({
       kind: 'message' as const,
       key: `message:${message.id}`,
@@ -2097,6 +2152,119 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
       run,
     })),
   ].sort((left, right) => left.timestamp - right.timestamp || left.key.localeCompare(right.key));
+
+  const hasWorkflowTranscriptMessages = sourceTimeline.some(
+    (item) => item.kind === 'message' && isWorkflowTranscriptMessage(item.message),
+  );
+  const workflowStateItem = hasWorkflowTranscriptMessages ? null : buildWorkflowStateChatGroup(detail);
+  const timeline: TranscriptTimelineItem[] = [];
+  let pendingWorkflowMessages: SessionMessage[] = [];
+
+  const flushWorkflowMessages = () => {
+    if (pendingWorkflowMessages.length === 0) return;
+    timeline.push({
+      kind: 'workflow-group',
+      key: `workflow-group:${pendingWorkflowMessages.map((message) => message.id).join(':')}`,
+      timestamp: pendingWorkflowMessages[0]?.created_at ?? Date.now(),
+      group: buildWorkflowChatGroup(detail, pendingWorkflowMessages),
+    });
+    pendingWorkflowMessages = [];
+  };
+
+  for (const item of sourceTimeline) {
+    if (item.kind === 'message' && isWorkflowTranscriptMessage(item.message)) {
+      pendingWorkflowMessages.push(item.message);
+      continue;
+    }
+    flushWorkflowMessages();
+    timeline.push(item);
+  }
+  flushWorkflowMessages();
+  if (workflowStateItem) timeline.push(workflowStateItem);
+  return timeline.sort((left, right) => left.timestamp - right.timestamp || left.key.localeCompare(right.key));
+}
+
+function buildWorkflowStateChatGroup(detail: SessionDetail): TranscriptTimelineItem | null {
+  const controller = detail.workflowController ?? null;
+  const artifacts = detail.workflowArtifacts ?? [];
+  const gates = detail.workflowGates ?? [];
+  const assignments = detail.workflowAgentAssignments ?? [];
+  if (!controller && artifacts.length === 0 && gates.length === 0 && assignments.length === 0) return null;
+  const artifactTimes = artifacts.map((artifact) => artifact.created_at);
+  const messageTimes = detail.messages.map((message) => message.created_at);
+  const runTimes = detail.runs.map((run) => run.started_at);
+  const timestamp = Math.max(0, ...artifactTimes, ...messageTimes, ...runTimes, detail.session.updated_at);
+  return {
+    kind: 'workflow-group',
+    key: `workflow-group:state:${controller?.workflow_run_id ?? artifacts[0]?.workflow_run_id ?? gates[0]?.workflow_run_id ?? detail.session.id}`,
+    timestamp,
+    group: buildWorkflowChatGroup(detail, []),
+  };
+}
+
+function buildWorkflowChatGroup(detail: SessionDetail, messages: SessionMessage[]): WorkflowChatGroup {
+  const artifacts = detail.workflowArtifacts ?? [];
+  const createdAt = Math.min(
+    ...messages.map((message) => message.created_at),
+    ...artifacts.map((artifact) => artifact.created_at),
+    detail.session.updated_at,
+  );
+  const updatedAt = Math.max(
+    ...messages.map((message) => message.created_at),
+    ...artifacts.map((artifact) => artifact.created_at),
+    detail.session.updated_at,
+  );
+  return {
+    id: messages.length > 0
+      ? messages.map((message) => message.id).join(':')
+      : detail.workflowController?.workflow_run_id ?? artifacts[0]?.workflow_run_id ?? detail.session.id,
+    createdAt,
+    updatedAt,
+    messages,
+    controller: detail.workflowController ?? null,
+    artifacts,
+    gates: detail.workflowGates ?? [],
+    assignments: detail.workflowAgentAssignments ?? [],
+  };
+}
+
+function isWorkflowTranscriptMessage(message: SessionMessage): boolean {
+  const sender = `${message.sender_id} ${message.sender_name ?? ''}`.toLowerCase();
+  if (sender.includes('workflow') || sender.includes('工作流')) return true;
+  const metadata = parseMessageMetadata(message.metadata);
+  if (metadata.workflow_run_id || metadata.workflow_step_id) return true;
+  if (metadata.event_type?.startsWith('workflow_')) return true;
+  const text = message.content.trim();
+  return /^(子任务|产品经理检测|诊断：|决策：|恢复次数：|已决定恢复执行|等待用户确认|当前 workflow|已进入 Superpowers 工作流)/.test(text);
+}
+
+function getWorkflowChatStatus(group: WorkflowChatGroup): 'pending' | 'active' | 'blocked' | 'done' {
+  if (group.controller?.blocker) return 'blocked';
+  if (group.gates.some((gate) => gate.status === 'pending')) return 'active';
+  if (group.messages.length > 0) return 'done';
+  return group.controller || group.artifacts.length > 0 || group.assignments.length > 0 ? 'active' : 'pending';
+}
+
+function formatWorkflowChatSummary(group: WorkflowChatGroup): string {
+  if (group.messages.length > 0) {
+    return `${group.messages.length} 条工作流事件，${formatWorkflowMissionMeta(group.controller)}`;
+  }
+  if (group.controller?.next_action) {
+    return `${formatWorkflowMissionMeta(group.controller)} · ${group.controller.next_action}`;
+  }
+  return group.controller?.next_action
+    ?? formatWorkflowMissionMeta(group.controller)
+    ?? '等待 workflow 数据';
+}
+
+function formatWorkflowEventCount(messages: SessionMessage[]): string {
+  return `${messages.length} 条工作流事件`;
+}
+
+function formatWorkflowEventLabel(message: SessionMessage): string {
+  const metadata = parseMessageMetadata(message.metadata);
+  if (metadata.event_type) return metadata.event_type;
+  return message.sender_name ?? message.sender_id;
 }
 
 function getLatestTimelineRunId(timeline: TranscriptTimelineItem[]): string | null {
@@ -2531,20 +2699,26 @@ function RunFlowCapsule({
         </div>
         <div className="deepsea-message-tools deepsea-message-tools--run">{actions}</div>
       </header>
+      <div className="deepsea-run-dynamic-monitor" data-run-dynamic-monitor="true">
+        <div className="deepsea-run-dynamic-monitor__header">
+          <span>执行链路</span>
+          <strong>实时活动</strong>
+        </div>
+        <WorkflowFlowMap
+          kind="run"
+          phaseLabel="Agent Run Flow 执行流转"
+          title="2. Agent Run 内部流转"
+          status={getRunFlowStatus(run.status)}
+          summary={formatRunFlowSummary(run)}
+          lines={buildRunFlowLines(runAgentEvents)}
+          cards={buildRunFlowCards(run, runAgentEvents, failureDetails)}
+        />
+      </div>
       <AgentThoughtPanel
         run={run}
         evidence={runEvidence}
         agentEvents={runAgentEvents}
         failureDetails={failureDetails}
-      />
-      <WorkflowFlowMap
-        kind="run"
-        phaseLabel="Agent Run Flow 执行流转"
-        title="2. Agent Run 内部流转"
-        status={getRunFlowStatus(run.status)}
-        summary={formatRunFlowSummary(run)}
-        lines={buildRunFlowLines(runAgentEvents)}
-        cards={buildRunFlowCards(run, runAgentEvents, failureDetails)}
       />
       <div className="deepsea-run-capsule__body">
         <RunEventRail items={railItems} />
