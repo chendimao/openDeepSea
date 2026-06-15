@@ -169,7 +169,7 @@ function ProjectActions({ project }: { project: Project }): JSX.Element {
     },
     onError: (err) => {
       const message = (err as Error).message;
-      toast.error(message.includes('409') ? t('dashboard.deleteProjectActiveRuns') : message);
+      toast.error(message);
     },
   });
 

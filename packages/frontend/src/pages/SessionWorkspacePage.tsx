@@ -407,7 +407,7 @@ export function SessionWorkspacePage({
     },
     onError: (error) => {
       const message = error instanceof Error ? error.message : '项目移除失败';
-      toast.error(message.includes('409') ? '项目仍有运行中的智能体或工作流，请先停止或等待完成。' : message);
+      toast.error(message);
     },
   });
 
@@ -687,11 +687,11 @@ export function SessionWorkspacePage({
       }}
     >
       <DialogContent
-        title="移除项目"
-        description={removeProject ? `将从 OpenDeepSea 中移除「${removeProject.name}」。不会删除本地项目文件夹。` : undefined}
+        title={t('dashboard.deleteProjectTitle')}
+        description={removeProject ? t('dashboard.deleteProjectDescription', { name: removeProject.name }) : undefined}
       >
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2.5">
-          <div className="text-[11px] font-medium text-[var(--color-fg-muted)]">本地项目文件夹</div>
+          <div className="text-[11px] font-medium text-[var(--color-fg-muted)]">{t('dashboard.deleteProjectPathLabel')}</div>
           <div className="mt-1 break-all font-mono text-[12px] text-[var(--color-fg)]">{removeProject?.path}</div>
         </div>
         <div className="mt-5 flex justify-end gap-2">
@@ -701,7 +701,7 @@ export function SessionWorkspacePage({
             onClick={() => setRemoveProject(null)}
             disabled={removeProjectMutation.isPending}
           >
-            取消
+            {t('common.cancel')}
           </Button>
           <Button
             type="button"
@@ -714,7 +714,7 @@ export function SessionWorkspacePage({
             {removeProjectMutation.isPending
               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
               : <Trash2 className="h-3.5 w-3.5" />}
-            {removeProjectMutation.isPending ? '正在移除' : '移除'}
+            {removeProjectMutation.isPending ? t('common.deleting') : t('dashboard.deleteProject')}
           </Button>
         </div>
       </DialogContent>

@@ -109,6 +109,12 @@ test('SessionWorkspacePage wires project creation dialog into SessionShell', () 
   assert.match(sessionWorkspacePageSource, /<CreateProjectDialog open=\{createProjectOpen\} onOpenChange=\{setCreateProjectOpen\}/);
 });
 
+test('SessionWorkspacePage delete project copy says session tasks are stopped automatically', () => {
+  assert.match(sessionWorkspacePageSource, /t\('dashboard\.deleteProjectDescription', \{ name: removeProject\.name \}\)/);
+  assert.doesNotMatch(sessionWorkspacePageSource, /项目仍有运行中的智能体或工作流，请先停止或等待完成。/);
+  assert.doesNotMatch(sessionWorkspacePageSource, /message\.includes\('409'\)/);
+});
+
 test('root session route shows project onboarding when no projects exist', () => {
   const html = renderSessionWorkspace('/', '/', { projects: [] });
 
