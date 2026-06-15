@@ -309,12 +309,20 @@ test('SessionShell renders workflow mission strip with gate and agent summaries'
 
   const html = renderSessionShell(payload, { onApproveWorkflowArtifact: () => undefined });
   const mission = html.match(/<section[^>]+data-workflow-mission-strip="true"[\s\S]*?<\/section>/)?.[0] ?? '';
+  const missionIndex = html.indexOf('data-workflow-mission-strip="true"');
+  const transcriptScrollIndex = html.indexOf('data-transcript-scroll="true"');
 
   assert.match(mission, /Workflow Mission/);
+  assert.match(mission, /data-session-workflow-map="mission"/);
+  assert.match(mission, /flow-path-parallel/);
+  assert.match(mission, /Parallel Execution 并行执行/);
   assert.match(mission, /等待 plan gate/);
   assert.match(mission, /1 个门禁/);
   assert.match(mission, /Codex/);
+  assert.match(mission, /deepsea-workflow-flow-card/);
   assert.match(mission, /data-workflow-artifact-action="approve"/);
+  assert.ok(missionIndex >= 0);
+  assert.ok(transcriptScrollIndex > missionIndex);
 });
 
 test('SessionShell surfaces workflow approval action in the inspector', () => {
@@ -484,6 +492,11 @@ test('SessionShell renders agent run as flow capsule with event rail', () => {
 
   assert.match(html, /data-run-flow-capsule="true"/);
   assert.match(html, /data-run-event-rail="true"/);
+  assert.match(html, /data-session-workflow-map="run"/);
+  assert.match(html, /Agent Run Flow 执行流转/);
+  assert.match(html, /flow-path-sequential/);
+  assert.match(html, /deepsea-workflow-flow-card/);
+  assert.match(html, /输出已流入消息时间线/);
   assert.match(html, /implementing/);
   assert.match(html, /执行输出正文/);
 });

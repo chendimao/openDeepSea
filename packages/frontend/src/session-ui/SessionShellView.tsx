@@ -1436,19 +1436,19 @@ function TranscriptCanvas({
   return (
     <section className="deepsea-transcript" aria-label="Active Session">
       <SessionTitleBar detail={detail} todoStats={todoStats} />
+      <WorkflowMissionStrip
+        detail={detail}
+        onApprove={onApproveWorkflowArtifact}
+        onRequestChange={(artifact) => onSendMessage({
+          content: buildWorkflowArtifactChangeRequestContent(artifact),
+          workflowArtifactChangeRequest: {
+            workflowRunId: artifact.workflow_run_id,
+            artifactVersionId: artifact.id,
+            artifactType: artifact.artifact_type,
+          },
+        })}
+      />
       <div className="deepsea-transcript__scroll" data-transcript-scroll="true" ref={transcriptRef}>
-        <WorkflowMissionStrip
-          detail={detail}
-          onApprove={onApproveWorkflowArtifact}
-          onRequestChange={(artifact) => onSendMessage({
-            content: buildWorkflowArtifactChangeRequestContent(artifact),
-            workflowArtifactChangeRequest: {
-              workflowRunId: artifact.workflow_run_id,
-              artifactVersionId: artifact.id,
-              artifactType: artifact.artifact_type,
-            },
-          })}
-        />
         {timeline.length === 0 ? (
           <div className="deepsea-empty deepsea-empty--center">发送第一条消息开始当前会话。</div>
         ) : timeline.map((item) => {
@@ -1616,6 +1616,15 @@ function WorkflowMissionStrip({
           <span>{assignments.length} agents</span>
         </div>
       </div>
+      <WorkflowFlowMap
+        kind="mission"
+        phaseLabel="Parallel Execution 并行执行"
+        title="1. Mission 协调与门禁"
+        status={controller?.blocker ? 'blocked' : controller ? 'active' : 'pending'}
+        summary={controller?.next_action ?? formatWorkflowMissionMeta(controller)}
+        lines={buildWorkflowFlowLines(assignments, gates, controller)}
+        cards={buildWorkflowFlowCards(controller, artifacts, gates, assignments)}
+      />
       <WorkflowStageRail controller={controller} gates={gates} />
       <WorkflowGateSummary artifacts={artifacts} gates={gates} onApprove={onApprove} onRequestChange={onRequestChange} />
       <WorkflowAgentRoster assignments={assignments} />
@@ -1725,6 +1734,133 @@ function WorkflowAgentRoster({
       ))}
     </div>
   );
+}
+
+type WorkflowFlowLine = {
+  className: 'flow-path-parallel' | 'flow-path-sequential';
+  d: string;
+};
+
+type WorkflowFlowCard = {
+  title: string;
+  status: string;
+  detail: string;
+  progress: number;
+};
+
+function WorkflowFlowMap({
+  kind,
+  phaseLabel,
+  title,
+  status,
+  summary,
+  lines,
+  cards,
+}: {
+  kind: 'mission' | 'run';
+  phaseLabel: string;
+  title: string;
+  status: 'pending' | 'active' | 'blocked' | 'done';
+  summary: string;
+  lines: WorkflowFlowLine[];
+  cards: WorkflowFlowCard[];
+}): JSX.Element {
+  const flowHeight = Math.max(164, 86 + Math.ceil(Math.max(cards.length, 1) / 2) * 74);
+  return (
+    <div
+      className="deepsea-workflow-flow"
+      data-session-workflow-map={kind}
+      aria-label="Workflow 流转"
+      style={{ minHeight: flowHeight }}
+    >
+      <svg
+        className="deepsea-workflow-flow__lines"
+        viewBox={`0 0 640 ${flowHeight}`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        {lines.map((line, index) => (
+          <path key={`${line.className}:${index}`} className={line.className} d={line.d} fill="none" />
+        ))}
+      </svg>
+      <div className="deepsea-workflow-flow__phase">
+        <span>{phaseLabel}</span>
+      </div>
+      <div className="deepsea-workflow-flow__node">
+        <span className="deepsea-workflow-flow__dot" aria-hidden="true" data-tone={status} />
+        <div className="deepsea-workflow-flow__heading">
+          <span>{title}</span>
+          <strong>{formatWorkflowFlowStatus(status)}</strong>
+        </div>
+        <p className="deepsea-workflow-flow__summary">{summary}</p>
+        <div className="deepsea-workflow-flow__cards">
+          {cards.map((card) => (
+            <article key={`${card.title}:${card.detail}`} className="deepsea-workflow-flow-card">
+              <div className="deepsea-workflow-flow-card__head">
+                <span>{card.title}</span>
+                <strong>{card.status}</strong>
+              </div>
+              <p>{card.detail}</p>
+              <div className="deepsea-workflow-flow-card__progress" aria-hidden="true">
+                <span style={{ width: `${card.progress}%` }} />
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildWorkflowFlowLines(
+  assignments: WorkflowAgentAssignmentView[],
+  gates: WorkflowGateView[],
+  controller: WorkflowControllerView | null,
+): WorkflowFlowLine[] {
+  const hasGate = gates.some((gate) => gate.status === 'pending');
+  const hasAssignments = assignments.length > 0;
+  return [
+    { className: 'flow-path-parallel', d: 'M 34 18 L 34 64 L 172 64' },
+    { className: 'flow-path-parallel', d: 'M 34 64 L 516 64' },
+    {
+      className: 'flow-path-sequential',
+      d: `M 34 64 L 34 ${hasAssignments || hasGate || controller ? 148 : 112}`,
+    },
+  ];
+}
+
+function buildWorkflowFlowCards(
+  controller: WorkflowControllerView | null,
+  artifacts: WorkflowArtifactVersionView[],
+  gates: WorkflowGateView[],
+  assignments: WorkflowAgentAssignmentView[],
+): WorkflowFlowCard[] {
+  const controllerCard: WorkflowFlowCard = {
+    title: 'Controller',
+    status: controller?.controller ?? 'planner',
+    detail: controller?.next_action ?? '等待 workflow 推进',
+    progress: controller?.blocker ? 40 : controller ? 72 : 24,
+  };
+  const gateCard: WorkflowFlowCard = {
+    title: 'Gate',
+    status: formatPendingGateCount(gates),
+    detail: artifacts[0]?.title ?? '等待产物确认',
+    progress: gates.some((gate) => gate.status === 'pending') ? 48 : 88,
+  };
+  const agentCard: WorkflowFlowCard = {
+    title: 'Agents',
+    status: `${assignments.length} agents`,
+    detail: assignments[0]?.task_title ?? '等待 agent 分派',
+    progress: assignments.length > 0 ? 64 : 20,
+  };
+  return [controllerCard, gateCard, agentCard];
+}
+
+function formatWorkflowFlowStatus(status: 'pending' | 'active' | 'blocked' | 'done'): string {
+  if (status === 'done') return 'done';
+  if (status === 'active') return 'active';
+  if (status === 'blocked') return 'blocked';
+  return 'pending';
 }
 
 function getWorkflowStageState(
@@ -2401,6 +2537,15 @@ function RunFlowCapsule({
         agentEvents={runAgentEvents}
         failureDetails={failureDetails}
       />
+      <WorkflowFlowMap
+        kind="run"
+        phaseLabel="Agent Run Flow 执行流转"
+        title="2. Agent Run 内部流转"
+        status={getRunFlowStatus(run.status)}
+        summary={formatRunFlowSummary(run)}
+        lines={buildRunFlowLines(runAgentEvents)}
+        cards={buildRunFlowCards(run, runAgentEvents, failureDetails)}
+      />
       <div className="deepsea-run-capsule__body">
         <RunEventRail items={railItems} />
         <div className="deepsea-run-log-body">
@@ -2419,6 +2564,107 @@ function RunFlowCapsule({
       <GeneratedImageEvidencePanel evidence={runEvidence} />
     </section>
   );
+}
+
+function buildRunFlowLines(events: SessionAgentEvent[]): WorkflowFlowLine[] {
+  const hasEvents = events.length > 0;
+  return [
+    { className: 'flow-path-parallel', d: 'M 34 18 L 34 64 L 172 64' },
+    { className: 'flow-path-parallel', d: 'M 34 64 L 516 64' },
+    { className: 'flow-path-sequential', d: `M 34 64 L 34 ${hasEvents ? 150 : 112}` },
+  ];
+}
+
+function buildRunFlowCards(
+  run: SessionRun,
+  events: SessionAgentEvent[],
+  failureDetails: RunFailureDetail[],
+): WorkflowFlowCard[] {
+  return [
+    {
+      title: 'stdout',
+      status: formatRunFlowCardStatus(run.status),
+      detail: formatRunFlowOutputDetail(run),
+      progress: getRunFlowProgress(run.status, run.stdout.trim().length > 0),
+    },
+    {
+      title: 'events',
+      status: `${events.length} events`,
+      detail: formatRunFlowEventDetail(events),
+      progress: events.length > 0 ? 68 : 18,
+    },
+    {
+      title: 'checks',
+      status: failureDetails.length > 0 ? 'Review' : 'Pass',
+      detail: formatRunFailureFlowDetail(failureDetails),
+      progress: failureDetails.length > 0 ? 45 : 92,
+    },
+  ];
+}
+
+function getRunFlowStatus(status: SessionRun['status']): 'pending' | 'active' | 'blocked' | 'done' {
+  if (status === 'failed' || status === 'interrupted') return 'blocked';
+  if (status === 'completed') return 'done';
+  if (status === 'running' || status === 'retrying') return 'active';
+  return 'pending';
+}
+
+function formatRunFlowSummary(run: SessionRun): string {
+  if (run.status === 'failed') return run.error?.trim() || run.stderr.trim() || '执行失败，等待处理。';
+  if (run.status === 'interrupted') return '执行已中断，等待恢复。';
+  if (run.status === 'cancelled') return '运行已取消。';
+  if (run.status === 'paused') return '运行已暂停。';
+  if (run.status === 'completed') return run.stdout.trim() ? '已生成 agent 输出，详见下方消息流。' : '执行已完成，暂无输出。';
+  if (run.status === 'queued') return '等待调度执行。';
+  return run.activity_log.trim() || 'Agent 正在执行任务流。';
+}
+
+function formatRunFlowCardStatus(status: SessionRun['status']): string {
+  if (status === 'completed') return 'Done';
+  if (status === 'failed' || status === 'interrupted') return 'Blocked';
+  if (status === 'paused') return 'Paused';
+  if (status === 'cancelled') return 'Cancelled';
+  if (status === 'queued') return 'Queued';
+  if (status === 'retrying') return 'Retrying';
+  return 'Coding';
+}
+
+function formatRunFlowOutputDetail(run: SessionRun): string {
+  if (run.stdout.trim()) return '输出已流入消息时间线';
+  if (run.stderr.trim()) return 'stderr 已记录';
+  if (run.status === 'completed') return '暂无可展示输出';
+  if (run.status === 'failed') return '失败原因待处理';
+  if (run.status === 'cancelled') return '运行已取消';
+  if (run.status === 'paused') return '运行已暂停';
+  if (run.status === 'interrupted') return '运行已中断';
+  return '等待首个输出片段';
+}
+
+function formatRunFlowEventDetail(events: SessionAgentEvent[]): string {
+  const event = events[0];
+  if (!event) return '等待事件流';
+  if (event.event_type === 'tool_call') return '工具调用已进入执行轨道';
+  if (event.channel === 'answer') return '回答片段正在汇入时间线';
+  if (event.channel === 'thinking') return '思考过程已记录';
+  return event.content.trim() || '事件流已接入';
+}
+
+function formatRunFailureFlowDetail(failureDetails: RunFailureDetail[]): string {
+  const failure = failureDetails[0];
+  if (!failure) return '执行检查通过';
+  const text = failure.text.trim();
+  if (!text) return `${failure.label} 待处理`;
+  return text.length > 32 ? `${text.slice(0, 32)}...` : text;
+}
+
+function getRunFlowProgress(status: SessionRun['status'], hasOutput: boolean): number {
+  if (status === 'completed') return 100;
+  if (status === 'failed' || status === 'interrupted') return hasOutput ? 62 : 48;
+  if (status === 'cancelled') return 36;
+  if (status === 'paused') return 52;
+  if (status === 'queued') return 16;
+  if (status === 'retrying') return 64;
+  return hasOutput ? 78 : 58;
 }
 
 function RunEventRail({ items }: { items: RunEventRailItem[] }): JSX.Element | null {

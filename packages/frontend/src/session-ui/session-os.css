@@ -3274,14 +3274,26 @@
   white-space: normal;
 }
 .deepsea-workflow-mission {
+  flex: 0 0 auto;
+  max-height: min(56vh, 520px);
   display: grid;
   gap: 12px;
-  margin: 0 14px 12px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  margin: 10px 14px 12px;
   border: 1px solid color-mix(in srgb, var(--deepsea-primary) 18%, var(--deepsea-border-subtle));
   border-radius: 8px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--deepsea-surface) 92%, var(--deepsea-primary) 4%), var(--deepsea-surface));
   padding: 12px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.deepsea-workflow-mission::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.deepsea-workflow-mission::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.24);
 }
 .deepsea-workflow-mission__header {
   display: flex;
@@ -3330,6 +3342,180 @@
   font-size: 10px;
   font-weight: 820;
   white-space: nowrap;
+}
+.deepsea-workflow-flow {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 12%, var(--deepsea-border-subtle));
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 0% 0%, rgba(255, 255, 255, 0.82), rgba(232, 237, 244, 0.78) 48%, rgba(216, 229, 245, 0.72) 100%),
+    rgba(255, 255, 255, 0.52);
+  color: var(--deepsea-text);
+  padding: 10px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.66), 0 14px 32px rgba(15, 23, 42, 0.08);
+}
+.deepsea-workflow-flow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.28;
+  background:
+    linear-gradient(90deg, rgba(0, 74, 198, 0.08) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(0, 74, 198, 0.05) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.82), transparent 72%);
+}
+.deepsea-workflow-flow__lines {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.deepsea-workflow-flow__lines .flow-path-parallel {
+  stroke: color-mix(in srgb, var(--deepsea-primary) 24%, #b4c5ff);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 6;
+  filter: drop-shadow(0 0 2px rgba(180, 197, 255, 0.72));
+  animation: deepsea-flow-line-fast 0.8s linear infinite;
+}
+.deepsea-workflow-flow__lines .flow-path-sequential {
+  stroke: var(--deepsea-primary);
+  stroke-width: 1;
+  stroke-dasharray: 8 4;
+  filter: drop-shadow(0 0 1px rgba(0, 74, 198, 0.38));
+  animation: deepsea-flow-line-slow 2s linear infinite;
+}
+.deepsea-workflow-flow__phase,
+.deepsea-workflow-flow__node {
+  position: relative;
+  z-index: 1;
+}
+.deepsea-workflow-flow__phase span {
+  display: inline-flex;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 18%, var(--deepsea-border-subtle));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--deepsea-primary) 8%, transparent);
+  color: var(--deepsea-primary);
+  padding: 3px 9px;
+  font-family: var(--deepsea-mono);
+  font-size: 9px;
+  font-weight: 820;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.deepsea-workflow-flow__node {
+  display: grid;
+  gap: 8px;
+  padding-left: 18px;
+}
+.deepsea-workflow-flow__dot {
+  position: absolute;
+  top: 4px;
+  left: -6px;
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.84);
+  border-radius: 999px;
+  background: var(--deepsea-primary);
+  box-shadow: 0 0 0 4px rgba(0, 74, 198, 0.1);
+}
+.deepsea-workflow-flow__dot[data-tone="active"] {
+  background: var(--deepsea-ok);
+  box-shadow: 0 0 0 4px rgba(0, 108, 73, 0.12);
+  animation: deepsea-flow-pulse 2s infinite ease-in-out;
+}
+.deepsea-workflow-flow__dot[data-tone="blocked"] {
+  background: var(--deepsea-warn);
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12);
+}
+.deepsea-workflow-flow__heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 840;
+}
+.deepsea-workflow-flow__heading strong {
+  color: var(--deepsea-ok);
+  font-family: var(--deepsea-mono);
+  font-size: 9px;
+  font-weight: 860;
+  text-transform: uppercase;
+}
+.deepsea-workflow-flow__summary {
+  margin: 0;
+  color: var(--deepsea-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.deepsea-workflow-flow__cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.deepsea-workflow-flow-card {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 14%, var(--deepsea-border-subtle));
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.72);
+  color: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.1);
+}
+.deepsea-workflow-flow-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 5px 8px;
+  font-family: var(--deepsea-mono);
+  font-size: 9px;
+}
+.deepsea-workflow-flow-card__head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.72;
+}
+.deepsea-workflow-flow-card__head strong {
+  color: #9df4c8;
+  font-size: 8px;
+}
+.deepsea-workflow-flow-card p {
+  margin: 0;
+  color: rgba(157, 244, 200, 0.82);
+  padding: 7px 8px;
+  font-family: var(--deepsea-mono);
+  font-size: 9px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.deepsea-workflow-flow-card__progress {
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.deepsea-workflow-flow-card__progress span {
+  display: block;
+  height: 100%;
+  background: #9df4c8;
+}
+.deepsea-workflow-flow[data-session-workflow-map="run"] .deepsea-workflow-flow-card__progress span {
+  background: var(--deepsea-ok);
+}
+.deepsea-workflow-flow[data-session-workflow-map="mission"] .deepsea-workflow-flow__heading strong {
+  color: var(--deepsea-primary);
 }
 .deepsea-workflow-stage-rail {
   display: grid;
@@ -3853,6 +4039,9 @@ button.deepsea-message-attachment {
   border-radius: 8px;
   background: color-mix(in srgb, var(--deepsea-surface) 92%, var(--deepsea-primary) 3%);
   padding: 12px;
+}
+.deepsea-run-capsule .deepsea-workflow-flow {
+  margin-top: -2px;
 }
 .deepsea-run-capsule__header {
   display: grid;
@@ -4457,6 +4646,43 @@ button.deepsea-message-attachment {
     border-bottom: 1px solid color-mix(in srgb, var(--deepsea-primary) 10%, var(--deepsea-border-subtle));
     padding-right: 0;
     padding-bottom: 10px;
+  }
+
+  .deepsea-workflow-flow__cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@keyframes deepsea-flow-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 74, 198, 0.28);
+  }
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(0, 74, 198, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 74, 198, 0);
+  }
+}
+
+@keyframes deepsea-flow-line-fast {
+  from {
+    stroke-dashoffset: 40;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes deepsea-flow-line-slow {
+  from {
+    stroke-dashoffset: 60;
+  }
+  to {
+    stroke-dashoffset: 0;
   }
 }
 
