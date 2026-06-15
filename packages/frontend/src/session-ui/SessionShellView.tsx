@@ -1658,16 +1658,18 @@ function WorkflowChatMessage({
         </span>
         <time className="deepsea-mono">{formatClock(group.updatedAt)}</time>
         <strong>{formatWorkflowFlowStatus(status)}</strong>
-        {hasLiveWorkflowState ? (
-          <WorkflowViewToggle
-            mode={viewMode}
-            onModeChange={setViewMode}
-            label="Workflow 显示模式"
-            className="deepsea-workflow-view-toggle--chat"
-          />
-        ) : null}
       </header>
       <div className="deepsea-message-body deepsea-workflow-chat">
+        {hasLiveWorkflowState ? (
+          <div className="deepsea-workflow-chat__controls">
+            <WorkflowViewToggle
+              mode={viewMode}
+              onModeChange={setViewMode}
+              label="Workflow 显示模式"
+              className="deepsea-workflow-view-toggle--chat"
+            />
+          </div>
+        ) : null}
         <div className="deepsea-workflow-chat__summary-row">
           <p className="deepsea-workflow-chat__summary-text" title={summary}>{summary}</p>
           {showWorkflowMeta ? (
@@ -2012,6 +2014,7 @@ function WorkflowFlowMap({
       <div className="deepsea-workflow-flow__phase">
         <span>{phaseLabel}</span>
       </div>
+      <div className="deepsea-workflow-flow__track" aria-hidden="true" />
       <div className="deepsea-workflow-flow__node">
         <span className="deepsea-workflow-flow__dot" aria-hidden="true" data-tone={status} />
         <div className="deepsea-workflow-flow__heading">
@@ -2105,18 +2108,35 @@ function buildWorkflowFlowCards(
       : '等待 agent 分派',
     progress: assignments.length > 0 ? 64 : 20,
   };
-  const assignmentCards = assignments.slice(0, 2).map((assignment): WorkflowFlowCard => ({
+  const assignmentCards = assignments.slice(0, 2).map((assignment, index): WorkflowFlowCard => ({
     icon: GitFork,
     tone: 'agent',
-    title: assignment.assigned_agent_name ?? assignment.assigned_agent_id ?? assignment.role,
+    title: formatWorkflowAssignmentCardTitle(assignment, index, assignments),
     status: assignment.backend ?? assignment.execution_mode,
-    detail: assignment.task_title,
+    detail: assignment.fallback_reason
+      ? `${assignment.task_title} · ${assignment.fallback_reason}`
+      : assignment.task_title,
     progress: 100,
   }));
   const distributionCards = assignmentCards.length > 0
-    ? [...assignmentCards, gateCard].slice(0, 2)
+    ? assignmentCards
     : [controllerCard, gateCard];
-  return [...distributionCards, agentCard];
+  const executionCards = assignmentCards.length > 0
+    ? [controllerCard, gateCard]
+    : [agentCard];
+  return [...distributionCards, ...executionCards];
+}
+
+function formatWorkflowAssignmentCardTitle(
+  assignment: WorkflowAgentAssignmentView,
+  index: number,
+  assignments: WorkflowAgentAssignmentView[],
+): string {
+  const base = assignment.assigned_agent_name ?? assignment.assigned_agent_id ?? assignment.role;
+  const duplicateCount = assignments.filter((item) =>
+    (item.assigned_agent_name ?? item.assigned_agent_id ?? item.role) === base
+  ).length;
+  return duplicateCount > 1 ? `${base} ${String(index + 1).padStart(2, '0')}` : base;
 }
 
 function formatWorkflowIntentLabel(intent: string | null | undefined): string {

@@ -1660,6 +1660,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
+  container-type: inline-size;
   height: 100%;
   min-width: 0;
   min-height: 0;
@@ -2799,12 +2800,15 @@
   box-shadow: none;
 }
 .deepsea-message.deepsea-message--workflow {
-  width: min(100%, 720px);
+  position: relative;
+  width: 100%;
   border-left-color: var(--deepsea-primary);
   border-radius: 0 6px 6px 0;
-  background: rgba(255, 255, 255, 0.22);
-  padding: 8px 10px 9px 12px;
-  box-shadow: none;
+  border-color: rgba(255, 255, 255, 0.36);
+  border-left-color: var(--deepsea-primary);
+  background: rgba(255, 255, 255, 0.16);
+  padding: 8px 10px 10px 13px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
 }
 .deepsea-message.deepsea-message--workflow > header {
   border-bottom: 0;
@@ -2838,9 +2842,6 @@
 .deepsea-message--workflow > header > span:first-child svg {
   width: 10px;
   height: 10px;
-}
-.deepsea-message--workflow > header .deepsea-workflow-view-toggle {
-  margin-left: auto;
 }
 .deepsea-message.deepsea-message--workflow + .deepsea-message.deepsea-message--workflow {
   margin-top: -2px;
@@ -3534,10 +3535,16 @@
   display: grid;
   position: relative;
   min-width: 0;
-  gap: 5px;
+  gap: 7px;
 }
 .deepsea-workflow-chat__header {
   margin-bottom: 2px;
+}
+.deepsea-workflow-chat__controls {
+  position: absolute;
+  top: -29px;
+  right: 0;
+  z-index: 2;
 }
 .deepsea-workflow-chat__blocker {
   margin: 0;
@@ -3588,13 +3595,13 @@
 .deepsea-workflow-flow {
   position: relative;
   display: grid;
-  gap: 6px;
+  gap: 7px;
   overflow: visible;
   border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--deepsea-text);
-  padding: 2px 0 0 15px;
+  padding: 2px 0 0 16px;
   box-shadow: none;
 }
 .deepsea-workflow-flow::before {
@@ -3660,9 +3667,9 @@
 }
 .deepsea-workflow-flow__track {
   position: absolute;
-  top: 25px;
-  bottom: 6px;
-  left: 4px;
+  top: 28px;
+  bottom: 9px;
+  left: 3px;
   z-index: 0;
   width: 1px;
   overflow: hidden;
@@ -3677,14 +3684,14 @@
   display: grid;
   z-index: 1;
   min-width: 0;
-  gap: 5px;
+  gap: 6px;
   padding-left: 2px;
 }
 .deepsea-workflow-flow__step + .deepsea-workflow-flow__step {
-  margin-top: 4px;
+  margin-top: 7px;
 }
 .deepsea-workflow-flow__step[data-step="distribution"] {
-  padding-bottom: 2px;
+  padding-bottom: 3px;
 }
 .deepsea-workflow-flow__step[data-step="execution"] {
   padding-top: 0;
@@ -3717,7 +3724,7 @@
 .deepsea-workflow-flow__dot {
   position: absolute;
   top: 5px;
-  left: -17px;
+  left: -18px;
   width: 9px;
   height: 9px;
   border: 1px solid rgba(255, 255, 255, 0.84);
@@ -3780,20 +3787,20 @@
 }
 .deepsea-workflow-flow__cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 7px;
 }
 .deepsea-workflow-flow-card {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--deepsea-primary) 16%, var(--deepsea-border-subtle));
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.36);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.34);
   color: var(--deepsea-text);
-  padding: 5px 7px;
+  padding: 7px 8px;
   box-shadow: none;
 }
 .deepsea-workflow-flow-card[data-card-tone="event"] {
@@ -3801,17 +3808,17 @@
 }
 .deepsea-workflow-flow-card__icon {
   display: inline-flex;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   align-items: center;
   justify-content: center;
-  border-radius: 5px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--deepsea-primary) 9%, transparent);
   color: var(--deepsea-primary);
 }
 .deepsea-workflow-flow-card__icon svg {
-  width: 10px;
-  height: 10px;
+  width: 13px;
+  height: 13px;
 }
 .deepsea-workflow-flow-card__content {
   display: grid;
@@ -3821,12 +3828,12 @@
 .deepsea-workflow-flow-card__head {
   display: flex;
   justify-content: space-between;
-  gap: 5px;
+  gap: 8px;
   border-bottom: 0;
   background: transparent;
   padding: 0;
   font-family: var(--deepsea-mono);
-  font-size: 8px;
+  font-size: 9px;
 }
 .deepsea-workflow-flow-card__head span {
   min-width: 0;
@@ -3849,7 +3856,7 @@
   padding: 0;
   font-family: var(--deepsea-mono);
   font-size: 9px;
-  line-height: 1.15;
+  line-height: 1.25;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 1;
   overflow-wrap: anywhere;
@@ -3859,7 +3866,7 @@
 }
 .deepsea-workflow-flow-card__progress {
   height: 2px;
-  margin-top: 1px;
+  margin-top: 2px;
   overflow: hidden;
   border-radius: 999px;
   background: rgba(0, 74, 198, 0.08);
@@ -3871,7 +3878,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .deepsea-workflow-flow[data-session-workflow-map="mission"] .deepsea-workflow-flow__step[data-step="execution"] .deepsea-workflow-flow__cards {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .deepsea-workflow-flow-card__progress span {
   display: block;
@@ -4410,14 +4417,20 @@ button.deepsea-message-attachment {
 }
 .deepsea-run-capsule {
   display: grid;
-  gap: 5px;
+  gap: 6px;
   border: 1px solid color-mix(in srgb, var(--deepsea-primary) 16%, var(--deepsea-border-subtle));
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.28);
-  padding: 6px;
+  background: rgba(255, 255, 255, 0.24);
+  padding: 7px;
 }
 .deepsea-run-capsule .deepsea-workflow-flow {
   margin-top: -1px;
+}
+.deepsea-run-capsule .deepsea-workflow-flow__cards {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.deepsea-run-capsule .deepsea-workflow-flow-card {
+  min-height: 42px;
 }
 .deepsea-run-dynamic-monitor {
   display: grid;
@@ -5093,7 +5106,6 @@ button.deepsea-message-attachment {
 }
 
 @media (max-width: 760px) {
-  .deepsea-workflow-chat__summary,
   .deepsea-workflow-gate-summary__item,
   .deepsea-run-capsule__header,
   .deepsea-run-capsule__body {
@@ -5106,6 +5118,11 @@ button.deepsea-message-attachment {
   }
 
   .deepsea-workflow-view-toggle--chat {
+    position: static;
+    justify-self: start;
+  }
+
+  .deepsea-workflow-chat__controls {
     position: static;
     justify-self: start;
   }
@@ -5129,6 +5146,28 @@ button.deepsea-message-attachment {
   }
 
   .deepsea-workflow-flow__cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container (max-width: 500px) {
+  .deepsea-message.deepsea-message--workflow .deepsea-workflow-chat__controls {
+    position: static;
+    justify-self: start;
+  }
+}
+
+@container (max-width: 500px) {
+  .deepsea-message.deepsea-message--workflow .deepsea-workflow-flow[data-session-workflow-map="mission"] .deepsea-workflow-flow__cards,
+  .deepsea-message.deepsea-message--workflow .deepsea-workflow-flow[data-session-workflow-map="mission"] .deepsea-workflow-flow__step[data-step="distribution"] .deepsea-workflow-flow__cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .deepsea-message.deepsea-message--workflow .deepsea-workflow-flow[data-session-workflow-map="mission"] .deepsea-workflow-flow__step[data-step="execution"] .deepsea-workflow-flow__cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .deepsea-run-capsule .deepsea-workflow-flow__cards {
     grid-template-columns: minmax(0, 1fr);
   }
 }
