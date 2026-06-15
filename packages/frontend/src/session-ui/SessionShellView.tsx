@@ -1646,13 +1646,13 @@ function WorkflowChatMessage({
 
   return (
     <article
-      className="deepsea-message deepsea-message--workflow"
+      className={`deepsea-message deepsea-message--workflow is-${status}`}
       data-role="assistant"
       data-workflow-chat-message="true"
       aria-label="工作流消息"
     >
       <header className="deepsea-workflow-chat__header">
-        <span className="deepsea-status-chip" data-tone="ok">
+        <span className="deepsea-status-chip" data-tone={status === 'blocked' ? 'warn' : 'ok'}>
           <Brain aria-hidden="true" />
           规划师 (Planner)
         </span>
@@ -2035,7 +2035,7 @@ function WorkflowFlowMap({
 function WorkflowFlowCardView({ card }: { card: WorkflowFlowCard }): JSX.Element {
   const Icon = card.icon ?? FileText;
   return (
-    <article className="deepsea-workflow-flow-card" data-card-tone={card.tone}>
+    <article className="deepsea-workflow-flow-card" data-card-tone={card.tone} data-card-status={formatDataToken(card.status)}>
       <span className="deepsea-workflow-flow-card__icon" aria-hidden="true">
         <Icon />
       </span>
@@ -2051,6 +2051,10 @@ function WorkflowFlowCardView({ card }: { card: WorkflowFlowCard }): JSX.Element
       </div>
     </article>
   );
+}
+
+function formatDataToken(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
 }
 
 function buildWorkflowFlowLines(
