@@ -284,6 +284,42 @@ test('session workspace payload backfills attachments from legacy library file r
   assert.deepEqual(JSON.parse(storedMessage.metadata).attachments, metadata.attachments);
 });
 
+test('session workspace payload exposes latest planner reason in contract', () => {
+  const project = projectRepo.create({
+    name: 'contract reason project',
+    path: mkdtempSync(join(tmpdir(), 'session-contract-reason-project-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Debug Fix Session',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'assistant',
+    sender_id: 'planner',
+    sender_name: 'Planner',
+    content: [
+      '```json',
+      '{',
+      '  "intent": "debug_fix",',
+      '  "reason": "用户描述了 project has active runs，并要求删除项目时自动停止所有任务。"',
+      '}',
+      '```',
+    ].join('\n'),
+    metadata: {},
+  });
+
+  const payload = buildWorkspacePayload(project, session);
+
+  assert.equal(
+    payload.contract.reason,
+    '用户描述了 project has active runs，并要求删除项目时自动停止所有任务。',
+  );
+});
+
 test('session workspace payload exposes workflow artifact versions and approval gate', () => {
   const project = projectRepo.create({
     name: 'artifact project',

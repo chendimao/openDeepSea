@@ -135,6 +135,7 @@ function createPayload(): SessionWorkspacePayload {
     contract: {
       sessionId: 'session-1',
       objective: '检查 Inspector',
+      reason: null,
       scope: null,
       risks: [],
       acceptanceCriteria: [],

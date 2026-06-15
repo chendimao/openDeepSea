@@ -122,6 +122,7 @@ test('SessionWorkspacePayload supports the initial workspace contract', () => {
     contract: {
       sessionId: 'session-1',
       objective: '实现会话系统',
+      reason: null,
       scope: null,
       risks: [],
       acceptanceCriteria: [],

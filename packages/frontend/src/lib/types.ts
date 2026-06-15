@@ -1015,6 +1015,7 @@ export interface SessionBottomStatus {
 export interface SessionContract {
   sessionId: string;
   objective: string;
+  reason: string | null;
   scope: string | null;
   risks: string[];
   acceptanceCriteria: string[];

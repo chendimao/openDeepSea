@@ -41,6 +41,7 @@ import type {
   Session,
   SessionCompaction,
   SessionContextManifest,
+  SessionContract,
   SessionDetail,
   SessionMessage,
   SessionMode,
@@ -268,11 +269,93 @@ export function buildWorkspacePayload(project: Project, activeSession: Session):
       detail.evidence,
       sessionTokenUsageRepo.summarizeBySession(activeSession.id),
     ),
-    contract: sessionContractRepo.getOrCreate(activeSession),
+    contract: buildWorkspaceContract(activeSession, detail.messages),
     toolRows: inspector.toolRows,
     diffRows: inspector.diffRows,
     historyFilters: { q: '', status: 'all', mode: 'all' },
   };
+}
+
+function buildWorkspaceContract(session: Session, messages: SessionMessage[]): SessionContract {
+  return {
+    ...sessionContractRepo.getOrCreate(session),
+    reason: deriveSessionContractReason(messages),
+  };
+}
+
+function deriveSessionContractReason(messages: SessionMessage[]): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message) continue;
+    const metadataReason = readReasonFromMetadata(message.metadata);
+    if (metadataReason) return metadataReason;
+    const contentReason = readReasonFromContent(message.content);
+    if (contentReason) return contentReason;
+  }
+  return null;
+}
+
+function readReasonFromMetadata(metadata: string | null): string | null {
+  const parsed = parseJsonRecord(metadata);
+  if (!parsed) return null;
+  return firstNonEmptyText([
+    readNestedReason(parsed, 'task_readiness'),
+    readNestedReason(parsed, 'task_execution'),
+    readNestedReason(parsed, 'intent_result'),
+    readNestedReason(parsed, 'session_execution'),
+    parsed.reason,
+  ]);
+}
+
+function readReasonFromContent(content: string): string | null {
+  for (const candidate of extractJsonObjectCandidates(content)) {
+    const parsed = parseJsonRecord(candidate);
+    if (!parsed) continue;
+    const reason = firstNonEmptyText([
+      readNestedReason(parsed, 'task_readiness'),
+      readNestedReason(parsed, 'task_execution'),
+      readNestedReason(parsed, 'intent_result'),
+      parsed.reason,
+    ]);
+    if (reason) return reason;
+  }
+  return null;
+}
+
+function readNestedReason(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return firstNonEmptyText([(value as Record<string, unknown>).reason]);
+}
+
+function extractJsonObjectCandidates(content: string): string[] {
+  const fencedBlocks = [...content.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)]
+    .map((match) => match[1]?.trim())
+    .filter((item): item is string => Boolean(item && item.startsWith('{') && item.endsWith('}')));
+  const trimmed = content.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) return [...fencedBlocks, trimmed];
+  return fencedBlocks;
+}
+
+function parseJsonRecord(value: string | null): Record<string, unknown> | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function firstNonEmptyText(values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
 }
 
 function buildSessionDetail(session: Session): SessionDetail {

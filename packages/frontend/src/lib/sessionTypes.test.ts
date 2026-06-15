@@ -109,6 +109,7 @@ test('session workspace payload keeps active session, history and inspector data
     contract: {
       sessionId: 'session-1',
       objective: '实现 SessionOS',
+      reason: null,
       scope: null,
       risks: [],
       acceptanceCriteria: [],

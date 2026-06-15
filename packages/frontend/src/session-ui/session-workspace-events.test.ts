@@ -461,6 +461,7 @@ function createPayload(sessionId: string): SessionWorkspacePayload {
     contract: {
       sessionId,
       objective: 'Session',
+      reason: null,
       scope: null,
       risks: [],
       acceptanceCriteria: [],

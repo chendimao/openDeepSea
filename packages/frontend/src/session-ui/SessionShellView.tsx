@@ -2823,6 +2823,10 @@ function ContractModule({
           <p>{contract.objective}</p>
         </div>
         <div>
+          <span>原因 (Reason)</span>
+          <p>{contract.reason ?? '未记录原因'}</p>
+        </div>
+        <div>
           <span>边界 (Scope)</span>
           {editing ? (
             <textarea value={scope} onChange={(event) => setScope(event.currentTarget.value)} />

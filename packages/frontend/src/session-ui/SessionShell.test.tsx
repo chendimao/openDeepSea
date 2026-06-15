@@ -97,6 +97,8 @@ test('SessionShell renders Deepsea command center modules', () => {
   assert.match(html, /data-session-composer-textarea="true"/);
   assert.match(html, /粘贴文件会上传到项目文件库/);
   assert.match(html, /目标契约/);
+  assert.match(html, /原因 \(Reason\)/);
+  assert.match(html, /用户描述了 active runs 删除失败/);
   assert.match(html, /会话计划/);
   assert.match(html, /代理运行/);
   assert.match(html, /工具调用/);
@@ -2810,6 +2812,7 @@ export function createPayload(): SessionWorkspacePayload {
     contract: {
       sessionId: 'session-1',
       objective: '把旧协作工作流切换为活跃会话模型',
+      reason: '用户描述了 active runs 删除失败，需要自动停止任务后删除项目',
       scope: '仅补齐 Session OS 后端接入',
       risks: ['retry 可能重复执行 prompt'],
       acceptanceCriteria: ['页面不显示静态 mock 数据'],

@@ -62,6 +62,7 @@ function parseContractRow(session: Session, row: SessionContractRow): SessionCon
   return {
     sessionId: session.id,
     objective: session.current_goal ?? session.title,
+    reason: null,
     scope: row.scope,
     risks: parseJsonArray<string>(row.risks),
     acceptanceCriteria: parseJsonArray<string>(row.acceptance_criteria),

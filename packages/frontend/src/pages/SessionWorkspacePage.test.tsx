@@ -899,6 +899,7 @@ function createCommandPayload(): SessionWorkspacePayload {
     contract: {
       sessionId: 'session-1',
       objective: '',
+      reason: null,
       scope: null,
       risks: [],
       acceptanceCriteria: [],
