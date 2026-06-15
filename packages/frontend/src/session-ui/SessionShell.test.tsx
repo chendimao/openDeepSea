@@ -262,6 +262,75 @@ test('SessionShell renders workflow spec approval action', () => {
   assert.match(panel, /data-workflow-artifact-action="approve"/);
 });
 
+test('SessionShell surfaces workflow approval action in the inspector', () => {
+  const payload = createPayload();
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-spec-1',
+    selected_intent: 'standard_development',
+    active_stage: 'brainstorming',
+    controller: 'planner',
+    blocker: null,
+    next_action: '等待用户确认规格',
+  };
+  payload.activeSession.workflowArtifacts = [
+    {
+      id: 'artifact-spec-1',
+      workflow_run_id: 'workflow-run-spec-1',
+      artifact_type: 'spec',
+      version: 1,
+      status: 'draft',
+      title: '项目删除修复规格',
+      content: '确认删除项目前停止 active runs。',
+      structured_data: null,
+      created_by_agent_id: 'planner',
+      change_request_message_id: null,
+      approved_by: null,
+      approved_at: null,
+      created_at: Date.now(),
+    },
+  ];
+  payload.activeSession.workflowGates = [{
+    kind: 'spec_confirm',
+    workflow_run_id: 'workflow-run-spec-1',
+    artifact_version_id: 'artifact-spec-1',
+    status: 'pending',
+    reason: '等待用户确认 planner 生成的需求/设计规格。',
+  }];
+
+  const html = renderSessionShell(payload, { onApproveWorkflowArtifact: () => undefined });
+  const inspector = html.match(/<aside[^>]+aria-label="Session Inspector"[\s\S]*?<\/aside>/)?.[0] ?? '';
+  const workflowModule = inspector.match(/<section[^>]+data-workflow-inspector="true"[\s\S]*?<\/section>/)?.[0] ?? '';
+
+  assert.match(inspector, /Workflow 状态/);
+  assert.match(inspector, /等待用户确认/);
+  assert.match(inspector, /确认 spec/);
+  assert.match(workflowModule, /data-workflow-artifact-action="approve"/);
+  assert.doesNotMatch(workflowModule, /disabled=""/);
+});
+
+test('SessionShell surfaces running workflow progress in the inspector without a session run', () => {
+  const payload = createPayload();
+  payload.activeSession.runs = [];
+  payload.activeSession.agentEvents = [];
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-active-1',
+    selected_intent: 'standard_development',
+    active_stage: 'implementation',
+    controller: 'worker',
+    blocker: null,
+    next_action: '正在执行已确认的任务计划。',
+  };
+
+  const html = renderSessionShell(payload);
+  const inspector = html.match(/<aside[^>]+aria-label="Session Inspector"[\s\S]*?<\/aside>/)?.[0] ?? '';
+
+  assert.match(inspector, /data-workflow-inspector="true"/);
+  assert.match(inspector, /data-state="running"/);
+  assert.match(inspector, /运行中/);
+  assert.match(inspector, /正在执行已确认的任务计划。/);
+  assert.match(inspector, /implementation · worker/);
+});
+
 test('SessionShell hides artifact confirm action after approval while keeping change request action', () => {
   const payload = createPayload();
   payload.activeSession.workflowArtifacts = [
@@ -2941,6 +3010,7 @@ function renderSessionShell(
     projectAgents?: ProjectUsedAgentsPayload;
     onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
     onRetryRun?: (runId: string) => void;
+    onApproveWorkflowArtifact?: (artifactVersionId: string) => void;
     savingKnowledgeKey?: SessionKnowledgeActionKey | null;
   } = {},
 ): string {
@@ -2957,6 +3027,7 @@ function renderSessionShell(
           onCommand={() => undefined}
           onRetryRun={options.onRetryRun}
           onSaveKnowledge={options.onSaveKnowledge}
+          onApproveWorkflowArtifact={options.onApproveWorkflowArtifact}
           savingKnowledgeKey={options.savingKnowledgeKey}
         />
       </QueryClientProvider>

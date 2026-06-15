@@ -4763,6 +4763,67 @@ button.deepsea-message-attachment {
   display: grid;
   gap: 12px;
 }
+.deepsea-workflow-inspector {
+  border-color: color-mix(in srgb, var(--deepsea-warn) 28%, rgba(255, 255, 255, 0.2));
+  background: color-mix(in srgb, var(--deepsea-surface) 82%, var(--deepsea-warn) 7%);
+}
+.deepsea-workflow-inspector[data-state="running"] {
+  border-color: color-mix(in srgb, var(--deepsea-primary) 20%, rgba(255, 255, 255, 0.2));
+  background: color-mix(in srgb, var(--deepsea-surface) 86%, var(--deepsea-primary) 5%);
+}
+.deepsea-workflow-inspector[data-state="blocked"] {
+  border-color: color-mix(in srgb, var(--deepsea-danger) 24%, rgba(255, 255, 255, 0.2));
+  background: color-mix(in srgb, var(--deepsea-surface) 84%, var(--deepsea-danger) 5%);
+}
+.deepsea-workflow-inspector__body {
+  display: grid;
+  gap: 10px;
+}
+.deepsea-workflow-inspector__body span {
+  color: rgba(100, 116, 139, 0.62);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.deepsea-workflow-inspector__body p {
+  margin: 4px 0 0;
+  color: var(--deepsea-text);
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.deepsea-workflow-inspector__approval {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--deepsea-warn) 20%, rgba(255, 255, 255, 0.2));
+  padding-top: 9px;
+}
+.deepsea-workflow-inspector__approval button {
+  display: inline-flex;
+  min-height: 30px;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid rgba(0, 108, 73, 0.2);
+  border-radius: 6px;
+  background: var(--deepsea-ok-soft);
+  color: var(--deepsea-ok);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 860;
+  line-height: 1;
+}
+.deepsea-workflow-inspector__approval button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.deepsea-workflow-inspector__approval svg {
+  width: 13px;
+  height: 13px;
+}
 .deepsea-contract-list p {
   margin: 4px 0 0;
   color: var(--deepsea-text);

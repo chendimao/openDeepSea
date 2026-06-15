@@ -240,6 +240,7 @@ export function SessionShellView({
             onCancelRun={onCancelRun}
             onRetryRun={onRetryRun}
             onSaveContract={onSaveContract}
+            onApproveWorkflowArtifact={onApproveWorkflowArtifact}
           />
         ) : null}
       </main>
@@ -2749,6 +2750,7 @@ function IntegratedInspector({
   onCancelRun,
   onRetryRun,
   onSaveContract,
+  onApproveWorkflowArtifact,
 }: {
   payload: SessionWorkspacePayload;
   activeRun: SessionRun | null;
@@ -2757,6 +2759,7 @@ function IntegratedInspector({
   onCancelRun?: (runId: string) => void;
   onRetryRun?: (runId: string) => void;
   onSaveContract?: (input: { scope?: string | null; risks?: string[]; acceptanceCriteria?: string[] }) => void;
+  onApproveWorkflowArtifact?: (artifactVersionId: string) => void;
 }): JSX.Element {
   return (
     <aside className="deepsea-inspector" aria-label="Session Inspector">
@@ -2768,6 +2771,12 @@ function IntegratedInspector({
         ))}
       </div>
       <div className="deepsea-inspector__scroll">
+        <WorkflowInspectorModule
+          controller={payload.activeSession.workflowController ?? null}
+          artifacts={payload.activeSession.workflowArtifacts ?? []}
+          gates={payload.activeSession.workflowGates ?? []}
+          onApprove={onApproveWorkflowArtifact}
+        />
         <ContractModule contract={payload.contract} onSaveContract={onSaveContract} />
         <PlanModule items={payload.activeSession.planItems} />
         <RunModule
@@ -2782,6 +2791,108 @@ function IntegratedInspector({
       </div>
     </aside>
   );
+}
+
+function WorkflowInspectorModule({
+  controller,
+  artifacts,
+  gates,
+  onApprove,
+}: {
+  controller?: WorkflowControllerView | null;
+  artifacts: WorkflowArtifactVersionView[];
+  gates: WorkflowGateView[];
+  onApprove?: (artifactVersionId: string) => void;
+}): JSX.Element | null {
+  const artifactById = new Map(artifacts.map((artifact) => [artifact.id, artifact]));
+  const pendingGate = gates.find((gate) => gate.status === 'pending' && gate.artifact_version_id);
+  const pendingArtifact = pendingGate?.artifact_version_id
+    ? artifactById.get(pendingGate.artifact_version_id)
+    : undefined;
+  if (!controller && !pendingGate) return null;
+  const status = getWorkflowInspectorStatus(controller ?? null, Boolean(pendingGate));
+
+  return (
+    <section
+      className="deepsea-glass-card deepsea-workflow-inspector"
+      data-workflow-inspector="true"
+      data-state={status.tone}
+    >
+      <div className="deepsea-module-title">
+        <h3>
+          <ShieldCheck aria-hidden="true" />
+          Workflow 状态
+        </h3>
+        <span>{status.label}</span>
+      </div>
+      <div className="deepsea-workflow-inspector__body">
+        <div>
+          <span>状态</span>
+          <p>{status.description}</p>
+        </div>
+        {controller ? (
+          <div>
+            <span>阶段</span>
+            <p>{controller.active_stage ?? 'pending'} · {controller.controller ?? 'planner'}</p>
+          </div>
+        ) : null}
+        {pendingGate && pendingArtifact ? (
+          <div className="deepsea-workflow-inspector__approval">
+            <span>{pendingGate.reason}</span>
+            <button
+              type="button"
+              data-workflow-artifact-action="approve"
+              aria-label={`确认 ${pendingArtifact.artifact_type} v${pendingArtifact.version}`}
+              disabled={!onApprove}
+              onClick={() => onApprove?.(pendingArtifact.id)}
+            >
+              <Check aria-hidden="true" />
+              确认 {formatWorkflowArtifactType(pendingArtifact.artifact_type)}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function getWorkflowInspectorStatus(
+  controller: WorkflowControllerView | null,
+  hasPendingGate: boolean,
+): { label: string; description: string; tone: 'running' | 'waiting' | 'blocked' | 'idle' } {
+  if (hasPendingGate) {
+    return {
+      label: '等待确认',
+      description: '等待用户确认 workflow artifact，确认后任务会继续执行。',
+      tone: 'waiting',
+    };
+  }
+  if (!controller) {
+    return {
+      label: '空闲',
+      description: '暂无运行中的工作流。',
+      tone: 'idle',
+    };
+  }
+  if (controller.blocker) {
+    return {
+      label: '已阻塞',
+      description: controller.next_action ?? controller.blocker,
+      tone: 'blocked',
+    };
+  }
+  if (controller.controller === 'user') {
+    return {
+      label: '等待用户',
+      description: controller.next_action ?? '等待用户确认后继续。',
+      tone: 'waiting',
+    };
+  }
+  return {
+    label: '运行中',
+    description: controller.next_action ?? 'Workflow 正在执行，等待下一条运行事件或阶段更新。',
+    tone: 'running',
+  };
 }
 
 function ContractModule({
