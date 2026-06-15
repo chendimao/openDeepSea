@@ -1650,7 +1650,10 @@ function WorkflowChatMessage({
       aria-label="工作流消息"
     >
       <header className="deepsea-workflow-chat__header">
-        <span className="deepsea-status-chip" data-tone="ok">Planner</span>
+        <span className="deepsea-status-chip" data-tone="ok">
+          <Brain aria-hidden="true" />
+          规划师 (Planner)
+        </span>
         <time className="deepsea-mono">{formatClock(group.updatedAt)}</time>
         <strong>{formatWorkflowFlowStatus(status)}</strong>
         <WorkflowViewToggle
@@ -1661,17 +1664,14 @@ function WorkflowChatMessage({
         />
       </header>
       <div className="deepsea-message-body deepsea-workflow-chat">
-        <div className="deepsea-workflow-chat__summary">
-          <div className="deepsea-workflow-chat__identity">
-            <span className="deepsea-status-chip" data-tone="ok">动态监控</span>
-            <p className="deepsea-workflow-chat__summary-text" title={summary}>{summary}</p>
+        <div className="deepsea-workflow-chat__summary-row">
+          <p className="deepsea-workflow-chat__summary-text" title={summary}>{summary}</p>
+          <div className="deepsea-workflow-chat__badges" aria-label="Workflow 摘要">
+            <span>{formatWorkflowIntentLabel(group.controller?.selected_intent)}</span>
+            <span>{formatWorkflowStageLabel(group.controller?.active_stage)}</span>
+            <span>{formatPendingGateCount(group.gates)}</span>
+            <span>{group.assignments.length} agents</span>
           </div>
-        </div>
-        <div className="deepsea-workflow-chat__badges" aria-label="Workflow 摘要">
-          <span>{formatWorkflowIntentLabel(group.controller?.selected_intent)}</span>
-          <span>{formatWorkflowStageLabel(group.controller?.active_stage)}</span>
-          <span>{formatPendingGateCount(group.gates)}</span>
-          <span>{group.assignments.length} agents</span>
         </div>
         {viewMode === 'flow' ? (
           <WorkflowFlowMap
@@ -1681,7 +1681,7 @@ function WorkflowChatMessage({
             status={status}
             summary={formatWorkflowFlowTimelineLabel(group.controller, group.messages)}
             lines={buildWorkflowFlowLines(group.assignments, group.gates, group.controller)}
-            cards={buildWorkflowFlowCards(group.controller, group.artifacts, group.gates, group.assignments)}
+            cards={buildWorkflowFlowCards(group.controller, group.artifacts, group.gates, group.assignments, group.messages)}
           />
         ) : null}
         <WorkflowEventRows
@@ -1900,6 +1900,8 @@ type WorkflowFlowLine = {
 };
 
 type WorkflowFlowCard = {
+  icon: LucideIcon;
+  tone: 'controller' | 'gate' | 'agent' | 'event';
   title: string;
   status: string;
   detail: string;
@@ -1924,7 +1926,61 @@ function WorkflowFlowMap({
   cards: WorkflowFlowCard[];
 }): JSX.Element {
   const columns = kind === 'mission' ? 3 : 2;
-  const flowHeight = Math.max(kind === 'mission' ? 94 : 150, 50 + Math.ceil(Math.max(cards.length, 1) / columns) * 54);
+  const flowHeight = kind === 'mission'
+    ? Math.max(166, 48 + Math.ceil(Math.max(cards.length, 1) / 2) * 52)
+    : Math.max(164, 54 + Math.ceil(Math.max(cards.length, 1) / columns) * 62);
+  if (kind === 'mission') {
+    const distributionCards = cards.slice(0, 2);
+    const executionCards = cards.slice(2);
+    return (
+      <div
+        className="deepsea-workflow-flow"
+        data-session-workflow-map={kind}
+        data-workflow-flow-root="true"
+        aria-label="Workflow 流转"
+        style={{ minHeight: flowHeight }}
+      >
+        <svg
+          className="deepsea-workflow-flow__lines"
+          viewBox={`0 0 640 ${flowHeight}`}
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          {lines.map((line, index) => (
+            <path key={`${line.className}:${index}`} className={line.className} d={line.d} fill="none" />
+          ))}
+        </svg>
+        <div className="deepsea-workflow-flow__phase">
+          <span>{phaseLabel}</span>
+        </div>
+        <div className="deepsea-workflow-flow__track" aria-hidden="true" />
+        <div className="deepsea-workflow-flow__step" data-step="distribution">
+          <span className="deepsea-workflow-flow__dot" aria-hidden="true" data-tone={status === 'pending' ? 'pending' : 'done'} />
+          <div className="deepsea-workflow-flow__step-head">
+            <span>1. 任务分配与并行启动</span>
+            <strong>{status === 'pending' ? 'pending' : 'done'}</strong>
+          </div>
+          <div className="deepsea-workflow-flow__cards">
+            {distributionCards.map((card) => (
+              <WorkflowFlowCardView key={`${card.title}:${card.detail}`} card={card} />
+            ))}
+          </div>
+        </div>
+        <div className="deepsea-workflow-flow__step" data-step="execution">
+          <span className="deepsea-workflow-flow__dot" aria-hidden="true" data-tone={status} />
+          <div className="deepsea-workflow-flow__step-head">
+            <span>2. 并行执行进度</span>
+            <strong>{formatWorkflowFlowStatus(status)}</strong>
+          </div>
+          <div className="deepsea-workflow-flow__cards">
+            {executionCards.map((card) => (
+              <WorkflowFlowCardView key={`${card.title}:${card.detail}`} card={card} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       className="deepsea-workflow-flow"
@@ -1955,20 +2011,32 @@ function WorkflowFlowMap({
         {kind === 'run' ? <p className="deepsea-workflow-flow__summary">{summary}</p> : null}
         <div className="deepsea-workflow-flow__cards">
           {cards.map((card) => (
-            <article key={`${card.title}:${card.detail}`} className="deepsea-workflow-flow-card">
-              <div className="deepsea-workflow-flow-card__head">
-                <span>{card.title}</span>
-                <strong>{card.status}</strong>
-              </div>
-              <p>{card.detail}</p>
-              <div className="deepsea-workflow-flow-card__progress" aria-hidden="true">
-                <span style={{ width: `${card.progress}%` }} />
-              </div>
-            </article>
+            <WorkflowFlowCardView key={`${card.title}:${card.detail}`} card={card} />
           ))}
         </div>
       </div>
     </div>
+  );
+}
+
+function WorkflowFlowCardView({ card }: { card: WorkflowFlowCard }): JSX.Element {
+  const Icon = card.icon ?? FileText;
+  return (
+    <article className="deepsea-workflow-flow-card" data-card-tone={card.tone}>
+      <span className="deepsea-workflow-flow-card__icon" aria-hidden="true">
+        <Icon />
+      </span>
+      <div className="deepsea-workflow-flow-card__content">
+        <div className="deepsea-workflow-flow-card__head">
+          <span>{card.title}</span>
+          <strong>{card.status}</strong>
+        </div>
+        <p title={card.detail}>{card.detail}</p>
+        <div className="deepsea-workflow-flow-card__progress" aria-hidden="true">
+          <span style={{ width: `${card.progress}%` }} />
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -1980,11 +2048,11 @@ function buildWorkflowFlowLines(
   const hasGate = gates.some((gate) => gate.status === 'pending');
   const hasAssignments = assignments.length > 0;
   return [
-    { className: 'flow-path-parallel', d: 'M 30 16 L 30 54 L 184 54' },
-    { className: 'flow-path-parallel', d: 'M 30 54 L 536 54' },
+    { className: 'flow-path-parallel', d: 'M 30 38 L 30 84 L 276 84' },
+    { className: 'flow-path-parallel', d: 'M 30 84 L 590 84' },
     {
       className: 'flow-path-sequential',
-      d: `M 30 54 L 30 ${hasAssignments || hasGate || controller ? 116 : 88}`,
+      d: `M 30 38 L 30 ${hasAssignments || hasGate || controller ? 162 : 132}`,
     },
   ];
 }
@@ -1994,12 +2062,15 @@ function buildWorkflowFlowCards(
   artifacts: WorkflowArtifactVersionView[],
   gates: WorkflowGateView[],
   assignments: WorkflowAgentAssignmentView[],
+  messages: SessionMessage[] = [],
 ): WorkflowFlowCard[] {
   const pendingGate = gates.find((gate) => gate.status === 'pending' && gate.artifact_version_id);
   const pendingGateArtifact = pendingGate?.artifact_version_id
     ? artifacts.find((artifact) => artifact.id === pendingGate.artifact_version_id)
     : undefined;
   const controllerCard: WorkflowFlowCard = {
+    icon: Brain,
+    tone: 'controller',
     title: 'Controller',
     status: controller?.controller ?? 'planner',
     detail: controller?.active_stage
@@ -2008,20 +2079,46 @@ function buildWorkflowFlowCards(
     progress: controller?.blocker ? 40 : controller ? 72 : 24,
   };
   const gateCard: WorkflowFlowCard = {
+    icon: ShieldCheck,
+    tone: 'gate',
     title: 'Gate',
     status: formatPendingGateCount(gates),
     detail: pendingGateArtifact?.title ?? '当前无人工确认项',
     progress: pendingGate ? 48 : 88,
   };
   const agentCard: WorkflowFlowCard = {
-    title: 'Agents',
+    icon: GitFork,
+    tone: 'agent',
+    title: 'Active Agents',
     status: `${assignments.length} agents`,
     detail: assignments[0]
       ? `${assignments[0].assigned_agent_name ?? assignments[0].assigned_agent_id ?? assignments[0].role} · ${assignments[0].fallback_reason ?? assignments[0].task_title}`
       : '等待 agent 分派',
     progress: assignments.length > 0 ? 64 : 20,
   };
-  return [controllerCard, gateCard, agentCard];
+  const latestWorkflowMessage = messages[messages.length - 1];
+  const eventCard: WorkflowFlowCard = {
+    icon: MessageSquare,
+    tone: 'event',
+    title: 'Execution Log',
+    status: formatWorkflowEventCount(messages),
+    detail: latestWorkflowMessage
+      ? `${formatWorkflowEventLabel(latestWorkflowMessage)} · ${formatWorkflowEventPreview(latestWorkflowMessage.content)}`
+      : '等待 workflow 事件写入',
+    progress: messages.length > 0 ? 72 : 18,
+  };
+  const assignmentCards = assignments.slice(0, 2).map((assignment): WorkflowFlowCard => ({
+    icon: GitFork,
+    tone: 'agent',
+    title: assignment.assigned_agent_name ?? assignment.assigned_agent_id ?? assignment.role,
+    status: assignment.backend ?? assignment.execution_mode,
+    detail: assignment.task_title,
+    progress: 100,
+  }));
+  const distributionCards = assignmentCards.length > 0
+    ? [...assignmentCards, gateCard].slice(0, 2)
+    : [controllerCard, gateCard];
+  return [...distributionCards, agentCard, eventCard];
 }
 
 function formatWorkflowIntentLabel(intent: string | null | undefined): string {
@@ -2912,18 +3009,24 @@ function buildRunFlowCards(
 ): WorkflowFlowCard[] {
   return [
     {
+      icon: FileText,
+      tone: 'event',
       title: 'stdout',
       status: formatRunFlowCardStatus(run.status),
       detail: formatRunFlowOutputDetail(run),
       progress: getRunFlowProgress(run.status, run.stdout.trim().length > 0),
     },
     {
+      icon: MessageSquare,
+      tone: 'event',
       title: 'events',
       status: `${events.length} events`,
       detail: formatRunFlowEventDetail(events),
       progress: events.length > 0 ? 68 : 18,
     },
     {
+      icon: CheckCircle2,
+      tone: 'gate',
       title: 'checks',
       status: failureDetails.length > 0 ? 'Review' : 'Pass',
       detail: formatRunFailureFlowDetail(failureDetails),

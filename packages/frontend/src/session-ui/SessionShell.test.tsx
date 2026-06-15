@@ -323,6 +323,8 @@ test('SessionShell renders workflow chat message with gate and agent summaries',
   assert.match(html, /等待 plan gate/);
   assert.match(html, /1 个门禁/);
   assert.match(html, /Codex/);
+  assert.match(html, /data-card-tone="agent"/);
+  assert.match(html, /data-card-tone="gate"/);
   assert.match(html, /deepsea-workflow-flow-card/);
   assert.match(html, /data-workflow-artifact-action="approve"/);
   assert.doesNotMatch(html, /data-workflow-mission-strip="true"/);
@@ -512,9 +514,17 @@ test('SessionShell merges consecutive workflow transcript messages into one work
 });
 
 test('SessionShell keeps workflow chat layout compact by default', () => {
-  assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow__cards\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\s*\{[^}]*width:\s*min\(100%,\s*760px\)/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-flow__step\[data-step="distribution"\]\s*\{[^}]*padding-bottom:\s*4px/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-flow__cards\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(136px,\s*1fr\)\)/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow__step\[data-step="distribution"\]\s+\.deepsea-workflow-flow__cards\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-flow-card\s*\{[^}]*grid-template-columns:\s*20px\s+minmax\(0,\s*1fr\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow-card p\s*\{[^}]*-webkit-line-clamp:\s*1/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-text\s*\{[^}]*-webkit-line-clamp:\s*2/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow__heading\s*\{[^}]*display:\s*none/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-flow__track\s*\{[^}]*background:\s*linear-gradient/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-text\s*\{[^}]*white-space:\s*normal/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact\s*\{[^}]*grid-template-columns:\s*auto\s+auto\s+minmax\(0,\s*1fr\)\s+auto/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-events__compact span\s*\{[^}]*text-overflow:\s*ellipsis/s);
 });
 
