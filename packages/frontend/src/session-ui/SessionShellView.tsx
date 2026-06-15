@@ -1489,7 +1489,6 @@ function TranscriptCanvas({
               <WorkflowChatMessage
                 key={item.key}
                 group={item.group}
-                sessionTitle={detail.session.title}
                 onApprove={onApproveWorkflowArtifact}
                 onRequestChange={(artifact) => onSendMessage({
                   content: buildWorkflowArtifactChangeRequestContent(artifact),
@@ -1632,12 +1631,10 @@ interface WorkflowChatGroup {
 
 function WorkflowChatMessage({
   group,
-  sessionTitle,
   onApprove,
   onRequestChange,
 }: {
   group: WorkflowChatGroup;
-  sessionTitle: string;
   onApprove?: (artifactVersionId: string) => void;
   onRequestChange: (artifact: WorkflowArtifactVersionView) => void;
 }): JSX.Element {
@@ -1661,37 +1658,39 @@ function WorkflowChatMessage({
         <div className="deepsea-workflow-chat__summary">
           <div className="deepsea-workflow-chat__identity">
             <span className="deepsea-status-chip" data-tone="ok">动态监控</span>
-            <h3 title={sessionTitle}>{sessionTitle}</h3>
-            <p>{summary}</p>
+            <p className="deepsea-workflow-chat__summary-text" title={summary}>{summary}</p>
           </div>
-          <div className="deepsea-workflow-chat__badges" aria-label="Workflow 摘要">
-            <span>{formatWorkflowEventCount(group.messages)}</span>
-            <span>{formatPendingGateCount(group.gates)}</span>
-            <span>{group.assignments.length} agents</span>
-          </div>
+          <WorkflowViewToggle
+            mode={viewMode}
+            onModeChange={setViewMode}
+            label="Workflow 显示模式"
+            className="deepsea-workflow-view-toggle--chat"
+          />
         </div>
-        <WorkflowViewToggle
-          mode={viewMode}
-          onModeChange={setViewMode}
-          label="Workflow 显示模式"
-          className="deepsea-workflow-view-toggle--chat"
-        />
+        <div className="deepsea-workflow-chat__badges" aria-label="Workflow 摘要">
+          <span>{formatWorkflowIntentLabel(group.controller?.selected_intent)}</span>
+          <span>{formatWorkflowStageLabel(group.controller?.active_stage)}</span>
+          <span>{formatPendingGateCount(group.gates)}</span>
+          <span>{group.assignments.length} agents</span>
+        </div>
         {viewMode === 'flow' ? (
           <WorkflowFlowMap
             kind="mission"
             phaseLabel="Parallel Execution 并行执行"
             title="规划师 (Planner)"
             status={status}
-            summary={summary}
+            summary={formatWorkflowFlowTimelineLabel(group.controller, group.messages)}
             lines={buildWorkflowFlowLines(group.assignments, group.gates, group.controller)}
             cards={buildWorkflowFlowCards(group.controller, group.artifacts, group.gates, group.assignments)}
           />
         ) : null}
-        <WorkflowEventRows messages={group.messages} expanded={viewMode === 'log'} previewLimit={viewMode === 'flow' ? 2 : undefined} />
+        <WorkflowEventRows
+          messages={group.messages}
+          expanded={viewMode === 'log'}
+        />
         {viewMode === 'flow' ? (
           <WorkflowGateSummary artifacts={group.artifacts} gates={group.gates} onApprove={onApprove} onRequestChange={onRequestChange} />
         ) : null}
-        {group.controller?.blocker ? <p className="deepsea-workflow-chat__blocker">{group.controller.blocker}</p> : null}
       </div>
     </article>
   );
@@ -1737,14 +1736,30 @@ function WorkflowViewToggle({
 function WorkflowEventRows({
   messages,
   expanded = false,
-  previewLimit: previewLimitProp,
 }: {
   messages: SessionMessage[];
   expanded?: boolean;
-  previewLimit?: number;
 }): JSX.Element | null {
   if (messages.length === 0) return null;
-  const previewLimit = expanded ? messages.length : previewLimitProp ?? WORKFLOW_EVENT_PREVIEW_LIMIT;
+  if (!expanded) {
+    const latestMessage = messages[messages.length - 1]!;
+    const hiddenCount = Math.max(0, messages.length - 1);
+    return (
+      <div className="deepsea-workflow-events" data-expanded="false" data-compact="true" aria-label="连续工作流事件">
+        <div className="deepsea-workflow-events__header">
+          <span>Execution Log 合并事件</span>
+          <strong>{messages.length} events</strong>
+        </div>
+        <div className="deepsea-workflow-events__compact">
+          <strong>{formatWorkflowEventLabel(latestMessage)}</strong>
+          <time className="deepsea-mono">{formatClock(latestMessage.created_at)}</time>
+          <span title={latestMessage.content}>{formatWorkflowEventPreview(latestMessage.content)}</span>
+          <em>已合并前 {hiddenCount} 条 workflow 事件</em>
+        </div>
+      </div>
+    );
+  }
+  const previewLimit = expanded ? messages.length : WORKFLOW_EVENT_PREVIEW_LIMIT;
   const hiddenCount = Math.max(0, messages.length - previewLimit);
   const visibleMessages = messages.slice(-previewLimit);
   return (
@@ -1816,10 +1831,12 @@ function WorkflowGateSummary({
     })
     .filter((item): item is { gate: WorkflowGateView; artifact: WorkflowArtifactVersionView } => Boolean(item));
   if (gateItems.length === 0) return null;
+  const pendingItems = gateItems.filter((item) => item.gate.status === 'pending');
+  if (pendingItems.length === 0) return null;
 
   return (
     <div className="deepsea-workflow-gate-summary" aria-label="Workflow 门禁摘要">
-      {gateItems.map(({ gate, artifact }) => (
+      {pendingItems.map(({ gate, artifact }) => (
         <article className="deepsea-workflow-gate-summary__item" key={`${gate.kind}:${artifact.id}`} data-status={gate.status}>
           <div className="deepsea-workflow-gate-summary__body">
             <strong>{formatWorkflowArtifactHeading(artifact)}</strong>
@@ -1906,7 +1923,8 @@ function WorkflowFlowMap({
   lines: WorkflowFlowLine[];
   cards: WorkflowFlowCard[];
 }): JSX.Element {
-  const flowHeight = Math.max(150, 74 + Math.ceil(Math.max(cards.length, 1) / 2) * 62);
+  const columns = kind === 'mission' ? 3 : 2;
+  const flowHeight = Math.max(kind === 'mission' ? 94 : 150, 50 + Math.ceil(Math.max(cards.length, 1) / columns) * 54);
   return (
     <div
       className="deepsea-workflow-flow"
@@ -1927,6 +1945,7 @@ function WorkflowFlowMap({
       </svg>
       <div className="deepsea-workflow-flow__phase">
         <span>{phaseLabel}</span>
+        {kind === 'mission' ? <strong>{summary}</strong> : null}
       </div>
       <div className="deepsea-workflow-flow__node">
         <span className="deepsea-workflow-flow__dot" aria-hidden="true" data-tone={status} />
@@ -1934,7 +1953,7 @@ function WorkflowFlowMap({
           <span>{title}</span>
           <strong>{formatWorkflowFlowStatus(status)}</strong>
         </div>
-        <p className="deepsea-workflow-flow__summary">{summary}</p>
+        {kind === 'run' ? <p className="deepsea-workflow-flow__summary">{summary}</p> : null}
         <div className="deepsea-workflow-flow__cards">
           {cards.map((card) => (
             <article key={`${card.title}:${card.detail}`} className="deepsea-workflow-flow-card">
@@ -1962,11 +1981,11 @@ function buildWorkflowFlowLines(
   const hasGate = gates.some((gate) => gate.status === 'pending');
   const hasAssignments = assignments.length > 0;
   return [
-    { className: 'flow-path-parallel', d: 'M 34 18 L 34 64 L 172 64' },
-    { className: 'flow-path-parallel', d: 'M 34 64 L 516 64' },
+    { className: 'flow-path-parallel', d: 'M 30 16 L 30 54 L 184 54' },
+    { className: 'flow-path-parallel', d: 'M 30 54 L 536 54' },
     {
       className: 'flow-path-sequential',
-      d: `M 34 64 L 34 ${hasAssignments || hasGate || controller ? 148 : 112}`,
+      d: `M 30 54 L 30 ${hasAssignments || hasGate || controller ? 116 : 88}`,
     },
   ];
 }
@@ -1977,17 +1996,23 @@ function buildWorkflowFlowCards(
   gates: WorkflowGateView[],
   assignments: WorkflowAgentAssignmentView[],
 ): WorkflowFlowCard[] {
+  const pendingGate = gates.find((gate) => gate.status === 'pending' && gate.artifact_version_id);
+  const pendingGateArtifact = pendingGate?.artifact_version_id
+    ? artifacts.find((artifact) => artifact.id === pendingGate.artifact_version_id)
+    : undefined;
   const controllerCard: WorkflowFlowCard = {
     title: 'Controller',
     status: controller?.controller ?? 'planner',
-    detail: controller?.next_action ?? '等待 workflow 推进',
+    detail: controller?.active_stage
+      ? `${formatWorkflowStageLabel(controller.active_stage)} 阶段`
+      : '等待 workflow 推进',
     progress: controller?.blocker ? 40 : controller ? 72 : 24,
   };
   const gateCard: WorkflowFlowCard = {
     title: 'Gate',
     status: formatPendingGateCount(gates),
-    detail: artifacts[0]?.title ?? '等待产物确认',
-    progress: gates.some((gate) => gate.status === 'pending') ? 48 : 88,
+    detail: pendingGateArtifact?.title ?? '当前无人工确认项',
+    progress: pendingGate ? 48 : 88,
   };
   const agentCard: WorkflowFlowCard = {
     title: 'Agents',
@@ -1998,6 +2023,20 @@ function buildWorkflowFlowCards(
     progress: assignments.length > 0 ? 64 : 20,
   };
   return [controllerCard, gateCard, agentCard];
+}
+
+function formatWorkflowIntentLabel(intent: string | null | undefined): string {
+  if (!intent) return 'workflow';
+  if (intent === 'standard_development') return '标准开发';
+  if (intent === 'light_task') return '轻量任务';
+  if (intent === 'debugger') return '调试';
+  if (intent === 'brainstorming') return '头脑风暴';
+  return intent.replace(/_/g, ' ');
+}
+
+function formatWorkflowFlowTimelineLabel(controller: WorkflowControllerView | null, messages: SessionMessage[]): string {
+  const stage = formatWorkflowStageLabel(controller?.active_stage);
+  return `${stage} · ${formatWorkflowEventCount(messages)}`;
 }
 
 function formatWorkflowFlowStatus(status: 'pending' | 'active' | 'blocked' | 'done'): string {
@@ -2327,7 +2366,7 @@ function isWorkflowTranscriptMessage(message: SessionMessage): boolean {
   if (sender.includes('workflow') || sender.includes('工作流')) return true;
   const metadata = parseMessageMetadata(message.metadata);
   if (metadata.workflow_run_id || metadata.workflow_step_id) return true;
-  if (metadata.event_type?.startsWith('workflow_')) return true;
+  if (metadata.event_type?.startsWith('workflow_') || metadata.event_type?.startsWith('workflow-')) return true;
   const text = message.content.trim();
   return /^(子任务|产品经理检测|诊断：|决策：|恢复次数：|已决定恢复执行|等待用户确认|当前 workflow|已进入 Superpowers 工作流)/.test(text);
 }
@@ -2340,11 +2379,11 @@ function getWorkflowChatStatus(group: WorkflowChatGroup): 'pending' | 'active' |
 }
 
 function formatWorkflowChatSummary(group: WorkflowChatGroup): string {
-  if (group.messages.length > 0) {
-    return `${group.messages.length} 条工作流事件，${formatWorkflowMissionMeta(group.controller)}`;
-  }
   if (group.controller?.next_action) {
-    return `${formatWorkflowMissionMeta(group.controller)} · ${group.controller.next_action}`;
+    return group.controller.next_action;
+  }
+  if (group.messages.length > 0) {
+    return `${group.messages.length} 条工作流事件`;
   }
   return group.controller?.next_action
     ?? formatWorkflowMissionMeta(group.controller)

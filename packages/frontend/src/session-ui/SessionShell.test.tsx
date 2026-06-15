@@ -340,6 +340,8 @@ test('SessionShell merges workflow events into a compact preview inside the tran
     next_action: '等待用户确认当前 workflow artifact。',
     blocker: null,
   };
+  payload.activeSession.runs = [];
+  payload.activeSession.agentEvents = [];
   payload.activeSession.messages = [
     ...payload.activeSession.messages,
     ...Array.from({ length: 6 }, (_, index): SessionMessage => ({
@@ -362,10 +364,50 @@ test('SessionShell merges workflow events into a compact preview inside the tran
   const html = renderSessionShell(payload);
 
   assert.match(html, /Execution Log 合并事件/);
-  assert.match(html, /已合并前 4 条 workflow 事件/);
+  assert.match(html, /已合并前 5 条 workflow 事件/);
   assert.match(html, /workflow event 6:/);
+  assert.doesNotMatch(html, /workflow event 5:/);
   assert.doesNotMatch(html, /workflow event 1:/);
   assert.doesNotMatch(html, /workflow event 1:.*workflow event 2:.*workflow event 3:.*workflow event 4:.*workflow event 5:.*workflow event 6:/s);
+});
+
+test('SessionShell renders workflow events as a compact one-line summary in flow mode', () => {
+  const payload = createPayload();
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-compact-1',
+    selected_intent: 'standard_development',
+    active_stage: 'planning',
+    controller: 'planner',
+    blocker: null,
+    next_action: '等待用户确认当前 workflow artifact。',
+  };
+  payload.activeSession.runs = [];
+  payload.activeSession.agentEvents = [];
+  payload.activeSession.messages = [
+    ...payload.activeSession.messages,
+    ...Array.from({ length: 3 }, (_, index): SessionMessage => ({
+      id: `workflow-compact-${index + 1}`,
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'workflow',
+      sender_name: '工作流',
+      content: `workflow event ${index + 1}: compact`,
+      message_type: 'system',
+      status: 'completed',
+      metadata: JSON.stringify({
+        workflow_run_id: 'workflow-run-compact-1',
+        event_type: `workflow_step_${index + 1}`,
+      }),
+      created_at: Date.now() + index,
+    })),
+  ];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-compact="true"/);
+  assert.match(html, /workflow event 3: compact/);
+  assert.doesNotMatch(html, /workflow event 1: compact/);
+  assert.doesNotMatch(html, /workflow event 2: compact/);
 });
 
 test('SessionShell renders workflow as a transcript message instead of a top mission panel', () => {
@@ -463,9 +505,17 @@ test('SessionShell merges consecutive workflow transcript messages into one work
 
   assert.equal((html.match(/data-workflow-chat-message="true"/g) ?? []).length, 1);
   assert.match(html, /2 条工作流事件/);
-  assert.match(html, /implementation 阶段已完成/);
+  assert.match(html, /data-compact="true"/);
+  assert.doesNotMatch(html, /implementation 阶段已完成/);
   assert.match(html, /TDD evidence gate requires records/);
   assert.doesNotMatch(html, /data-workflow-mission-strip="true"/);
+});
+
+test('SessionShell keeps workflow chat layout compact by default', () => {
+  assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow__cards\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow-card p\s*\{[^}]*-webkit-line-clamp:\s*1/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-text\s*\{[^}]*-webkit-line-clamp:\s*2/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact span\s*\{[^}]*text-overflow:\s*ellipsis/s);
 });
 
 test('SessionShell surfaces workflow approval action in the inspector', () => {
@@ -565,11 +615,15 @@ test('SessionShell hides artifact confirm action after approval while keeping ch
   }];
 
   const html = renderSessionShell(payload);
+  const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
+  const composerIndex = html.indexOf('deepsea-composer-anchor');
+  const workflowMessageArea = html.slice(workflowMessageIndex, composerIndex);
+
   assert.match(html, /data-workflow-chat-message="true"/);
-  assert.match(html, /Plan v1/);
-  assert.match(html, /请求修改/);
-  assert.match(html, /已确认/);
   assert.doesNotMatch(html, /data-workflow-artifact-action="approve"/);
+  assert.doesNotMatch(workflowMessageArea, /Plan v1/);
+  assert.doesNotMatch(workflowMessageArea, /请求修改/);
+  assert.doesNotMatch(workflowMessageArea, /data-workflow-artifact-action="request-change"/);
 });
 
 test('SessionShell renders workflow controller and agent assignment table', () => {
@@ -597,7 +651,8 @@ test('SessionShell renders workflow controller and agent assignment table', () =
   const html = renderSessionShell(payload);
 
   assert.match(html, /data-workflow-chat-message="true"/);
-  assert.match(html, /standard_development/);
+  assert.match(html, /标准开发/);
+  assert.match(html, /分派/);
   assert.match(html, /工作流/);
   assert.match(html, /全栈工程师/);
   assert.match(html, /未找到更匹配/);
