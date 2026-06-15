@@ -1674,27 +1674,22 @@ function WorkflowChatMessage({
           mode={viewMode}
           onModeChange={setViewMode}
           label="Workflow 显示模式"
+          className="deepsea-workflow-view-toggle--chat"
         />
         {viewMode === 'flow' ? (
-          <>
-            <WorkflowFlowMap
-              kind="mission"
-              phaseLabel="Parallel Execution 并行执行"
-              title="规划师 (Planner)"
-              status={status}
-              summary={summary}
-              lines={buildWorkflowFlowLines(group.assignments, group.gates, group.controller)}
-              cards={buildWorkflowFlowCards(group.controller, group.artifacts, group.gates, group.assignments)}
-            />
-            <WorkflowStageRail controller={group.controller} gates={group.gates} />
-          </>
+          <WorkflowFlowMap
+            kind="mission"
+            phaseLabel="Parallel Execution 并行执行"
+            title="规划师 (Planner)"
+            status={status}
+            summary={summary}
+            lines={buildWorkflowFlowLines(group.assignments, group.gates, group.controller)}
+            cards={buildWorkflowFlowCards(group.controller, group.artifacts, group.gates, group.assignments)}
+          />
         ) : null}
-        <WorkflowEventRows messages={group.messages} expanded={viewMode === 'log'} />
+        <WorkflowEventRows messages={group.messages} expanded={viewMode === 'log'} previewLimit={viewMode === 'flow' ? 2 : undefined} />
         {viewMode === 'flow' ? (
-          <>
-            <WorkflowGateSummary artifacts={group.artifacts} gates={group.gates} onApprove={onApprove} onRequestChange={onRequestChange} />
-            <WorkflowAgentRoster assignments={group.assignments} />
-          </>
+          <WorkflowGateSummary artifacts={group.artifacts} gates={group.gates} onApprove={onApprove} onRequestChange={onRequestChange} />
         ) : null}
         {group.controller?.blocker ? <p className="deepsea-workflow-chat__blocker">{group.controller.blocker}</p> : null}
       </div>
@@ -1739,9 +1734,17 @@ function WorkflowViewToggle({
   );
 }
 
-function WorkflowEventRows({ messages, expanded = false }: { messages: SessionMessage[]; expanded?: boolean }): JSX.Element | null {
+function WorkflowEventRows({
+  messages,
+  expanded = false,
+  previewLimit: previewLimitProp,
+}: {
+  messages: SessionMessage[];
+  expanded?: boolean;
+  previewLimit?: number;
+}): JSX.Element | null {
   if (messages.length === 0) return null;
-  const previewLimit = expanded ? messages.length : WORKFLOW_EVENT_PREVIEW_LIMIT;
+  const previewLimit = expanded ? messages.length : previewLimitProp ?? WORKFLOW_EVENT_PREVIEW_LIMIT;
   const hiddenCount = Math.max(0, messages.length - previewLimit);
   const visibleMessages = messages.slice(-previewLimit);
   return (
@@ -1989,7 +1992,9 @@ function buildWorkflowFlowCards(
   const agentCard: WorkflowFlowCard = {
     title: 'Agents',
     status: `${assignments.length} agents`,
-    detail: assignments[0]?.task_title ?? '等待 agent 分派',
+    detail: assignments[0]
+      ? `${assignments[0].assigned_agent_name ?? assignments[0].assigned_agent_id ?? assignments[0].role} · ${assignments[0].fallback_reason ?? assignments[0].task_title}`
+      : '等待 agent 分派',
     progress: assignments.length > 0 ? 64 : 20,
   };
   return [controllerCard, gateCard, agentCard];

@@ -362,7 +362,7 @@ test('SessionShell merges workflow events into a compact preview inside the tran
   const html = renderSessionShell(payload);
 
   assert.match(html, /Execution Log 合并事件/);
-  assert.match(html, /已合并前 2 条 workflow 事件/);
+  assert.match(html, /已合并前 4 条 workflow 事件/);
   assert.match(html, /workflow event 6:/);
   assert.doesNotMatch(html, /workflow event 1:/);
   assert.doesNotMatch(html, /workflow event 1:.*workflow event 2:.*workflow event 3:.*workflow event 4:.*workflow event 5:.*workflow event 6:/s);
