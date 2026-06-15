@@ -646,6 +646,22 @@ test('SessionShell renders agent run as flow capsule with event rail', () => {
   assert.match(html, /执行输出正文/);
 });
 
+test('SessionShell keeps agent run body as a vertical chat message layout', () => {
+  assert.match(sessionOsCss, /\.deepsea-run-capsule__body\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
+  assert.doesNotMatch(
+    sessionOsCss,
+    /\.deepsea-run-capsule__body\s*\{[^}]*grid-template-columns:\s*minmax\(128px,\s*168px\)\s+minmax\(0,\s*1fr\)/s,
+  );
+  assert.match(sessionOsCss, /\.deepsea-run-event-rail\s*\{[^}]*display:\s*flex/s);
+  assert.match(sessionOsCss, /\.deepsea-run-event-rail\s*\{[^}]*flex-wrap:\s*wrap/s);
+  assert.match(sessionOsCss, /\.deepsea-run-event-rail\s*\{[^}]*width:\s*100%/s);
+  assert.match(sessionOsCss, /\.deepsea-run-event-rail\s*\{[^}]*border-bottom:\s*1px solid/s);
+  assert.doesNotMatch(sessionOsCss, /\.deepsea-run-event-rail\s*\{[^}]*border-right:\s*1px solid/s);
+  assert.doesNotMatch(sessionOsCss, /\.deepsea-run-event-rail\s*\{[^}]*grid-auto-flow:\s*column/s);
+  assert.doesNotMatch(sessionOsCss, /\.deepsea-run-log\s*>\s*div,/);
+  assert.match(sessionOsCss, /\.deepsea-run-log:not\(\.deepsea-run-capsule\)\s*>\s*div,/);
+});
+
 test('SessionShell renders active session change summaries in the sidebar rows', () => {
   const payload = createPayload();
   payload.activeSessions = payload.activeSessions.map((session) =>

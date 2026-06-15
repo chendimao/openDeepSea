@@ -1804,7 +1804,7 @@
   min-height: 1px;
 }
 .deepsea-evidence-tray,
-.deepsea-run-log > div,
+.deepsea-run-log:not(.deepsea-run-capsule) > div,
 .deepsea-module-title,
 .deepsea-plan-list div {
   display: flex;
@@ -4335,18 +4335,26 @@ button.deepsea-message-attachment {
 }
 .deepsea-run-capsule__body {
   display: grid;
-  grid-template-columns: minmax(128px, 168px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 8px;
 }
 .deepsea-run-event-rail {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  min-width: 0;
+  align-items: stretch;
   gap: 6px;
-  border-right: 1px solid color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-border-subtle));
-  padding-right: 7px;
+  border-right: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-border-subtle));
+  padding: 0 0 7px;
 }
 .deepsea-run-event-rail__item {
-  width: 100%;
+  width: auto;
+  min-width: 116px;
+  max-width: 180px;
+  flex: 1 1 128px;
   border: 1px solid color-mix(in srgb, var(--deepsea-primary) 12%, var(--deepsea-border-subtle));
   border-radius: 6px;
   background: color-mix(in srgb, var(--deepsea-surface) 95%, var(--deepsea-primary) 2%);
@@ -4372,6 +4380,9 @@ button.deepsea-message-attachment {
   color: var(--deepsea-muted);
   font-size: 9px;
   line-height: 1.3;
+}
+.deepsea-run-log-body {
+  width: 100%;
 }
 .deepsea-run-event-rail__item[data-kind="error"] {
   border-color: color-mix(in srgb, var(--deepsea-danger) 45%, var(--deepsea-border-subtle));
@@ -4874,9 +4885,7 @@ button.deepsea-message-attachment {
   }
 
   .deepsea-run-event-rail {
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(128px, 1fr);
-    overflow-x: auto;
+    overflow-x: visible;
     border-right: 0;
     border-bottom: 1px solid color-mix(in srgb, var(--deepsea-primary) 10%, var(--deepsea-border-subtle));
     padding-right: 0;
