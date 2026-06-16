@@ -1736,7 +1736,7 @@ function WorkflowChatStateStream({
   status: 'pending' | 'active' | 'blocked' | 'done';
 }): JSX.Element {
   const cards = buildWorkflowFlowCards(group.controller, group.artifacts, group.gates, group.assignments);
-  const visibleCards = cards.slice(0, 5);
+  const visibleCards = cards.slice(0, 4);
   const hiddenCount = Math.max(0, cards.length - visibleCards.length);
   return (
     <div className="deepsea-workflow-state-stream" data-workflow-state-stream="true" aria-label="Workflow 主流程流转">
