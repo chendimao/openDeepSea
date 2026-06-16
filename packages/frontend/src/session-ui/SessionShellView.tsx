@@ -1736,23 +1736,70 @@ function WorkflowChatStateStream({
   status: 'pending' | 'active' | 'blocked' | 'done';
 }): JSX.Element {
   const cards = buildWorkflowFlowCards(group.controller, group.artifacts, group.gates, group.assignments);
-  const visibleCards = cards.slice(0, 4);
-  const hiddenCount = Math.max(0, cards.length - visibleCards.length);
+  const distributionCards = cards.slice(0, 2);
+  const executionCards = cards.slice(2, 4);
+  const visibleCount = distributionCards.length + executionCards.length;
+  const hiddenCount = Math.max(0, cards.length - visibleCount);
   return (
     <div className="deepsea-workflow-state-stream" data-workflow-state-stream="true" aria-label="Workflow 主流程流转">
       <div className="deepsea-workflow-state-stream__head">
         <span>{formatWorkflowFlowTimelineLabel(group.controller, group.messages)}</span>
         <strong>{formatWorkflowFlowStatus(status)}</strong>
       </div>
-      <div className="deepsea-workflow-state-stream__steps">
-        {visibleCards.map((card, index) => (
-          <WorkflowChatStateStep key={`${card.title}:${card.detail}`} card={card} index={index} />
-        ))}
+      <div className="deepsea-workflow-state-stream__phase">
+        <span>Parallel Execution 并行执行</span>
+      </div>
+      <div className="deepsea-workflow-state-stream__nodes">
+        <WorkflowChatStateNode
+          index={1}
+          title="任务分配与并行启动"
+          status={distributionCards.length > 0 ? '完成' : '等待'}
+          tone={status === 'pending' ? 'pending' : 'done'}
+          cards={distributionCards}
+        />
+        <WorkflowChatStateNode
+          index={2}
+          title="并行执行进度"
+          status={formatWorkflowFlowStatus(status)}
+          tone={status}
+          cards={executionCards}
+        />
         {hiddenCount > 0 ? (
           <div className="deepsea-workflow-state-stream__more">+{hiddenCount} 个后续节点已合并</div>
         ) : null}
       </div>
     </div>
+  );
+}
+
+function WorkflowChatStateNode({
+  index,
+  title,
+  status,
+  tone,
+  cards,
+}: {
+  index: number;
+  title: string;
+  status: string;
+  tone: 'pending' | 'active' | 'blocked' | 'done';
+  cards: WorkflowFlowCard[];
+}): JSX.Element {
+  return (
+    <section className="deepsea-workflow-state-node" data-node-tone={tone}>
+      <span className="deepsea-workflow-state-node__dot" aria-hidden="true" />
+      <div className="deepsea-workflow-state-node__head">
+        <strong>{index}. {title}</strong>
+        <span>{status}</span>
+      </div>
+      <div className="deepsea-workflow-state-stream__steps">
+        {cards.length > 0 ? cards.map((card, cardIndex) => (
+          <WorkflowChatStateStep key={`${index}:${card.title}:${card.detail}`} card={card} index={cardIndex} />
+        )) : (
+          <div className="deepsea-workflow-state-stream__empty">等待 workflow 节点数据</div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -2565,6 +2612,9 @@ function formatWorkflowChatSummary(group: WorkflowChatGroup): string {
   if (group.controller?.next_action) {
     return group.controller.next_action;
   }
+  if (hasWorkflowChatState(group) && group.messages.length > 0) {
+    return `已合并 ${group.messages.length} 条 workflow 事件，当前显示主流程流转。`;
+  }
   if (group.messages.length > 0) {
     return `${group.messages.length} 条工作流事件`;
   }
@@ -3081,10 +3131,14 @@ function RunStateStream({
         <span>{summary}</span>
         <strong>{formatWorkflowFlowStatus(status)}</strong>
       </div>
-      <div className="deepsea-workflow-state-stream__steps">
-        {cards.map((card, index) => (
-          <WorkflowChatStateStep key={`${card.title}:${card.detail}`} card={card} index={index} />
-        ))}
+      <div className="deepsea-workflow-state-stream__nodes">
+        <WorkflowChatStateNode
+          index={1}
+          title="执行链路"
+          status={status === 'done' ? '完成' : status === 'active' ? '进行中' : status === 'blocked' ? '阻塞' : '等待'}
+          tone={status}
+          cards={cards}
+        />
       </div>
     </div>
   );
