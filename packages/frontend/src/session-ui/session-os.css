@@ -2770,6 +2770,8 @@
 }
 .deepsea-message,
 .deepsea-run-log {
+  width: min(100%, 600px);
+  margin-right: auto;
   border-left: 2px solid var(--deepsea-primary-bright);
   border-radius: 0 var(--deepsea-radius) var(--deepsea-radius) 0;
   background: rgba(255, 255, 255, 0.05);
@@ -2787,7 +2789,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: min(100%, 760px);
+  width: min(100%, 600px);
   margin-right: auto;
 }
 .deepsea-message--agent-run .deepsea-run-log {
@@ -2803,7 +2805,7 @@
 }
 .deepsea-message.deepsea-message--workflow {
   position: relative;
-  width: min(100%, 760px);
+  width: min(100%, 600px);
   max-width: 100%;
   margin-right: auto;
   container-type: inline-size;
@@ -3805,7 +3807,7 @@
 }
 .deepsea-workflow-state-stream__steps {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 7px;
   min-width: 0;
 }
