@@ -17,6 +17,7 @@ const { taskRepo } = await import('../repos/tasks.js');
 const { workflowIncidentRepo } = await import('../repos/workflow-incidents.js');
 const { workflowRepo } = await import('../repos/workflows.js');
 const { scanWorkflowIncidents } = await import('./workflow-monitor.js');
+const { emptyAgentWorkflowState, serializeGraphState } = await import('./graph/state.js');
 
 test('scanWorkflowIncidents detects stale active agent run and deduplicates by fingerprint', () => {
   const fixture = createWorkflowFixture('stale active run');
@@ -121,6 +122,92 @@ test('scanWorkflowIncidents detects running step without active agent run', () =
   const incidents = scanWorkflowIncidents({ now: 20_000, staleAgentRunMs: 120_000 });
 
   assert.equal(incidents.length, 1);
+  assert.equal(incidents[0]?.incident_type, 'step_without_active_run');
+});
+
+test('scanWorkflowIncidents detects running graph workflow without active agent run', () => {
+  const fixture = createWorkflowFixture('graph without active run');
+  const state = {
+    ...emptyAgentWorkflowState({
+      workflowRunId: fixture.workflow.id,
+      projectId: fixture.project.id,
+      roomId: fixture.room.id,
+      taskId: fixture.task.id,
+      userGoal: fixture.task.title,
+      projectPath: fixture.project.path,
+    }),
+    currentNode: 'execute' as const,
+    currentStepId: null,
+    activeAgentRunId: null,
+    status: 'running' as const,
+    error: null,
+  };
+  workflowRepo.updateRun(fixture.workflow.id, {
+    status: 'running',
+    current_stage: 'implementation',
+    error: null,
+  });
+  workflowRepo.updateGraphState(fixture.workflow.id, serializeGraphState(state));
+
+  const incidents = scanWorkflowIncidents({ now: 20_000, staleAgentRunMs: 120_000 });
+  const incident = incidents.find((item) => item.workflow_run_id === fixture.workflow.id);
+
+  assert.equal(incident?.incident_type, 'step_without_active_run');
+  assert.match(incident?.error ?? '', /Graph workflow is running without an active agent run/);
+  assert.equal(incident?.workflow_step_id, null);
+  assert.equal(incident?.agent_run_id, null);
+});
+
+test('scanWorkflowIncidents does not let unrelated graph leftovers starve active-runless graph detection', () => {
+  db.prepare("UPDATE workflow_runs SET status = 'completed'").run();
+
+  const unrelated = createWorkflowFixture('unrelated graph leftovers');
+  workflowRepo.updateRun(unrelated.workflow.id, {
+    status: 'running',
+    current_stage: 'planning',
+    error: null,
+  });
+  workflowRepo.updateGraphState(unrelated.workflow.id, serializeGraphState({
+    ...emptyAgentWorkflowState({
+      workflowRunId: unrelated.workflow.id,
+      projectId: unrelated.project.id,
+      roomId: unrelated.room.id,
+      taskId: unrelated.task.id,
+      userGoal: unrelated.task.title,
+      projectPath: unrelated.project.path,
+    }),
+    currentNode: 'writing_plans',
+    activeAgentRunId: null,
+    status: 'running',
+    error: null,
+  }));
+
+  const target = createWorkflowFixture('target graph without active run');
+  workflowRepo.updateRun(target.workflow.id, {
+    status: 'running',
+    current_stage: 'implementation',
+    error: null,
+  });
+  workflowRepo.updateGraphState(target.workflow.id, serializeGraphState({
+    ...emptyAgentWorkflowState({
+      workflowRunId: target.workflow.id,
+      projectId: target.project.id,
+      roomId: target.room.id,
+      taskId: target.task.id,
+      userGoal: target.task.title,
+      projectPath: target.project.path,
+    }),
+    currentNode: 'execute',
+    currentStepId: null,
+    activeAgentRunId: null,
+    status: 'running',
+    error: null,
+  }));
+
+  const incidents = scanWorkflowIncidents({ limit: 1, now: 20_000, staleAgentRunMs: 120_000 });
+
+  assert.equal(incidents.length, 1);
+  assert.equal(incidents[0]?.workflow_run_id, target.workflow.id);
   assert.equal(incidents[0]?.incident_type, 'step_without_active_run');
 });
 
@@ -238,6 +325,61 @@ test('scanWorkflowIncidents classifies process exit 130 as retryable stale agent
   assert.equal(incident?.incident_type, 'agent_run_stale');
   assert.equal(incident?.severity, 'warning');
   assert.match(incident?.error ?? '', /code 130/);
+});
+
+test('scanWorkflowIncidents classifies model capacity overload as retryable stale agent run', () => {
+  const fixture = createWorkflowFixture('model capacity overload');
+  workflowRepo.blockRun(
+    fixture.workflow.id,
+    'Selected model is at capacity. Please try a different model. Some(ServerOverloaded)',
+  );
+
+  const incidents = scanWorkflowIncidents();
+  const incident = incidents.find((item) => item.workflow_run_id === fixture.workflow.id);
+
+  assert.equal(incident?.incident_type, 'agent_run_stale');
+  assert.equal(incident?.severity, 'warning');
+  assert.match(incident?.error ?? '', /ServerOverloaded/);
+});
+
+test('scanWorkflowIncidents reclassifies generic unknown blocker from latest agent run failure', () => {
+  const fixture = createWorkflowFixture('generic blocker with agent overload');
+  const step = workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.childTask.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'failed',
+    room_agent_id: fixture.agent.id,
+    sort_order: 1,
+  });
+  workflowRepo.updateStep(step.id, {
+    error: 'Selected model is at capacity. Please try a different model. Some(ServerOverloaded)',
+  });
+  const run = agentRunRepo.create({
+    room_id: fixture.room.id,
+    room_agent_id: fixture.agent.id,
+    agent_id: fixture.agent.agent_id,
+    backend: 'codex',
+    task_id: fixture.childTask.id,
+    workflow_run_id: fixture.workflow.id,
+    workflow_step_id: step.id,
+    workflow_stage: 'implementation',
+    prompt: 'implement',
+  });
+  agentRunRepo.updateStatus(run.id, 'failed', {
+    stderr: 'Selected model is at capacity. Please try a different model. Some(ServerOverloaded)',
+  });
+  workflowRepo.updateStep(step.id, { agent_run_id: run.id });
+  workflowRepo.blockRun(fixture.workflow.id, '未识别或高风险的工作流异常：unknown，默认阻塞并等待人工处理。');
+
+  const incidents = scanWorkflowIncidents();
+  const incident = incidents.find((item) => item.workflow_run_id === fixture.workflow.id);
+
+  assert.equal(incident?.incident_type, 'agent_run_stale');
+  assert.equal(incident?.severity, 'warning');
+  assert.match(incident?.error ?? '', /ServerOverloaded/);
+  assert.equal(incident?.agent_run_id, run.id);
 });
 
 function createWorkflowFixture(name: string) {

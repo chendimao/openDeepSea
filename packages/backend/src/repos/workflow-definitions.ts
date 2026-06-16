@@ -14,6 +14,17 @@ const BUILTIN_SUPERPOWERS_KEY = 'superpowers-development';
 
 const ALLOWED_NODE_TYPES = new Set<WorkflowDefinitionNodeType>([
   'context',
+  'intake',
+  'route_skills',
+  'answer',
+  'analysis_plan',
+  'lightweight_plan',
+  'debug_plan',
+  'debug_plan_confirm',
+  'systematic_debugging',
+  'review_plan',
+  'reviewer_assignment',
+  'agent_assignment',
   'planning',
   'brainstorming',
   'spec_review',
@@ -662,26 +673,69 @@ function isSupportedRuntimeTransition(
   to: WorkflowDefinitionNodeType,
   condition: string | null,
 ): boolean {
-  if (from === 'context') return to === 'planning' || to === 'brainstorming';
+  if (from === 'context') return to === 'planning' || to === 'brainstorming' || to === 'intake';
+  if (from === 'intake') return to === 'route_skills';
+  if (from === 'route_skills') {
+    return (
+      (to === 'answer' && condition === 'answer') ||
+      (to === 'analysis_plan' && condition === 'analysis') ||
+      (to === 'lightweight_plan' && condition === 'lightweight_task') ||
+      (to === 'brainstorming' && condition === 'standard_development') ||
+      (to === 'debug_plan' && condition === 'debug') ||
+      (to === 'review_plan' && condition === 'review_only')
+    );
+  }
+  if (from === 'analysis_plan') return to === 'memory' && condition === 'completed';
+  if (from === 'lightweight_plan') return to === 'approval_gate';
   if (from === 'brainstorming') return to === 'spec_review';
   if (from === 'spec_review') return to === 'worktree';
   if (from === 'worktree') return to === 'writing_plans';
   if (from === 'writing_plans') return to === 'plan_review';
   if (from === 'plan_review') return to === 'approval_gate';
   if (from === 'planning') return to === 'approval_gate' || to === 'acceptance';
-  if (from === 'approval_gate') return to === 'dispatch' && (!condition || condition === 'approved' || condition === 'default');
+  if (from === 'approval_gate') {
+    return (
+      (to === 'dispatch' && (!condition || condition === 'approved' || condition === 'default')) ||
+      (to === 'agent_assignment' && condition === 'approved')
+    );
+  }
+  if (from === 'agent_assignment') {
+    return (
+      (to === 'systematic_debugging' && condition === 'debug') ||
+      (to === 'dispatch' && condition === 'implementation')
+    );
+  }
   if (from === 'dispatch') return to === 'execute' || to === 'tdd_execute';
+  if (from === 'debug_plan') return to === 'debug_plan_confirm';
+  if (from === 'debug_plan_confirm') return to === 'agent_assignment';
+  if (from === 'systematic_debugging') return to === 'verify';
+  if (from === 'review_plan') return to === 'reviewer_assignment';
+  if (from === 'reviewer_assignment') return to === 'spec_compliance_review';
   if (from === 'execute') {
     return (
       (to === 'execute' && condition === 'has_runnable_child') ||
       (to === 'review' && (!condition || condition === 'done' || condition === 'review' || condition === 'complete' || condition === 'default'))
     );
   }
-  if (from === 'tdd_execute') return to === 'spec_compliance_review';
-  if (from === 'spec_compliance_review') {
-    return to === 'code_quality_review' || (to === 'verify' && condition === 'review_only');
+  if (from === 'tdd_execute') {
+    return (
+      (to === 'tdd_execute' && condition === 'has_runnable_child') ||
+      (to === 'spec_compliance_review' && (!condition || condition === 'done' || condition === 'default'))
+    );
   }
-  if (from === 'code_quality_review') return to === 'verify';
+  if (from === 'spec_compliance_review') {
+    return (
+      (to === 'tdd_execute' && condition === 'changes_requested') ||
+      (to === 'code_quality_review' && (!condition || condition === 'pass' || condition === 'default')) ||
+      (to === 'verify' && condition === 'review_only')
+    );
+  }
+  if (from === 'code_quality_review') {
+    return (
+      (to === 'tdd_execute' && condition === 'changes_requested') ||
+      (to === 'verify' && (!condition || condition === 'pass' || condition === 'default'))
+    );
+  }
   if (from === 'review') {
     return (
       (to === 'repair_decision' && condition === 'changes_requested') ||

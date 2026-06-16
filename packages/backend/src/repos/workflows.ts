@@ -162,7 +162,16 @@ export const workflowRepo = {
 
   updateRun(
     id: string,
-    patch: Partial<Pick<WorkflowRun, 'status' | 'current_stage' | 'approved_by' | 'error' | 'graph_version' | 'graph_state'>>,
+    patch: Partial<Pick<
+      WorkflowRun,
+      | 'status'
+      | 'current_stage'
+      | 'approved_by'
+      | 'error'
+      | 'graph_version'
+      | 'graph_state'
+      | 'workflow_definition_snapshot'
+    >>,
   ): WorkflowRun | undefined {
     const existing = this.getRun(id);
     if (!existing) return undefined;
@@ -174,10 +183,13 @@ export const workflowRepo = {
     const error = hasPatchKey(patch, 'error') ? patch.error ?? null : existing.error;
     const graphVersion = hasPatchKey(patch, 'graph_version') ? patch.graph_version ?? null : existing.graph_version;
     const graphState = hasPatchKey(patch, 'graph_state') ? patch.graph_state ?? null : existing.graph_state;
+    const workflowDefinitionSnapshot = hasPatchKey(patch, 'workflow_definition_snapshot')
+      ? patch.workflow_definition_snapshot ?? null
+      : existing.workflow_definition_snapshot;
     db.prepare(
       `UPDATE workflow_runs
        SET status = ?, current_stage = ?, approved_at = ?, approved_by = ?, error = ?, graph_version = ?, graph_state = ?,
-           updated_at = ?, completed_at = ?
+           workflow_definition_snapshot = ?, updated_at = ?, completed_at = ?
        WHERE id = ?`,
     ).run(
       status,
@@ -187,6 +199,7 @@ export const workflowRepo = {
       error,
       graphVersion,
       graphState,
+      workflowDefinitionSnapshot,
       now(),
       completedAt,
       id,
