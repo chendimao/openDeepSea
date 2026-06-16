@@ -1812,7 +1812,12 @@ function WorkflowChatStateStep({
 }): JSX.Element {
   const Icon = card.icon ?? FileText;
   return (
-    <article className="deepsea-workflow-state-step" data-card-tone={card.tone} data-card-status={formatDataToken(card.status)}>
+    <article
+      className="deepsea-workflow-state-step"
+      data-card-tone={card.tone}
+      data-card-status={formatDataToken(card.status)}
+      aria-label={`${card.title}: ${card.status}. ${card.detail}`}
+    >
       <span className="deepsea-workflow-state-step__index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
       <span className="deepsea-workflow-state-step__icon" aria-hidden="true">
         <Icon />
