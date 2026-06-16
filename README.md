@@ -58,7 +58,7 @@ LANGGRAPH_WORKFLOW_ENABLED=0
 
 When disabled, the existing workflow orchestrator remains available for compatibility tests.
 
-轻量 workflow 任务必须先生成可确认计划并等待用户确认，确认前不得由浏览器审批路径直接进入执行阶段。
+轻量 workflow 任务，包括 README 等文档微调，必须先生成可确认计划并等待用户确认，确认前不得由浏览器审批路径直接进入执行阶段。
 
 ## 快速开始
 
