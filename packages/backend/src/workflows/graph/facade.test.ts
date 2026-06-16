@@ -13,6 +13,7 @@ const { projectRepo } = await import('../../repos/projects.js');
 const { agentRunRepo } = await import('../../repos/agent-runs.js');
 const { roomAgentRepo, roomRepo } = await import('../../repos/rooms.js');
 const { taskRepo } = await import('../../repos/tasks.js');
+const { workflowDefinitionRepo } = await import('../../repos/workflow-definitions.js');
 const { workflowRepo } = await import('../../repos/workflows.js');
 const { memoryRepo } = await import('../../repos/memory.js');
 const { runRegistry } = await import('../../run-registry.js');
@@ -20,6 +21,7 @@ const { parseGraphState, serializeGraphState } = await import('./state.js');
 const { setWorkflowOrchestratorGraphDeps, workflowOrchestrator } = await import('../orchestrator.js');
 const { setVerificationCommandRunnerForTests } = await import('./verification.js');
 const { SUPERPOWERS_V2_GRAPH_VERSION } = await import('../superpowers-stage-registry.js');
+const { SUPERPOWERS_RUNTIME_PROFILE, SUPERPOWERS_WORKFLOW_DEFINITION_KEY } = await import('./superpowers-runtime-constants.js');
 
 test.beforeEach(() => {
   setVerificationCommandRunnerForTests(async (command) => ({
@@ -87,7 +89,11 @@ test('workflowOrchestrator.start delegates to graph runtime when enabled', async
 
   assert.equal(run.graph_version, SUPERPOWERS_V2_GRAPH_VERSION);
   assert.equal(run.status, 'awaiting_approval');
-  assert.ok(workflowRepo.listSteps(run.id).some((step) => step.node_name === 'writing_plans'));
+  const state = parseGraphState(run.graph_state);
+  assert.equal(state?.currentNode, 'planning');
+  assert.equal(state?.superpowersPhase, 'brainstorming');
+  assert.ok(state?.draftSpecArtifactVersionId);
+  workflowRepo.updateRun(run.id, { status: 'completed' });
 });
 
 test('workflowOrchestrator.start uses legacy runtime when graph disabled', async () => {
@@ -649,6 +655,180 @@ test('workflowOrchestrator.retryStep resets failed workflowPlan task before resu
   assert.equal(state?.workflowPlan?.tasks[0]?.progress, 100);
 });
 
+test('workflowOrchestrator.retryStep resumes Superpowers execute even when previous phase was tdd_execute', async () => {
+  const task = createTask('graph-facade-superpowers-retry-execute', 'Facade Superpowers retry execute');
+  const executor = addWorkflowAgent(task.room_id, 'executor');
+  const child = taskRepo.create({
+    room_id: task.room_id,
+    project_id: task.project_id,
+    parent_task_id: task.id,
+    title: 'Retry Superpowers child',
+    description: 'Retry should start implementation instead of looping through completed TDD phase.',
+    assigned_agent_id: executor.id,
+  });
+  taskRepo.updateStatus(child.id, 'todo');
+  const workflowPlan: WorkflowPlanJson = {
+    workflow_name: task.title,
+    source_message_id: task.id,
+    goal: task.title,
+    summary: 'Retry should resume execution.',
+    tasks: [{
+      id: 'task-1-retry-superpowers-child',
+      title: child.title,
+      description: child.description ?? '',
+      role: 'executor',
+      agent_id: executor.id,
+      mode: 'parallel',
+      depends_on: [],
+      status: 'failed',
+      progress: 35,
+      result_refs: [],
+    }],
+  };
+  const run = createAwaitingGraphRun(task, {
+    status: 'blocked',
+    currentNode: 'execute',
+    childTaskIds: [child.id],
+    childTaskPlanIndexes: { [child.id]: 0 },
+    workflowPlan,
+    error: 'Agent run failed',
+  });
+  const state = parseGraphState(run.graph_state);
+  assert.ok(state);
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...state,
+    runtimeProfile: SUPERPOWERS_RUNTIME_PROFILE,
+    superpowersPhase: 'tdd_execute',
+    activeSuperpowersStage: 'agent_assignment',
+    selectedIntent: 'standard_development',
+    planReviewVerdict: 'approved',
+    implementationPlanPath: 'docs/superpowers/plans/facade-plan.md',
+  }));
+  workflowRepo.updateRun(run.id, {
+    graph_version: SUPERPOWERS_V2_GRAPH_VERSION,
+    workflow_definition_snapshot: JSON.stringify(createSuperpowersDefinitionSnapshot()),
+  });
+
+  let implementationCalls = 0;
+  setWorkflowOrchestratorGraphDeps({
+    runAcpAgent: async (input) => {
+      if (input.workflowStage === 'implementation') implementationCalls += 1;
+      const output = outputForAgentInput(input, 'superpowers retry implementation completed');
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      return {
+        run: { ...agentRun, stdout: output },
+        message: fakeMessage(task.room_id, output),
+        status: 'completed',
+      };
+    },
+  });
+
+  await workflowOrchestrator.retryStep(run.id);
+
+  const latestState = parseGraphState(workflowRepo.getRun(run.id)?.graph_state ?? null);
+  assert.equal(implementationCalls, 1);
+  assert.match(taskRepo.get(child.id)?.status ?? '', /^(review|done)$/);
+  assert.equal(latestState?.workflowPlan?.tasks[0]?.status, 'completed');
+});
+
+test('workflowOrchestrator.retryStep resets todo child workflowPlan task before Superpowers resume', async () => {
+  const task = createTask('graph-facade-superpowers-retry-todo-child', 'Facade Superpowers retry todo child');
+  const executor = addWorkflowAgent(task.room_id, 'executor');
+  const child = taskRepo.create({
+    room_id: task.room_id,
+    project_id: task.project_id,
+    parent_task_id: task.id,
+    title: 'Retry todo child with completed plan state',
+    description: 'Retry should align workflowPlan with the todo child task before resuming.',
+    assigned_agent_id: executor.id,
+  });
+  taskRepo.updateStatus(child.id, 'todo');
+  const workflowPlan: WorkflowPlanJson = {
+    workflow_name: task.title,
+    source_message_id: task.id,
+    goal: task.title,
+    summary: 'Retry should realign todo child task state.',
+    tasks: [{
+      id: 'task-1-retry-todo-child',
+      title: child.title,
+      description: child.description ?? '',
+      role: 'executor',
+      agent_id: executor.id,
+      mode: 'parallel',
+      depends_on: [],
+      status: 'completed',
+      progress: 100,
+      result_refs: [],
+    }],
+  };
+  const run = createAwaitingGraphRun(task, {
+    status: 'blocked',
+    currentNode: 'execute',
+    childTaskIds: [child.id],
+    childTaskPlanIndexes: { [child.id]: 0 },
+    workflowPlan,
+    error: 'Graph workflow is running without an active agent run',
+  });
+  const state = parseGraphState(run.graph_state);
+  assert.ok(state);
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...state,
+    runtimeProfile: SUPERPOWERS_RUNTIME_PROFILE,
+    superpowersPhase: 'tdd_execute',
+    activeSuperpowersStage: 'dispatch',
+    selectedIntent: 'standard_development',
+    planReviewVerdict: 'approved',
+    implementationPlanPath: 'docs/superpowers/plans/facade-plan.md',
+  }));
+  workflowRepo.updateRun(run.id, {
+    graph_version: SUPERPOWERS_V2_GRAPH_VERSION,
+    workflow_definition_snapshot: JSON.stringify(createSuperpowersDefinitionSnapshot()),
+  });
+
+  let implementationCalls = 0;
+  setWorkflowOrchestratorGraphDeps({
+    runAcpAgent: async (input) => {
+      if (input.workflowStage === 'implementation') implementationCalls += 1;
+      const output = outputForAgentInput(input, 'superpowers retry todo child completed');
+      const agentRun = agentRunRepo.create({
+        room_id: input.roomId,
+        room_agent_id: input.agent.id,
+        agent_id: input.agent.agent_id,
+        backend: 'codex',
+        status: 'completed',
+        task_id: input.taskId,
+        workflow_run_id: input.workflowRunId,
+        workflow_step_id: input.workflowStepId,
+        workflow_stage: input.workflowStage,
+        prompt: input.prompt,
+      });
+      return {
+        run: { ...agentRun, stdout: output },
+        message: fakeMessage(task.room_id, output),
+        status: 'completed',
+      };
+    },
+  });
+
+  await workflowOrchestrator.retryStep(run.id);
+
+  const latestState = parseGraphState(workflowRepo.getRun(run.id)?.graph_state ?? null);
+  assert.equal(implementationCalls, 1);
+  assert.match(taskRepo.get(child.id)?.status ?? '', /^(review|done)$/);
+  assert.equal(latestState?.workflowPlan?.tasks[0]?.status, 'completed');
+});
+
 test('workflowOrchestrator.retryStep reruns interrupted planning before awaiting approval', async () => {
   const task = createTask('graph-facade-retry-planning', 'Facade graph planning retry');
   const run = createAwaitingGraphRun(task, {
@@ -1076,6 +1256,19 @@ function outputForAgentInput(
     });
   }
   return implementationOutput;
+}
+
+function createSuperpowersDefinitionSnapshot() {
+  const definition = workflowDefinitionRepo.getBuiltInByKey(SUPERPOWERS_WORKFLOW_DEFINITION_KEY);
+  assert.ok(definition);
+  return {
+    id: definition.id,
+    name: definition.name,
+    description: definition.description,
+    builtinKey: definition.builtin_key,
+    version: definition.version,
+    definition: definition.definition,
+  };
 }
 
 function fakeMessage(roomId: string, content: string): Message {
