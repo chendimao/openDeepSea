@@ -619,15 +619,16 @@ test('SessionShell keeps workflow chat layout compact by default', () => {
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\s*\{[^}]*width:\s*100%/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow::before\s*\{[^}]*background:\s*linear-gradient/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\.is-blocked\s*\{[^}]*background:\s*linear-gradient/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-row\s*\{[^}]*gap:\s*6px/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-chat\s*\{[^}]*gap:\s*8px/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-chat\s*\{[^}]*gap:\s*6px/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-stream\s*\{[^}]*display:\s*grid/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-state-stream::before,\s*\.deepsea-run-state-stream::before\s*\{[^}]*animation:\s*workflowFlowLine/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-state-step\s*\{[^}]*grid-template-columns:\s*18px\s+20px\s+minmax\(0,\s*1fr\)/s);
+  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-state-stream::before\s*\{[^}]*display:\s*none/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-state-stream__steps\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-state-step\s*\{[^}]*grid-template-columns:\s*18px\s+minmax\(0,\s*1fr\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-step__icon svg\s*\{[^}]*width:\s*12px/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\.is-blocked \.deepsea-workflow-state-step\[data-card-tone="gate"\]\s*\{[^}]*border-color:\s*color-mix\(in srgb,\s*var\(--deepsea-warn\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-text\s*\{[^}]*white-space:\s*normal/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact\s*\{[^}]*grid-template-columns:\s*minmax\(96px,\s*0\.24fr\)\s+auto\s+minmax\(0,\s*1fr\)\s+auto/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact\s*\{[^}]*grid-template-columns:\s*minmax\(92px,\s*0\.20fr\)\s+auto\s+minmax\(0,\s*1fr\)\s+auto/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-events__compact span\s*\{[^}]*text-overflow:\s*ellipsis/s);
 });
 
@@ -854,7 +855,7 @@ test('SessionShell makes workflow assignment cards collapse under narrow transcr
   const narrowContainerCss = sessionOsCss.match(/@container \(max-width:\s*500px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
   assert.match(narrowContainerCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-state-step/);
   assert.match(narrowContainerCss, /\.deepsea-run-capsule \.deepsea-workflow-state-step/);
-  assert.match(narrowContainerCss, /grid-template-columns:\s*18px\s+20px\s+minmax\(0,\s*1fr\)/);
+  assert.match(narrowContainerCss, /grid-template-columns:\s*18px\s+minmax\(0,\s*1fr\)/);
 });
 
 test('SessionShell renders active session change summaries in the sidebar rows', () => {
