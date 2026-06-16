@@ -617,11 +617,13 @@ test('SessionShell only attaches live workflow state to the latest workflow chat
 });
 
 test('SessionShell keeps workflow chat layout compact by default', () => {
-  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\s*\{[^}]*width:\s*100%/s);
+  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\s*\{[^}]*width:\s*min\(100%,\s*760px\)/s);
+  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\s*\{[^}]*container-type:\s*inline-size/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow::before\s*\{[^}]*background:\s*linear-gradient/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\.is-blocked\s*\{[^}]*background:\s*linear-gradient/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-chat\s*\{[^}]*gap:\s*7px/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-chat\s*\{[^}]*gap:\s*9px/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-chat\s*\{[^}]*white-space:\s*normal/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-stream\s*\{[^}]*display:\s*grid/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-state-stream::before\s*\{[^}]*display:\s*none/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-stream__head\s*\{[^}]*display:\s*none/s);
@@ -637,8 +639,12 @@ test('SessionShell keeps workflow chat layout compact by default', () => {
   assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-text\s*\{[^}]*-webkit-line-clamp:\s*2/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-text\s*\{[^}]*white-space:\s*normal/s);
   assert.doesNotMatch(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-state-step:nth-child\(n \+ 3\)\s*\{[^}]*grid-column:\s*1 \/ -1/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact\s*\{[^}]*grid-template-columns:\s*minmax\(88px,\s*auto\)\s+minmax\(0,\s*1fr\)\s+auto/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact span\s*\{[^}]*text-overflow:\s*ellipsis/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact\s*\{[^}]*grid-template-areas:/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact span\s*\{[^}]*-webkit-line-clamp:\s*2/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact span\s*\{[^}]*white-space:\s*normal/s);
+  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-events\[data-compact="true"\]\s*\{[^}]*border-width:\s*1px 0 0/s);
+  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-events\[data-compact="true"\]\s*\{[^}]*background:\s*transparent/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-events\[data-compact="true"\] \.deepsea-workflow-events__header\s*\{[^}]*display:\s*none/s);
 });
 
@@ -834,6 +840,8 @@ test('SessionShell renders agent run as flow capsule with event rail', () => {
 });
 
 test('SessionShell keeps agent run body as a vertical chat message layout', () => {
+  assert.match(sessionOsCss, /\.deepsea-message--agent-run\s*\{[^}]*width:\s*min\(100%,\s*760px\)/s);
+  assert.match(sessionOsCss, /\.deepsea-run-capsule\s*\{[^}]*white-space:\s*normal/s);
   assert.match(sessionOsCss, /\.deepsea-run-capsule__header\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto\s+auto/s);
   assert.match(sessionOsCss, /\.deepsea-run-capsule__header \.deepsea-message-tools\s*\{[^}]*align-self:\s*start/s);
   assert.match(sessionOsCss, /\.deepsea-run-capsule__body\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
@@ -853,7 +861,7 @@ test('SessionShell keeps agent run body as a vertical chat message layout', () =
 
 test('SessionShell keeps workflow chat layout stacked like a chat message', () => {
   assert.match(sessionOsCss, /\.deepsea-transcript\s*\{[^}]*container-type:\s*inline-size/s);
-  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\s*\{[^}]*width:\s*100%/s);
+  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\s*\{[^}]*width:\s*min\(100%,\s*760px\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-row\s*\{[^}]*display:\s*grid/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-chat__badges\s*\{[^}]*display:\s*none/s);
@@ -873,7 +881,8 @@ test('SessionShell keeps workflow chat layout stacked like a chat message', () =
   assert.match(sessionOsCss, /\.deepsea-workflow-state-step__progress\s*\{[^}]*height:\s*2px/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-step__progress span\s*\{[^}]*background:\s*var\(--deepsea-primary\)/s);
   assert.match(sessionOsCss, /\.deepsea-run-state-stream\s*\{[^}]*display:\s*grid/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact\s*\{[^}]*grid-template-columns:\s*minmax\(88px,\s*auto\)\s+minmax\(0,\s*1fr\)\s+auto/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-events__compact span\s*\{[^}]*-webkit-line-clamp:\s*2/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-events\[data-compact="true"\] \.deepsea-workflow-events__header\s*\{[^}]*display:\s*none/s);
   assert.match(sessionOsCss, /@container \(max-width:\s*500px\)/);
 });
