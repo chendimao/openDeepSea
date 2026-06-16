@@ -90,15 +90,46 @@ test('delete project stops active agent runs before removing project', async () 
     status: 'running',
     prompt: 'work',
   });
+  db.exec(`
+    CREATE TEMP TABLE agent_run_delete_events (
+      run_id TEXT NOT NULL,
+      old_status TEXT NOT NULL,
+      new_status TEXT NOT NULL,
+      completed_at INTEGER,
+      error TEXT
+    );
+    CREATE TEMP TRIGGER record_project_delete_agent_run_update
+    AFTER UPDATE ON agent_runs
+    WHEN old.status IN ('queued', 'running', 'retrying')
+      AND new.status NOT IN ('queued', 'running', 'retrying')
+    BEGIN
+      INSERT INTO agent_run_delete_events (run_id, old_status, new_status, completed_at, error)
+      VALUES (old.id, old.status, new.status, new.completed_at, new.error);
+    END;
+  `);
 
   const res = await request(`/api/projects/${project.id}`, { method: 'DELETE' });
 
   assert.equal(res.status, 204);
   assert.equal(projectRepo.get(project.id), undefined);
-  const remainingRun = agentRunRepo.get(run.id);
-  assert.notEqual(remainingRun?.status, 'running');
-  assert.notEqual(remainingRun?.status, 'queued');
-  assert.notEqual(remainingRun?.status, 'retrying');
+  const events = db.prepare('SELECT run_id, old_status, new_status, completed_at, error FROM agent_run_delete_events').all() as Array<{
+    run_id: string;
+    old_status: string;
+    new_status: string;
+    completed_at: number | null;
+    error: string | null;
+  }>;
+  assert.equal(events.length, 1);
+  const event = events[0];
+  assert.ok(event);
+  assert.deepEqual(event, {
+    run_id: run.id,
+    old_status: 'running',
+    new_status: 'cancelled',
+    completed_at: event.completed_at,
+    error: 'Project deleted before run completed',
+  });
+  assert.equal(typeof event.completed_at, 'number');
 });
 
 test('delete project stops active workflow runs and tasks before removing project', async () => {
@@ -118,19 +149,85 @@ test('delete project stops active workflow runs and tasks before removing projec
     status: 'running',
     sort_order: 1,
   });
+  db.exec(`
+    CREATE TEMP TABLE workflow_run_delete_events (
+      run_id TEXT NOT NULL,
+      old_status TEXT NOT NULL,
+      new_status TEXT NOT NULL,
+      completed_at INTEGER,
+      error TEXT
+    );
+    CREATE TEMP TRIGGER record_project_delete_workflow_run_update
+    AFTER UPDATE ON workflow_runs
+    WHEN old.status IN ('draft', 'running', 'awaiting_decision', 'awaiting_approval', 'blocked')
+      AND new.status NOT IN ('draft', 'running', 'awaiting_decision', 'awaiting_approval', 'blocked')
+    BEGIN
+      INSERT INTO workflow_run_delete_events (run_id, old_status, new_status, completed_at, error)
+      VALUES (old.id, old.status, new.status, new.completed_at, new.error);
+    END;
+    CREATE TEMP TABLE workflow_step_delete_events (
+      step_id TEXT NOT NULL,
+      workflow_run_id TEXT NOT NULL,
+      old_status TEXT NOT NULL,
+      new_status TEXT NOT NULL,
+      completed_at INTEGER,
+      error TEXT
+    );
+    CREATE TEMP TRIGGER record_project_delete_workflow_step_update
+    AFTER UPDATE ON workflow_steps
+    WHEN old.status IN ('pending', 'running', 'awaiting_approval')
+      AND new.status NOT IN ('pending', 'running', 'awaiting_approval')
+    BEGIN
+      INSERT INTO workflow_step_delete_events (step_id, workflow_run_id, old_status, new_status, completed_at, error)
+      VALUES (old.id, old.workflow_run_id, old.status, new.status, new.completed_at, new.error);
+    END;
+  `);
 
   const res = await request(`/api/projects/${project.id}`, { method: 'DELETE' });
 
   assert.equal(res.status, 204);
   assert.equal(projectRepo.get(project.id), undefined);
-  const remainingRun = workflowRepo.getRun(run.id);
-  assert.notEqual(remainingRun?.status, 'draft');
-  assert.notEqual(remainingRun?.status, 'running');
-  assert.notEqual(remainingRun?.status, 'awaiting_decision');
-  assert.notEqual(remainingRun?.status, 'awaiting_approval');
-  assert.notEqual(remainingRun?.status, 'blocked');
-  const remainingStep = workflowRepo.getStep(step.id);
-  assert.notEqual(remainingStep?.status, 'running');
+  const runEvents = db.prepare('SELECT run_id, old_status, new_status, completed_at, error FROM workflow_run_delete_events').all() as Array<{
+    run_id: string;
+    old_status: string;
+    new_status: string;
+    completed_at: number | null;
+    error: string | null;
+  }>;
+  assert.equal(runEvents.length, 1);
+  const runEvent = runEvents[0];
+  assert.ok(runEvent);
+  assert.deepEqual(runEvent, {
+    run_id: run.id,
+    old_status: 'awaiting_approval',
+    new_status: 'cancelled',
+    completed_at: runEvent.completed_at,
+    error: 'Project deleted before run completed',
+  });
+  assert.equal(typeof runEvent.completed_at, 'number');
+  const stepEvents = db.prepare(`
+    SELECT step_id, workflow_run_id, old_status, new_status, completed_at, error
+    FROM workflow_step_delete_events
+  `).all() as Array<{
+    step_id: string;
+    workflow_run_id: string;
+    old_status: string;
+    new_status: string;
+    completed_at: number | null;
+    error: string | null;
+  }>;
+  assert.equal(stepEvents.length, 1);
+  const stepEvent = stepEvents[0];
+  assert.ok(stepEvent);
+  assert.deepEqual(stepEvent, {
+    step_id: step.id,
+    workflow_run_id: run.id,
+    old_status: 'running',
+    new_status: 'cancelled',
+    completed_at: stepEvent.completed_at,
+    error: 'Project deleted before run completed',
+  });
+  assert.equal(typeof stepEvent.completed_at, 'number');
   const remainingTask = taskRepo.getIncludingDeleted(task.id);
   assert.notEqual(remainingTask?.status, 'in_progress');
 });
