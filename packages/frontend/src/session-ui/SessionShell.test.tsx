@@ -313,19 +313,19 @@ test('SessionShell renders workflow chat message with gate and agent summaries',
   const transcriptScrollIndex = html.indexOf('data-transcript-scroll="true"');
 
   assert.match(html, /data-workflow-chat-message="true"/);
-  assert.match(html, /data-workflow-view-toggle="true"/);
   assert.match(html, /规划师 \(Planner\)/);
-  assert.match(html, /Parallel Execution 并行执行/);
   assert.match(html, /aria-label="展开当前对话中的全部可折叠内容"/);
-  assert.match(html, /data-session-workflow-map="mission"/);
-  assert.match(html, /data-workflow-flow-root="true"/);
-  assert.match(html, /flow-path-parallel/);
+  assert.match(html, /data-workflow-state-stream="true"/);
+  assert.doesNotMatch(html, /data-workflow-view-toggle="true"/);
+  assert.doesNotMatch(html, /data-session-workflow-map="mission"/);
+  assert.doesNotMatch(html, /data-workflow-flow-root="true"/);
+  assert.doesNotMatch(html, /flow-path-parallel/);
   assert.match(html, /等待 plan gate/);
   assert.match(html, /1 个门禁/);
   assert.match(html, /Codex/);
   assert.match(html, /data-card-tone="agent"/);
   assert.match(html, /data-card-tone="gate"/);
-  assert.match(html, /deepsea-workflow-flow-card/);
+  assert.match(html, /deepsea-workflow-state-step/);
   assert.match(html, /data-workflow-artifact-action="approve"/);
   assert.doesNotMatch(html, /data-workflow-mission-strip="true"/);
   assert.ok(workflowMessageIndex >= 0);
@@ -597,7 +597,7 @@ test('SessionShell only attaches live workflow state to the latest workflow chat
     : html;
 
   assert.equal((transcriptHtml.match(/data-workflow-chat-message="true"/g) ?? []).length, 2);
-  assert.equal((transcriptHtml.match(/data-workflow-flow-root="true"/g) ?? []).length, 1);
+  assert.equal((transcriptHtml.match(/data-workflow-state-stream="true"/g) ?? []).length, 1);
   assert.match(transcriptHtml, /工作流已启动/);
   assert.match(transcriptHtml, /产品经理检测到子任务异常/);
   const firstWorkflowIndex = transcriptHtml.indexOf('data-workflow-chat-message="true"');
@@ -609,8 +609,9 @@ test('SessionShell only attaches live workflow state to the latest workflow chat
   assert.doesNotMatch(firstWorkflowHtml, /data-workflow-flow-root="true"/);
   assert.doesNotMatch(firstWorkflowHtml, /data-workflow-view-toggle="true"/);
   assert.doesNotMatch(firstWorkflowHtml, /当前执行者/);
-  assert.match(latestWorkflowHtml, /data-workflow-flow-root="true"/);
-  assert.match(latestWorkflowHtml, /data-workflow-view-toggle="true"/);
+  assert.match(latestWorkflowHtml, /data-workflow-state-stream="true"/);
+  assert.doesNotMatch(latestWorkflowHtml, /data-workflow-flow-root="true"/);
+  assert.doesNotMatch(latestWorkflowHtml, /data-workflow-view-toggle="true"/);
   assert.match(latestWorkflowHtml, /当前执行者/);
 });
 
@@ -618,16 +619,12 @@ test('SessionShell keeps workflow chat layout compact by default', () => {
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\s*\{[^}]*width:\s*100%/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow::before\s*\{[^}]*background:\s*linear-gradient/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\.is-blocked\s*\{[^}]*background:\s*linear-gradient/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-flow__step\[data-step="distribution"\]\s*\{[^}]*padding-bottom:\s*2px/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-flow__cards\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(150px,\s*1fr\)\)/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow__step\[data-step="distribution"\]\s+\.deepsea-workflow-flow__cards\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-flow-card\s*\{[^}]*grid-template-columns:\s*20px\s+minmax\(0,\s*1fr\)/s);
-  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\.is-blocked \.deepsea-workflow-flow-card\[data-card-tone="gate"\]\s*\{[^}]*border-color:\s*color-mix\(in srgb,\s*var\(--deepsea-warn\)/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow-card p\s*\{[^}]*-webkit-line-clamp:\s*1/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow__step\[data-step="execution"\]\s+\.deepsea-workflow-flow__cards\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow__heading\s*\{[^}]*display:\s*none/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-flow__track\s*\{[^}]*background:\s*linear-gradient/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-row\s*\{[^}]*gap:\s*6px/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-chat\s*\{[^}]*gap:\s*8px/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-state-stream\s*\{[^}]*display:\s*grid/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-state-step\s*\{[^}]*grid-template-columns:\s*18px\s+18px\s+minmax\(0,\s*1fr\)/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-state-step__icon svg\s*\{[^}]*width:\s*12px/s);
+  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\.is-blocked \.deepsea-workflow-state-step\[data-card-tone="gate"\]\s*\{[^}]*border-color:\s*color-mix\(in srgb,\s*var\(--deepsea-warn\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-text\s*\{[^}]*white-space:\s*normal/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-events__compact\s*\{[^}]*grid-template-columns:\s*minmax\(96px,\s*0\.24fr\)\s+auto\s+minmax\(0,\s*1fr\)\s+auto/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-events__compact span\s*\{[^}]*text-overflow:\s*ellipsis/s);
@@ -767,14 +764,16 @@ test('SessionShell renders workflow controller and agent assignment table', () =
   const html = renderSessionShell(payload);
 
   assert.match(html, /data-workflow-chat-message="true"/);
-  assert.match(html, /data-workflow-flow-root="true"/);
-  assert.match(html, /Parallel Execution 并行执行/);
-  assert.match(html, /1\. 任务分配与并行启动/);
-  assert.match(html, /2\. 并行执行进度/);
+  assert.match(html, /data-workflow-state-stream="true"/);
+  assert.match(html, /deepsea-workflow-state-step/);
+  assert.doesNotMatch(html, /data-workflow-flow-root="true"/);
+  assert.doesNotMatch(html, /Parallel Execution 并行执行/);
+  assert.doesNotMatch(html, /1\. 任务分配与并行启动/);
+  assert.doesNotMatch(html, /2\. 并行执行进度/);
   assert.doesNotMatch(html, /Execution Log/);
   assert.match(html, /全栈工程师/);
   assert.match(html, /未找到更匹配/);
-  assert.match(html, /data-workflow-view-toggle="true"/);
+  assert.doesNotMatch(html, /data-workflow-view-toggle="true"/);
 });
 
 test('SessionShell renders agent run as flow capsule with event rail', () => {
@@ -810,11 +809,12 @@ test('SessionShell renders agent run as flow capsule with event rail', () => {
   assert.match(html, /data-run-dynamic-monitor="true"/);
   assert.match(html, /执行链路/);
   assert.match(html, /实时活动/);
-  assert.match(html, /Agent Run Flow 执行流转/);
-  assert.match(html, /data-workflow-flow-root="true"/);
-  assert.match(html, /data-session-workflow-map="run"/);
-  assert.match(html, /flow-path-sequential/);
-  assert.match(html, /deepsea-workflow-flow-card/);
+  assert.match(html, /deepsea-run-state-stream/);
+  assert.match(html, /deepsea-workflow-state-step/);
+  assert.doesNotMatch(html, /Agent Run Flow 执行流转/);
+  assert.doesNotMatch(html, /data-session-workflow-map="run"/);
+  assert.doesNotMatch(html, /flow-path-sequential/);
+  assert.doesNotMatch(html, /deepsea-workflow-flow-card/);
   assert.match(html, /输出已流入消息时间线/);
   assert.match(html, /implementing/);
   assert.match(html, /执行输出正文/);
@@ -839,15 +839,16 @@ test('SessionShell keeps agent run body as a vertical chat message layout', () =
 test('SessionShell keeps workflow chat controls floating above the message body', () => {
   assert.match(sessionOsCss, /\.deepsea-transcript\s*\{[^}]*container-type:\s*inline-size/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\s*\{[^}]*width:\s*100%/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-chat__controls\s*\{[^}]*position:\s*absolute/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-flow__cards\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(150px,\s*1fr\)\)/s);
-  assert.match(sessionOsCss, /\.deepsea-run-capsule \.deepsea-workflow-flow__cards\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(160px,\s*1fr\)\)/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-state-stream__steps\s*\{[^}]*display:\s*grid/s);
+  assert.match(sessionOsCss, /\.deepsea-run-state-stream\s*\{[^}]*display:\s*grid/s);
   assert.match(sessionOsCss, /@container \(max-width:\s*500px\)/);
 });
 
 test('SessionShell makes workflow assignment cards collapse under narrow transcript widths', () => {
-  assert.match(sessionOsCss, /@container \(max-width:\s*500px\)[\s\S]*\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow__step\[data-step="distribution"\]\s+\.deepsea-workflow-flow__cards\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
-  assert.match(sessionOsCss, /@container \(max-width:\s*500px\)[\s\S]*\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-flow\[data-session-workflow-map="mission"\]\s+\.deepsea-workflow-flow__step\[data-step="execution"\]\s+\.deepsea-workflow-flow__cards\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+  const narrowContainerCss = sessionOsCss.match(/@container \(max-width:\s*500px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
+  assert.match(narrowContainerCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-state-step/);
+  assert.match(narrowContainerCss, /\.deepsea-run-capsule \.deepsea-workflow-state-step/);
+  assert.match(narrowContainerCss, /grid-template-columns:\s*18px\s+18px\s+minmax\(0,\s*1fr\)/);
 });
 
 test('SessionShell renders active session change summaries in the sidebar rows', () => {
