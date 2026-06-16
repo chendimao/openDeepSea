@@ -3605,6 +3605,21 @@
   gap: 6px;
   min-width: 0;
   padding: 1px 0 0 12px;
+  position: relative;
+}
+.deepsea-workflow-state-stream::before,
+.deepsea-run-state-stream::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 18px;
+  bottom: 8px;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(0, 74, 198, 0.08), rgba(0, 74, 198, 0.52), rgba(0, 108, 73, 0.14));
+  background-size: 100% 200%;
+  opacity: 0.86;
+  pointer-events: none;
+  animation: workflowFlowLine 1.8s linear infinite;
 }
 .deepsea-workflow-state-stream__head {
   display: flex;
@@ -3638,14 +3653,16 @@
 }
 .deepsea-workflow-state-step {
   display: grid;
-  grid-template-columns: 18px 18px minmax(0, 1fr);
+  grid-template-columns: 18px 20px minmax(0, 1fr);
   align-items: start;
   gap: 7px;
   min-width: 0;
-  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 14%, var(--deepsea-border-subtle));
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.42);
-  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 10%, transparent);
+  border-left-color: color-mix(in srgb, var(--deepsea-primary) 30%, var(--deepsea-border-subtle));
+  border-radius: 0 7px 7px 0;
+  background: linear-gradient(90deg, rgba(0, 74, 198, 0.045), rgba(255, 255, 255, 0.16));
+  padding: 6px 8px 7px 0;
+  box-shadow: none;
 }
 .deepsea-message.deepsea-message--workflow.is-blocked .deepsea-workflow-state-step[data-card-tone="gate"] {
   border-color: color-mix(in srgb, var(--deepsea-warn) 42%, var(--deepsea-border-subtle));
@@ -3655,10 +3672,11 @@
   display: inline-grid;
   width: 18px;
   height: 18px;
+  margin-left: -9px;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--deepsea-primary) 18%, var(--deepsea-border-subtle));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-surface));
+  background: color-mix(in srgb, var(--deepsea-surface) 92%, var(--deepsea-primary) 8%);
   color: var(--deepsea-primary);
   font-family: var(--deepsea-mono);
   font-size: 8px;
@@ -3666,12 +3684,12 @@
 }
 .deepsea-workflow-state-step__icon {
   display: inline-flex;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   align-items: center;
   justify-content: center;
   border-radius: 5px;
-  background: color-mix(in srgb, var(--deepsea-primary) 9%, transparent);
+  background: color-mix(in srgb, var(--deepsea-primary) 8%, transparent);
   color: var(--deepsea-primary);
 }
 .deepsea-workflow-state-step__icon svg {
@@ -3718,6 +3736,28 @@
   line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.deepsea-workflow-state-step__progress {
+  display: block;
+  width: 100%;
+  height: 3px;
+  margin-top: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--deepsea-primary) 8%, transparent);
+}
+.deepsea-workflow-state-step__progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--deepsea-primary);
+}
+.deepsea-workflow-state-step[data-card-tone="gate"] .deepsea-workflow-state-step__progress span {
+  background: var(--deepsea-warn);
+}
+.deepsea-workflow-state-step[data-card-tone="agent"] .deepsea-workflow-state-step__progress span,
+.deepsea-workflow-state-step[data-card-tone="event"] .deepsea-workflow-state-step__progress span {
+  background: var(--deepsea-ok);
 }
 .deepsea-workflow-state-stream__more {
   color: var(--deepsea-muted);
@@ -4574,6 +4614,7 @@ button.deepsea-message-attachment {
   gap: 6px;
   min-width: 0;
   padding-left: 6px;
+  position: relative;
 }
 .deepsea-run-capsule .deepsea-workflow-state-step {
   padding: 6px 8px;
@@ -4670,7 +4711,7 @@ button.deepsea-message-attachment {
 }
 .deepsea-run-capsule__header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 6px;
   align-items: center;
   border-bottom: 1px solid color-mix(in srgb, var(--deepsea-primary) 7%, var(--deepsea-border-subtle));
@@ -4723,6 +4764,11 @@ button.deepsea-message-attachment {
   justify-content: flex-end;
   gap: 4px;
   grid-column: auto;
+  justify-self: end;
+}
+.deepsea-run-capsule__header .deepsea-message-tools {
+  align-self: start;
+  margin-top: 1px;
 }
 .deepsea-run-capsule__body {
   display: grid;
@@ -5287,6 +5333,18 @@ button.deepsea-message-attachment {
     padding-bottom: 6px;
   }
 
+  .deepsea-run-capsule__header {
+    gap: 4px;
+  }
+
+  .deepsea-run-capsule__status {
+    justify-self: start;
+  }
+
+  .deepsea-run-capsule__header .deepsea-message-tools {
+    margin-top: 0;
+  }
+
   .deepsea-message.deepsea-message--workflow {
     padding-left: 11px;
   }
@@ -5306,14 +5364,28 @@ button.deepsea-message-attachment {
 
   .deepsea-message.deepsea-message--workflow .deepsea-workflow-state-step,
   .deepsea-run-capsule .deepsea-workflow-state-step {
-    grid-template-columns: 18px 18px minmax(0, 1fr);
+    grid-template-columns: 18px 20px minmax(0, 1fr);
+  }
+
+  .deepsea-workflow-state-stream::before,
+  .deepsea-run-state-stream::before {
+    left: 8px;
+    top: 16px;
+    bottom: 6px;
   }
 }
 
 @container (max-width: 500px) {
   .deepsea-message.deepsea-message--workflow .deepsea-workflow-state-step,
   .deepsea-run-capsule .deepsea-workflow-state-step {
-    grid-template-columns: 18px 18px minmax(0, 1fr);
+    grid-template-columns: 18px 20px minmax(0, 1fr);
+  }
+
+  .deepsea-workflow-state-stream::before,
+  .deepsea-run-state-stream::before {
+    left: 8px;
+    top: 14px;
+    bottom: 6px;
   }
 }
 

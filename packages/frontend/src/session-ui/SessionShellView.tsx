@@ -1776,6 +1776,9 @@ function WorkflowChatStateStep({
           <span>{card.status}</span>
         </div>
         <p title={card.detail}>{card.detail}</p>
+        <span className="deepsea-workflow-state-step__progress" aria-hidden="true">
+          <span style={{ width: `${card.progress}%` }} />
+        </span>
       </div>
     </article>
   );
