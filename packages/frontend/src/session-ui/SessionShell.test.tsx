@@ -507,8 +507,9 @@ test('SessionShell merges consecutive workflow transcript messages into one work
   const html = renderSessionShell(payload);
 
   assert.equal((html.match(/data-workflow-chat-message="true"/g) ?? []).length, 1);
-  assert.match(html, /2 条工作流事件/);
-  assert.match(html, /data-compact="true"/);
+  assert.match(html, /已合并 2 条 workflow 事件/);
+  assert.match(html, /data-workflow-state-stream="true"/);
+  assert.doesNotMatch(html, /deepsea-workflow-events" data-expanded="false" data-compact="true"/);
   assert.doesNotMatch(html, /implementation 阶段已完成/);
   assert.match(html, /TDD evidence gate requires records/);
   assert.doesNotMatch(html, /data-workflow-mission-strip="true"/);
@@ -616,6 +617,67 @@ test('SessionShell only attaches live workflow state to the latest workflow chat
   assert.match(latestWorkflowHtml, /当前执行者/);
 });
 
+test('SessionShell renders merged workflow events as a readable state stream without controller data', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  payload.activeSession.runs = [];
+  payload.activeSession.agentEvents = [];
+  payload.activeSession.workflowController = null;
+  payload.activeSession.workflowArtifacts = [];
+  payload.activeSession.workflowGates = [];
+  payload.activeSession.workflowAgentAssignments = [];
+  payload.activeSession.messages = [
+    {
+      id: 'msg-workflow-recovery',
+      session_id: payload.activeSession.session.id,
+      role: 'system',
+      sender_id: 'workflow',
+      sender_name: '工作流',
+      content: '产品经理检测到子任务异常：Superpowers TDD evidence gate requires RED failed and GREEN passed records。',
+      message_type: 'text',
+      status: 'completed',
+      metadata: JSON.stringify({ event_type: 'workflow_recovery_decided', workflow_run_id: 'workflow-run-current' }),
+      created_at: now,
+    },
+    {
+      id: 'msg-review-pass',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'reviewer',
+      sender_name: '审查员',
+      content: '```json\n{ "verdict": "pass", "findings": [], "requiredFixes": [] }\n```',
+      message_type: 'text',
+      status: 'completed',
+      metadata: JSON.stringify({ workflow_run_id: 'workflow-run-current', agent_run_id: 'review-run-1' }),
+      created_at: now + 1_000,
+    },
+    {
+      id: 'msg-workflow-verify',
+      session_id: payload.activeSession.session.id,
+      role: 'system',
+      sender_id: 'workflow',
+      sender_name: '工作流',
+      content: '任务「删除项目前停止 active runs」进入 verify 阶段。',
+      message_type: 'text',
+      status: 'completed',
+      metadata: JSON.stringify({ event_type: 'workflow_stage_changed', workflow_run_id: 'workflow-run-current' }),
+      created_at: now + 2_000,
+    },
+  ];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-workflow-chat-message="true"/);
+  assert.match(html, /data-workflow-state-stream="true"/);
+  assert.match(html, /已合并 3 条 workflow 事件/);
+  assert.match(html, /验证 · 合并流转/);
+  assert.match(html, /阶段推进与执行输出/);
+  assert.match(html, /代码审查/);
+  assert.match(html, /pass/);
+  assert.match(html, /1 runs/);
+  assert.doesNotMatch(html, /data-workflow-flow-root="true"/);
+});
+
 test('SessionShell keeps workflow chat layout compact by default', () => {
   assert.match(sessionOsCss, /\.deepsea-message,\s*\.deepsea-run-log\s*\{[^}]*width:\s*min\(100%,\s*600px\)/s);
   assert.match(sessionOsCss, /\.deepsea-message,\s*\.deepsea-run-log\s*\{[^}]*margin-right:\s*auto/s);
@@ -624,7 +686,7 @@ test('SessionShell keeps workflow chat layout compact by default', () => {
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow::before\s*\{[^}]*background:\s*linear-gradient/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\.is-blocked\s*\{[^}]*background:\s*linear-gradient/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
-  assert.match(sessionOsCss, /\.deepsea-workflow-chat\s*\{[^}]*gap:\s*9px/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-chat\s*\{[^}]*gap:\s*10px/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-chat\s*\{[^}]*white-space:\s*normal/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-stream\s*\{[^}]*display:\s*grid/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-state-stream::before\s*\{[^}]*display:\s*none/s);
@@ -633,15 +695,15 @@ test('SessionShell keeps workflow chat layout compact by default', () => {
   assert.match(sessionOsCss, /\.deepsea-workflow-state-stream__phase\s*\{/);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-stream__nodes\s*\{[^}]*display:\s*grid/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-stream__steps\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
-  assert.doesNotMatch(sessionOsCss, /\.deepsea-workflow-state-stream__steps\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-step\s*\{[^}]*grid-template-columns:\s*18px\s+minmax\(0,\s*1fr\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-step__icon\s*\{[^}]*display:\s*inline-flex/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-step__icon svg\s*\{[^}]*width:\s*11px/s);
   assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow\.is-blocked \.deepsea-workflow-state-step\[data-card-tone="gate"\]\s*\{[^}]*border-color:\s*color-mix\(in srgb,\s*var\(--deepsea-warn\)/s);
-  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-state-step p\s*\{[^}]*display:\s*none/s);
+  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow.is-merged-events \.deepsea-workflow-state-stream--events \.deepsea-workflow-state-step p\s*\{[^}]*display:\s*none/s);
+  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-state-step p\s*\{[^}]*-webkit-line-clamp:\s*2/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-text\s*\{[^}]*-webkit-line-clamp:\s*2/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-chat__summary-text\s*\{[^}]*white-space:\s*normal/s);
-  assert.doesNotMatch(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-state-step:nth-child\(n \+ 3\)\s*\{[^}]*grid-column:\s*1 \/ -1/s);
+  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow:not\(\.is-merged-events\) \.deepsea-workflow-state-step:nth-child\(n \+ 3\)\s*\{[^}]*min-height:\s*0/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-events__compact\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-events__compact\s*\{[^}]*grid-template-areas:/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-events__compact span\s*\{[^}]*-webkit-line-clamp:\s*2/s);
@@ -877,11 +939,12 @@ test('SessionShell keeps workflow chat layout stacked like a chat message', () =
   assert.match(sessionOsCss, /\.deepsea-workflow-state-node__dot\s*\{[^}]*border-radius:\s*999px/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-stream__steps\s*\{[^}]*display:\s*grid/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-stream__steps\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
-  assert.doesNotMatch(sessionOsCss, /\.deepsea-workflow-state-stream__steps\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-state-stream--events \.deepsea-workflow-state-stream__steps\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-step\s*\{[^}]*grid-template-columns:\s*18px\s+minmax\(0,\s*1fr\)/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-step__icon\s*\{[^}]*display:\s*inline-flex/s);
   assert.doesNotMatch(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-state-step:nth-child\(n \+ 3\)\s*\{[^}]*grid-column:\s*1 \/ -1/s);
-  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-state-step p\s*\{[^}]*display:\s*none/s);
+  assert.match(sessionOsCss, /\.deepsea-message\.deepsea-message--workflow \.deepsea-workflow-state-step p\s*\{[^}]*display:\s*-webkit-box/s);
+  assert.match(sessionOsCss, /\.deepsea-workflow-state-step p\s*\{[^}]*white-space:\s*normal/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-step__progress\s*\{[^}]*height:\s*2px/s);
   assert.match(sessionOsCss, /\.deepsea-workflow-state-step__progress span\s*\{[^}]*background:\s*var\(--deepsea-primary\)/s);
   assert.match(sessionOsCss, /\.deepsea-run-state-stream\s*\{[^}]*display:\s*grid/s);

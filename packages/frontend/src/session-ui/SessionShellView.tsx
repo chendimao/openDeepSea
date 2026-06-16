@@ -1641,10 +1641,15 @@ function WorkflowChatMessage({
   const summary = formatWorkflowChatSummary(group);
   const status = getWorkflowChatStatus(group);
   const hasLiveWorkflowState = hasWorkflowChatState(group);
+  const hasMergedEventState = !hasLiveWorkflowState && group.messages.length >= 2;
 
   return (
     <article
-      className={`deepsea-message deepsea-message--workflow is-${status}`}
+      className={[
+        'deepsea-message deepsea-message--workflow',
+        `is-${status}`,
+        hasMergedEventState ? 'is-merged-events' : null,
+      ].filter(Boolean).join(' ')}
       data-role="assistant"
       data-workflow-chat-message="true"
       aria-label="工作流消息"
@@ -1674,16 +1679,60 @@ function WorkflowChatMessage({
             status={status}
             group={group}
           />
+        ) : hasMergedEventState ? (
+          <WorkflowMergedEventStateStream
+            status={status}
+            messages={group.messages}
+          />
         ) : null}
-        <WorkflowEventRows
-          messages={group.messages}
-          expanded={false}
-        />
+        {!hasMergedEventState ? (
+          <WorkflowEventRows
+            messages={group.messages}
+            expanded={false}
+          />
+        ) : null}
         {hasLiveWorkflowState ? (
           <WorkflowGateSummary artifacts={group.artifacts} gates={group.gates} onApprove={onApprove} onRequestChange={onRequestChange} />
         ) : null}
       </div>
     </article>
+  );
+}
+
+function WorkflowMergedEventStateStream({
+  messages,
+  status,
+}: {
+  messages: SessionMessage[];
+  status: 'pending' | 'active' | 'blocked' | 'done';
+}): JSX.Element {
+  const flow = buildWorkflowMergedEventFlow(messages, status);
+  return (
+    <div
+      className="deepsea-workflow-state-stream deepsea-workflow-state-stream--events"
+      data-workflow-state-stream="true"
+      aria-label="合并后的 Workflow 流转"
+    >
+      <div className="deepsea-workflow-state-stream__head">
+        <span>{flow.summary}</span>
+        <strong>{formatWorkflowFlowStatus(status)}</strong>
+      </div>
+      <div className="deepsea-workflow-state-stream__phase">
+        <span>{flow.phaseLabel}</span>
+      </div>
+      <div className="deepsea-workflow-state-stream__nodes">
+        {flow.nodes.map((node, index) => (
+          <WorkflowChatStateNode
+            key={`${node.title}:${index}`}
+            index={index + 1}
+            title={node.title}
+            status={node.status}
+            tone={node.tone}
+            cards={node.cards}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -2011,6 +2060,13 @@ type WorkflowFlowCard = {
   progress: number;
 };
 
+type WorkflowMergedEventNode = {
+  title: string;
+  status: string;
+  tone: 'pending' | 'active' | 'blocked' | 'done';
+  cards: WorkflowFlowCard[];
+};
+
 function WorkflowFlowMap({
   kind,
   phaseLabel,
@@ -2222,6 +2278,131 @@ function buildWorkflowFlowCards(
   return [...distributionCards, ...executionCards];
 }
 
+function buildWorkflowMergedEventFlow(
+  messages: SessionMessage[],
+  status: 'pending' | 'active' | 'blocked' | 'done',
+): {
+  phaseLabel: string;
+  summary: string;
+  nodes: WorkflowMergedEventNode[];
+} {
+  const latestMessage = messages[messages.length - 1] ?? null;
+  const latestWorkflowMessage = findLatestWorkflowMessage(messages) ?? latestMessage;
+  const latestReviewMessage = findLatestReviewMessage(messages);
+  const latestRecoveryMessage = [...messages].reverse().find((message) => workflowMessageEventType(message) === 'workflow_recovery_decided') ?? null;
+  const agentRunCount = countDistinctWorkflowAgentRuns(messages);
+  const recoveryCount = messages.filter((message) => workflowMessageEventType(message) === 'workflow_recovery_decided').length;
+  const stageLabel = inferWorkflowStageFromMessage(latestWorkflowMessage) ?? inferWorkflowStageFromMessage(latestMessage) ?? 'workflow';
+  const reviewStatus = latestReviewMessage ? inferWorkflowReviewStatus(latestReviewMessage) : null;
+  const eventTone = status === 'blocked' ? 'blocked' : status === 'done' ? 'done' : 'active';
+  const latestPreview = latestMessage ? formatWorkflowEventPreview(latestMessage.content) : '等待 workflow 事件';
+
+  return {
+    phaseLabel: `${stageLabel} · 合并流转`,
+    summary: `${messages.length} 条 workflow 事件 · 最新：${latestPreview}`,
+    nodes: [
+      {
+        title: '阶段推进与执行输出',
+        status: status === 'blocked' ? '阻塞' : status === 'done' ? '已记录' : '进行中',
+        tone: eventTone,
+        cards: [
+          {
+            icon: Brain,
+            tone: 'controller',
+            title: stageLabel,
+            status: workflowMessageEventType(latestWorkflowMessage) ?? 'workflow',
+            detail: [
+              latestWorkflowMessage ? formatWorkflowEventPreview(latestWorkflowMessage.content) : '等待 workflow 阶段事件',
+              recoveryCount > 0 ? `${recoveryCount} 次恢复诊断` : null,
+            ].filter(Boolean).join(' · '),
+            progress: status === 'blocked' ? 42 : status === 'done' ? 100 : 74,
+          },
+          {
+            icon: GitFork,
+            tone: 'agent',
+            title: 'Agent runs',
+            status: agentRunCount > 0 ? `${agentRunCount} runs` : `${messages.length} events`,
+            detail: latestMessage ? formatWorkflowEventPreview(latestMessage.content) : '暂无 agent run 事件',
+            progress: agentRunCount > 0 ? 78 : 58,
+          },
+        ],
+      },
+      {
+        title: '审查与验收信号',
+        status: reviewStatus === 'pass' ? 'PASS' : reviewStatus === 'changes_requested' ? '待修改' : status === 'blocked' ? '阻塞' : '待确认',
+        tone: reviewStatus === 'pass' || status === 'done' ? 'done' : eventTone,
+        cards: [
+          {
+            icon: ShieldCheck,
+            tone: reviewStatus === 'changes_requested' ? 'gate' : 'event',
+            title: '代码审查',
+            status: reviewStatus ?? 'pending',
+            detail: latestReviewMessage ? formatWorkflowEventPreview(latestReviewMessage.content) : '等待 reviewer 输出',
+            progress: reviewStatus === 'pass' ? 100 : reviewStatus === 'changes_requested' ? 48 : 36,
+          },
+          {
+            icon: RefreshCcw,
+            tone: 'event',
+            title: '恢复诊断',
+            status: recoveryCount > 0 ? `${recoveryCount} 次` : 'pending',
+            detail: latestRecoveryMessage ? formatWorkflowEventPreview(latestRecoveryMessage.content) : '等待恢复信号',
+            progress: recoveryCount > 0 ? 88 : 24,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function findLatestWorkflowMessage(messages: SessionMessage[]): SessionMessage | null {
+  return [...messages].reverse().find((message) => {
+    const eventType = workflowMessageEventType(message);
+    return Boolean(eventType?.startsWith('workflow_') || eventType?.startsWith('workflow-') || message.sender_id === 'workflow');
+  }) ?? null;
+}
+
+function findLatestReviewMessage(messages: SessionMessage[]): SessionMessage | null {
+  return [...messages].reverse().find((message) => {
+    const sender = `${message.sender_id} ${message.sender_name ?? ''}`.toLowerCase();
+    if (sender.includes('review') || sender.includes('审查')) return true;
+    return /"verdict"\s*:\s*"(?:pass|changes_requested|fail)"/i.test(message.content);
+  }) ?? null;
+}
+
+function countDistinctWorkflowAgentRuns(messages: SessionMessage[]): number {
+  const runIds = new Set<string>();
+  for (const message of messages) {
+    const metadata = parseMessageMetadata(message.metadata);
+    if (metadata.agent_run_id) runIds.add(metadata.agent_run_id);
+  }
+  return runIds.size;
+}
+
+function workflowMessageEventType(message: SessionMessage | null): string | null {
+  if (!message) return null;
+  return parseMessageMetadata(message.metadata).event_type ?? null;
+}
+
+function inferWorkflowStageFromMessage(message: SessionMessage | null): string | null {
+  if (!message) return null;
+  const stageMatch = message.content.match(/进入\s*([a-zA-Z0-9_-]+|[\u4e00-\u9fa5]+)\s*阶段/);
+  if (stageMatch?.[1]) return formatWorkflowStageLabel(stageMatch[1]);
+  const eventType = workflowMessageEventType(message);
+  if (eventType === 'workflow_started') return '计划';
+  if (eventType === 'workflow_recovery_decided') return '恢复';
+  if (eventType === 'workflow_stage_changed') return '阶段推进';
+  return null;
+}
+
+function inferWorkflowReviewStatus(message: SessionMessage): 'pass' | 'changes_requested' | 'failed' | null {
+  if (/"verdict"\s*:\s*"pass"/i.test(message.content)) return 'pass';
+  if (/"verdict"\s*:\s*"changes_requested"/i.test(message.content)) return 'changes_requested';
+  if (/"verdict"\s*:\s*"fail(?:ed)?"/i.test(message.content)) return 'failed';
+  if (/通过|pass/i.test(message.content)) return 'pass';
+  if (/changes_requested|请求修改|需要修改/.test(message.content)) return 'changes_requested';
+  return null;
+}
+
 function formatWorkflowAssignmentCardTitle(
   assignment: WorkflowAgentAssignmentView,
   index: number,
@@ -2295,9 +2476,12 @@ function formatWorkflowStageLabel(stage: string | null | undefined): string {
   if (stage === 'planning') return '计划';
   if (stage === 'assignment' || stage === 'agent_assignment') return '分派';
   if (stage === 'implementation') return '实现';
+  if (stage === 'verify' || stage === 'verification') return '验证';
   if (stage === 'code_review') return '审查';
   if (stage === 'acceptance') return '验收';
   if (stage === 'brainstorming') return '分析';
+  if (stage === 'tdd_execute') return 'TDD 执行';
+  if (stage === 'spec_compliance_review') return '规格审查';
   return stage ?? 'general';
 }
 
@@ -2609,6 +2793,7 @@ function isWorkflowTranscriptMessage(message: SessionMessage): boolean {
 function getWorkflowChatStatus(group: WorkflowChatGroup): 'pending' | 'active' | 'blocked' | 'done' {
   if (group.controller?.blocker) return 'blocked';
   if (group.gates.some((gate) => gate.status === 'pending')) return 'active';
+  if (!hasWorkflowChatState(group) && group.messages.length > 0) return inferWorkflowEventGroupStatus(group.messages);
   if (group.messages.length > 0) return 'done';
   return group.controller || group.artifacts.length > 0 || group.assignments.length > 0 ? 'active' : 'pending';
 }
@@ -2621,11 +2806,24 @@ function formatWorkflowChatSummary(group: WorkflowChatGroup): string {
     return `已合并 ${group.messages.length} 条 workflow 事件，当前显示主流程流转。`;
   }
   if (group.messages.length > 0) {
-    return `${group.messages.length} 条工作流事件`;
+    const latestMessage = group.messages[group.messages.length - 1];
+    const preview = latestMessage ? formatWorkflowEventPreview(latestMessage.content) : '等待 workflow 事件';
+    return `已合并 ${group.messages.length} 条 workflow 事件，最新：${preview}`;
   }
   return group.controller?.next_action
     ?? formatWorkflowMissionMeta(group.controller)
     ?? '等待 workflow 数据';
+}
+
+function inferWorkflowEventGroupStatus(messages: SessionMessage[]): 'pending' | 'active' | 'blocked' | 'done' {
+  const latestMessage = messages[messages.length - 1] ?? null;
+  const latestText = latestMessage?.content ?? '';
+  const latestEventType = workflowMessageEventType(latestMessage);
+  if (/异常|阻塞|blocked|failed|requires RED|changes_requested/i.test(latestText)) return 'blocked';
+  if (/完成|已完成|workflow_completed|"verdict"\s*:\s*"pass"/i.test(latestText)) return 'done';
+  if (latestEventType === 'workflow_stage_changed' || /进入\s*.+\s*阶段/.test(latestText)) return 'active';
+  if (latestEventType === 'workflow_started') return 'active';
+  return 'done';
 }
 
 function formatWorkflowEventCount(messages: SessionMessage[]): string {
