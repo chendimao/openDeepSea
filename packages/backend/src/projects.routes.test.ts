@@ -81,6 +81,7 @@ test('reorder projects updates order and returns stats', async () => {
 
 test('delete project stops active agent runs before removing project', async () => {
   const { project, room } = createProjectFixture('active-agent-run');
+  const { project: otherProject, room: otherRoom } = createProjectFixture('other-active-agent-run');
   const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'planner-delete-test', agent_name: 'Planner Delete Test' });
   const run = agentRunRepo.create({
     room_id: room.id,
@@ -90,6 +91,21 @@ test('delete project stops active agent runs before removing project', async () 
     status: 'running',
     prompt: 'work',
   });
+  const controller = runRegistry.create(run.id);
+  const otherAgent = roomAgentRepo.add({
+    room_id: otherRoom.id,
+    agent_id: 'other-planner-delete-test',
+    agent_name: 'Other Planner Delete Test',
+  });
+  const otherRun = agentRunRepo.create({
+    room_id: otherRoom.id,
+    room_agent_id: otherAgent.id,
+    agent_id: otherAgent.agent_id,
+    backend: 'codex',
+    status: 'running',
+    prompt: 'other work',
+  });
+  const otherController = runRegistry.create(otherRun.id);
   db.exec(`
     CREATE TEMP TABLE agent_run_delete_events (
       run_id TEXT NOT NULL,
@@ -112,6 +128,11 @@ test('delete project stops active agent runs before removing project', async () 
 
   assert.equal(res.status, 204);
   assert.equal(projectRepo.get(project.id), undefined);
+  assert.equal(controller.signal.aborted, true);
+  assert.equal(runRegistry.getAbortReason(run.id), 'cancelled');
+  assert.equal(otherController.signal.aborted, false);
+  assert.equal(agentRunRepo.get(otherRun.id)?.status, 'running');
+  assert.notEqual(projectRepo.get(otherProject.id), undefined);
   const events = db.prepare('SELECT run_id, old_status, new_status, completed_at, error FROM agent_run_delete_events').all() as Array<{
     run_id: string;
     old_status: string;

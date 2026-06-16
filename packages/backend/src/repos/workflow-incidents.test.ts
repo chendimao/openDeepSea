@@ -117,6 +117,125 @@ test('workflowIncidentRepo transitions incident state and stores decisions', () 
   assert.ok(resolved?.resolved_at);
 });
 
+test('workflowIncidentRepo reopens resolved incident when the same fingerprint is detected again', () => {
+  const fixture = createIncidentFixture();
+  const incident = workflowIncidentRepo.upsertDetected({
+    room_id: fixture.room.id,
+    project_id: fixture.project.id,
+    workflow_run_id: fixture.run.id,
+    workflow_step_id: null,
+    task_id: fixture.task.id,
+    child_task_id: null,
+    room_agent_id: null,
+    incident_type: 'step_without_active_run',
+    error: 'Graph workflow is running without an active agent run',
+    context: { state: 'running' },
+  });
+
+  workflowIncidentRepo.markExecuting(incident.id, {
+    action: 'retry_same_agent',
+    reason: 'retry active-runless workflow',
+    confidence: 0.8,
+  });
+  workflowIncidentRepo.incrementAttempt(incident.id);
+  workflowIncidentRepo.markResolved(incident.id, 'message-1');
+
+  const reopened = workflowIncidentRepo.upsertDetected({
+    room_id: fixture.room.id,
+    project_id: fixture.project.id,
+    workflow_run_id: fixture.run.id,
+    workflow_step_id: null,
+    task_id: fixture.task.id,
+    child_task_id: null,
+    room_agent_id: null,
+    incident_type: 'step_without_active_run',
+    error: 'Graph workflow is running without an active agent run',
+    context: { state: 'still-running' },
+  });
+
+  assert.equal(reopened.id, incident.id);
+  assert.equal(reopened.status, 'open');
+  assert.equal(reopened.attempt_count, 1);
+  assert.equal(reopened.decision_json, null);
+  assert.equal(reopened.action, null);
+  assert.equal(reopened.action_status, null);
+  assert.equal(reopened.last_message_id, null);
+  assert.equal(reopened.resolved_at, null);
+  assert.equal(reopened.context_json.includes('still-running'), true);
+  assert.equal(workflowIncidentRepo.listOpen().some((item) => item.id === incident.id), true);
+});
+
+test('workflowIncidentRepo reopens blocked retryable incidents but keeps manual blocks blocked', () => {
+  const retryableFixture = createIncidentFixture();
+  const retryable = workflowIncidentRepo.upsertDetected({
+    room_id: retryableFixture.room.id,
+    project_id: retryableFixture.project.id,
+    workflow_run_id: retryableFixture.run.id,
+    workflow_step_id: retryableFixture.step.id,
+    task_id: retryableFixture.task.id,
+    child_task_id: retryableFixture.child.id,
+    room_agent_id: retryableFixture.agent.id,
+    incident_type: 'backend_restart_interrupted',
+    error: 'Backend restarted before workflow step completed',
+    context: { state: 'stale' },
+  });
+  workflowIncidentRepo.markBlocked(retryable.id, {
+    action: 'mark_blocked',
+    reason: 'old retryable block',
+    confidence: 0.6,
+  });
+  const reopenedRetryable = workflowIncidentRepo.upsertDetected({
+    room_id: retryableFixture.room.id,
+    project_id: retryableFixture.project.id,
+    workflow_run_id: retryableFixture.run.id,
+    workflow_step_id: retryableFixture.step.id,
+    task_id: retryableFixture.task.id,
+    child_task_id: retryableFixture.child.id,
+    room_agent_id: retryableFixture.agent.id,
+    incident_type: 'backend_restart_interrupted',
+    error: 'Backend restarted before workflow step completed',
+    context: { state: 'fresh' },
+  });
+
+  const manualFixture = createIncidentFixture();
+  const manual = workflowIncidentRepo.upsertDetected({
+    room_id: manualFixture.room.id,
+    project_id: manualFixture.project.id,
+    workflow_run_id: manualFixture.run.id,
+    workflow_step_id: manualFixture.step.id,
+    task_id: manualFixture.task.id,
+    child_task_id: manualFixture.child.id,
+    room_agent_id: manualFixture.agent.id,
+    incident_type: 'unknown',
+    error: 'manual block',
+    context: { state: 'manual' },
+  });
+  workflowIncidentRepo.markBlocked(manual.id, {
+    action: 'mark_blocked',
+    reason: 'manual block',
+    confidence: 0.6,
+  });
+  const stillBlocked = workflowIncidentRepo.upsertDetected({
+    room_id: manualFixture.room.id,
+    project_id: manualFixture.project.id,
+    workflow_run_id: manualFixture.run.id,
+    workflow_step_id: manualFixture.step.id,
+    task_id: manualFixture.task.id,
+    child_task_id: manualFixture.child.id,
+    room_agent_id: manualFixture.agent.id,
+    incident_type: 'unknown',
+    error: 'manual block',
+    context: { state: 'manual-again' },
+  });
+
+  assert.equal(reopenedRetryable.status, 'open');
+  assert.equal(reopenedRetryable.decision_json, null);
+  assert.equal(reopenedRetryable.action, null);
+  assert.equal(workflowIncidentRepo.get(manual.id)?.status, 'blocked');
+  assert.equal(stillBlocked.status, 'blocked');
+  assert.equal(stillBlocked.decision_json, workflowIncidentRepo.get(manual.id)?.decision_json);
+});
+
 test('workflowIncidentRepo counts attempts for the same child task and incident type', () => {
   const fixture = createIncidentFixture();
   const secondStep = workflowRepo.createStep({

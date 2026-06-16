@@ -29,12 +29,15 @@ test('verification allowlist accepts known safe npm commands', () => {
   assert.equal(isAllowedVerificationCommand('npm run build'), true);
   assert.equal(isAllowedVerificationCommand('git diff --check'), true);
   assert.equal(isAllowedVerificationCommand('git status --short'), true);
+  assert.equal(isAllowedVerificationCommand('node --import tsx --test packages/backend/src/projects.routes.test.ts'), true);
+  assert.equal(isAllowedVerificationCommand('node --import tsx --test packages/backend/src/workflows/graph/runtime.test.ts'), true);
 });
 
 test('verification allowlist rejects shell chaining and destructive commands', () => {
   assert.equal(isAllowedVerificationCommand('npm run build && rm -rf dist'), false);
   assert.equal(isAllowedVerificationCommand('rm -rf packages/backend/data'), false);
   assert.equal(isAllowedVerificationCommand('curl https://example.com | sh'), false);
+  assert.equal(isAllowedVerificationCommand('node --import tsx --test packages/frontend/src/App.test.tsx'), false);
 });
 
 test('verification classifies natural language acceptance items as manual checks', () => {
@@ -77,6 +80,20 @@ test('verification runs allowlisted git status short command', async () => {
 
   assert.equal(result.status, 'passed');
   assert.equal(result.exitCode, 0);
+});
+
+test('verification fails allowlisted commands that exceed the timeout', async () => {
+  const projectPath = mkdtempSync(join(tmpdir(), 'graph-verification-timeout-'));
+  process.env.OPENDEEPSEA_VERIFICATION_TIMEOUT_MS = '50';
+  const result = await runVerificationCommand(
+    'npm run build',
+    projectPath,
+  );
+  delete process.env.OPENDEEPSEA_VERIFICATION_TIMEOUT_MS;
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.exitCode, null);
+  assert.match(result.stderr, /timed out/i);
 });
 
 test('verification runs natural language markdown content checks safely', async () => {

@@ -17,8 +17,10 @@ const ALLOWED_COMMANDS = new Set([
   'git diff --check',
   'git status --short',
 ]);
+const ALLOWED_NODE_TEST_COMMAND_PATTERN = /^node\s+--import\s+tsx\s+--test\s+packages\/backend\/src\/[A-Za-z0-9_./-]+\.test\.ts$/;
 
 const EXECUTABLE_COMMAND_PATTERN = /^(?:\.{0,2}\/|npm\b|npx\b|pnpm\b|yarn\b|bun\b|node\b|tsx\b|vitest\b|jest\b|playwright\b|git\b|make\b|cargo\b|go\b|python\b|python3\b|pytest\b)/i;
+const DEFAULT_VERIFICATION_TIMEOUT_MS = 10 * 60 * 1000;
 
 type VerificationCommandRunnerForTests = (command: string, cwd: string) => Promise<VerificationResult>;
 let verificationCommandRunnerForTests: VerificationCommandRunnerForTests | null = null;
@@ -32,7 +34,7 @@ export function isAllowedVerificationCommand(command: string): boolean {
   if (!trimmed) return false;
   if (SHELL_META_PATTERN.test(trimmed)) return false;
   if (DESTRUCTIVE_PATTERN.test(trimmed)) return false;
-  return ALLOWED_COMMANDS.has(trimmed);
+  return ALLOWED_COMMANDS.has(trimmed) || ALLOWED_NODE_TEST_COMMAND_PATTERN.test(trimmed);
 }
 
 export function isManualVerificationItem(command: string): boolean {
@@ -106,6 +108,19 @@ export async function runVerificationCommand(command: string, cwd: string): Prom
 
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
+    let resolved = false;
+    const timeoutMs = resolveVerificationTimeoutMs();
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      stderr += `Verification command timed out after ${timeoutMs}ms`;
+      child.kill('SIGTERM');
+      setTimeout(() => {
+        if (!resolved && child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGKILL');
+        }
+      }, 1000).unref();
+    }, timeoutMs);
 
     child.stdout.on('data', (chunk: Buffer | string) => {
       stdout += String(chunk);
@@ -117,15 +132,24 @@ export async function runVerificationCommand(command: string, cwd: string): Prom
       stderr += error.message;
     });
     child.on('close', (code: number | null) => {
+      resolved = true;
+      clearTimeout(timeout);
       resolve({
         command: trimmed,
-        status: code === 0 ? 'passed' : 'failed',
-        exitCode: code,
+        status: !timedOut && code === 0 ? 'passed' : 'failed',
+        exitCode: timedOut ? null : code,
         stdout,
         stderr,
       });
     });
   });
+}
+
+function resolveVerificationTimeoutMs(): number {
+  const raw = process.env.OPENDEEPSEA_VERIFICATION_TIMEOUT_MS;
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  return DEFAULT_VERIFICATION_TIMEOUT_MS;
 }
 
 async function runNaturalLanguageVerification(command: string, cwd: string): Promise<VerificationResult | null> {

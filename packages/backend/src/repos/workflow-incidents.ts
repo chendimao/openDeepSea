@@ -34,19 +34,28 @@ export const workflowIncidentRepo = {
     ).get(input.workflow_run_id, fingerprint) as WorkflowIncident | undefined;
 
     if (existing) {
+      const shouldReopen = shouldReopenDetectedIncident(existing.status, input.incident_type);
       db.prepare(
         `UPDATE workflow_incidents
          SET workflow_step_id = ?, child_task_id = ?, agent_run_id = ?, room_agent_id = ?,
-             severity = ?, error = ?, context_json = ?, updated_at = ?
+             status = ?, severity = ?, error = ?, context_json = ?,
+             decision_json = ?, action = ?, action_status = ?, last_message_id = ?,
+             resolved_at = ?, updated_at = ?
          WHERE id = ?`,
       ).run(
         input.workflow_step_id ?? null,
         input.child_task_id ?? null,
         input.agent_run_id ?? null,
         input.room_agent_id ?? null,
+        shouldReopen ? 'open' : existing.status,
         input.severity ?? existing.severity,
         input.error ?? null,
         JSON.stringify(input.context ?? {}),
+        shouldReopen ? null : existing.decision_json,
+        shouldReopen ? null : existing.action,
+        shouldReopen ? null : existing.action_status,
+        shouldReopen ? null : existing.last_message_id,
+        shouldReopen ? null : existing.resolved_at,
         timestamp,
         existing.id,
       );
@@ -211,6 +220,14 @@ function normalizeIncidentError(error: string | null | undefined): string {
     .replace(/\s+/g, ' ')
     .replace(/[0-9a-z_-]{10,}/g, '<id>')
     .trim();
+}
+
+function shouldReopenDetectedIncident(status: WorkflowIncident['status'], incidentType: WorkflowIncidentType): boolean {
+  if (status === 'resolved') return true;
+  if (status !== 'blocked') return false;
+  return incidentType === 'backend_restart_interrupted' ||
+    incidentType === 'agent_run_stale' ||
+    incidentType === 'step_without_active_run';
 }
 
 function isWorkflowRecoveryAction(value: unknown): value is WorkflowRecoveryAction {

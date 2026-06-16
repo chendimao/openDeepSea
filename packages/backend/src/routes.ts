@@ -1985,6 +1985,9 @@ router.put('/projects/:id/routing', (req, res) => {
 });
 
 router.delete('/projects/:id', (req, res) => {
+  for (const run of agentRunRepo.listActiveByProject(req.params.id)) {
+    runRegistry.cancel(run.id);
+  }
   for (const run of sessionRunRepo.listActiveByProject(req.params.id)) {
     runRegistry.cancel(run.id);
   }

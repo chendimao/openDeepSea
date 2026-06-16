@@ -17,13 +17,25 @@ const { taskRepo } = await import('../repos/tasks.js');
 const { workflowIncidentRepo } = await import('../repos/workflow-incidents.js');
 const { workflowRepo } = await import('../repos/workflows.js');
 const { runWorkflowMonitorOnce, recoverWorkflowStartupOrphans, startWorkflowMonitorService } = await import('./workflow-monitor-service.js');
+const { scanWorkflowIncidents } = await import('./workflow-monitor.js');
 
 test('runWorkflowMonitorOnce scans, decides, executes, and records chat message', async () => {
   const fixture = createFixture('run once');
+  workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.childTask.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'failed',
+    scope_write: ['packages/backend/src/repos/projects.ts'],
+    sort_order: 1,
+  });
   workflowRepo.blockRun(fixture.workflow.id, 'No executor available for implementation');
 
   const count = await runWorkflowMonitorOnce({
     disableModel: true,
+    scanner: (options) => scanWorkflowIncidents(options)
+      .filter((incident) => incident.workflow_run_id === fixture.workflow.id),
     retryWorkflowStep: retryWithoutStartingAgent,
   });
 
@@ -71,6 +83,51 @@ test('runWorkflowMonitorOnce blocks failed recovery execution and continues scan
   assert.equal(workflowIncidentRepo.get(firstIncident.id)?.status, 'blocked');
   assert.match(workflowIncidentRepo.get(firstIncident.id)?.decision_json ?? '', /boom/);
   assert.equal(workflowIncidentRepo.listByWorkflow(second.workflow.id)[0]?.status, 'resolved');
+});
+
+test('runWorkflowMonitorOnce reopens retryable backend restart incidents that were previously blocked', async () => {
+  const fixture = createFixture('blocked backend restart');
+  const step = workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.task.id,
+    stage: 'code_review',
+    node_name: 'verify',
+    status: 'interrupted',
+    sort_order: 1,
+  });
+  workflowRepo.updateStep(step.id, { error: 'Backend restarted before workflow step completed' });
+  workflowRepo.updateRun(fixture.workflow.id, {
+    status: 'blocked',
+    current_stage: 'code_review',
+    error: 'Backend restarted before workflow step completed',
+  });
+  const incident = workflowIncidentRepo.upsertDetected({
+    room_id: fixture.room.id,
+    project_id: fixture.project.id,
+    workflow_run_id: fixture.workflow.id,
+    workflow_step_id: step.id,
+    task_id: fixture.task.id,
+    incident_type: 'backend_restart_interrupted',
+    error: 'Backend restarted before workflow step completed',
+    context: {},
+  });
+  workflowIncidentRepo.markBlocked(incident.id, {
+    action: 'mark_blocked',
+    reason: 'old unknown classification',
+    confidence: 0.6,
+  });
+
+  const count = await runWorkflowMonitorOnce({
+    disableModel: true,
+    scanner: (options) => scanWorkflowIncidents(options)
+      .filter((item) => item.workflow_run_id === fixture.workflow.id),
+    retryWorkflowStep: retryWithoutStartingAgent,
+  });
+
+  assert.equal(count, 1);
+  assert.equal(workflowIncidentRepo.get(incident.id)?.status, 'resolved');
+  assert.equal(workflowRepo.getStep(step.id)?.status, 'skipped');
+  assert.equal(workflowRepo.getRun(fixture.workflow.id)?.status, 'running');
 });
 
 test('startWorkflowMonitorService skips overlapping scans with lock', async () => {

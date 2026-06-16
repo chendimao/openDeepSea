@@ -38,7 +38,10 @@ setVerificationCommandRunnerForTests(async (command) => ({
   stdout: 'stubbed verification passed',
   stderr: '',
 }));
-test.after(() => setVerificationCommandRunnerForTests(null));
+test.after(() => {
+  setVerificationCommandRunnerForTests(null);
+  db.close();
+});
 
 const lowConfidenceSupervisor = async () => ({
   mode: 'use_default_workflow' as const,
@@ -1650,7 +1653,7 @@ test('Superpowers actual runtime keeps TDD gate before spec review when runnable
 
   assert.equal(latest.status, 'blocked');
   assert.match(latest.error ?? '', /TDD evidence/i);
-  assert.deepEqual(nodeNames.slice(0, 1), ['tdd_execute']);
+  assert.deepEqual(nodeNames.slice(0, 2), ['agent_assignment', 'tdd_execute']);
   assert.equal(nodeNames.includes('spec_compliance_review'), false);
   assert.equal(taskRepo.get(child.id)?.status, 'review');
   assert.equal(state?.superpowersPhase, 'tdd_execute');
@@ -1703,7 +1706,7 @@ test('Superpowers actual runtime proceeds from child-task TDD execute to spec re
   const nodeNames = listRawStepNodeNames(run.id);
 
   assert.equal(latest.status, 'blocked');
-  assert.deepEqual(nodeNames.slice(0, 2), ['tdd_execute', 'spec_compliance_review']);
+  assert.deepEqual(nodeNames.slice(0, 3), ['agent_assignment', 'tdd_execute', 'spec_compliance_review']);
   assert.equal(taskRepo.get(child.id)?.status, 'review');
   assert.equal(state?.superpowersPhase, 'spec_compliance_review');
   assert.match(state?.error ?? '', /spec compliance review is pending/i);
@@ -1730,7 +1733,7 @@ test('Superpowers actual runtime blocks before spec review without TDD evidence 
 
   assert.equal(latest.status, 'blocked');
   assert.match(latest.error ?? '', /TDD evidence/i);
-  assert.deepEqual(nodeNames.slice(0, 2), ['dispatch', 'tdd_execute']);
+  assert.deepEqual(nodeNames.slice(0, 3), ['agent_assignment', 'dispatch', 'tdd_execute']);
   assert.equal(nodeNames.includes('spec_compliance_review'), false);
   assert.equal(state?.superpowersPhase, 'tdd_execute');
 });
@@ -1778,7 +1781,7 @@ test('Superpowers actual runtime proceeds from TDD execute to spec compliance re
   const nodeNames = listRawStepNodeNames(run.id);
 
   assert.equal(latest.status, 'blocked');
-  assert.deepEqual(nodeNames.slice(0, 3), ['dispatch', 'tdd_execute', 'spec_compliance_review']);
+  assert.deepEqual(nodeNames.slice(0, 4), ['agent_assignment', 'dispatch', 'tdd_execute', 'spec_compliance_review']);
   assert.equal(nodeNames.includes('code_quality_review'), false);
   assert.equal(state?.superpowersPhase, 'spec_compliance_review');
   assert.match(state?.error ?? '', /spec compliance review is pending/i);
@@ -1876,12 +1879,103 @@ test('Superpowers review changes request clears TDD evidence and blocks instead 
   const nodeNames = listRawStepNodeNames(run.id);
 
   assert.equal(latest.status, 'blocked');
-  assert.deepEqual(nodeNames.slice(0, 4), ['dispatch', 'tdd_execute', 'spec_compliance_review', 'tdd_execute']);
+  assert.deepEqual(nodeNames.slice(0, 5), ['agent_assignment', 'dispatch', 'tdd_execute', 'spec_compliance_review', 'tdd_execute']);
   assert.equal(nodeNames.filter((nodeName) => nodeName === 'spec_compliance_review').length, 1);
   assert.equal(state?.superpowersPhase, 'tdd_execute');
   assert.deepEqual(state?.tddEvidence, []);
   assert.equal(state?.specComplianceReview, null);
   assert.match(state?.error ?? '', /TDD evidence/i);
+});
+
+test('Superpowers resume reruns TDD gate instead of review when TDD evidence was cleared', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-cleared-tdd-resume-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Cleared TDD Resume', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Cleared TDD Resume Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Resume after review cleared TDD evidence',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    currentNode: 'spec_compliance_review',
+    superpowersPhase: 'tdd_execute',
+    activeSuperpowersStage: 'dispatch',
+    tddEvidence: [],
+    reviewVerdict: 'changes_requested',
+    reviewFindings: ['Implementation must be updated before review can pass.'],
+  }));
+
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+  const state = parseGraphState(latest.graph_state);
+  const nodeNames = listRawStepNodeNames(run.id);
+
+  assert.equal(latest.status, 'blocked');
+  assert.match(latest.error ?? '', /TDD evidence/i);
+  assert.deepEqual(nodeNames.slice(-1), ['tdd_execute']);
+  assert.equal(nodeNames.includes('spec_compliance_review'), false);
+  assert.equal(state?.superpowersPhase, 'tdd_execute');
+});
+
+test('Superpowers retry resumes interrupted verify after approved reviews instead of rerunning TDD gate', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-verify-retry-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Verify Retry', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Verify Retry Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Retry interrupted verification',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    plan: {
+      ...createRunnableSuperpowersPlan(task.title),
+      tasks: [],
+      needsApproval: false,
+    },
+    currentNode: 'execute',
+    currentStepId: null,
+    superpowersPhase: 'tdd_execute',
+    activeSuperpowersStage: 'dispatch',
+    status: 'blocked',
+    error: 'Superpowers TDD evidence gate requires RED failed and GREEN passed records or an explicit exemption',
+    tddEvidence: [],
+    specComplianceReview: {
+      verdict: 'approved',
+      findings: [],
+      reviewedAt: '2026-06-16T00:00:00.000Z',
+    },
+    codeQualityReview: {
+      verdict: 'approved',
+      findings: [],
+      reviewedAt: '2026-06-16T00:00:00.000Z',
+    },
+    verificationEvidence: [],
+  }));
+  workflowRepo.updateRun(run.id, {
+    status: 'blocked',
+    current_stage: 'implementation',
+    error: 'Superpowers TDD evidence gate requires RED failed and GREEN passed records or an explicit exemption',
+  });
+
+  const beforeNodeNames = listRawStepNodeNames(run.id);
+  const latest = await retryGraphWorkflow(run.id);
+  const state = parseGraphState(latest.graph_state);
+  const afterNodeNames = listRawStepNodeNames(run.id);
+  const newNodeNames = afterNodeNames.slice(beforeNodeNames.length);
+
+  assert.equal(latest.status, 'awaiting_decision');
+  assert.equal(newNodeNames.includes('tdd_execute'), false);
+  assert.equal(newNodeNames.includes('verify'), true);
+  assert.equal(state?.verificationEvidence?.[0]?.command, 'npm run build');
+  assert.equal(state?.verificationEvidence?.[0]?.status, 'passed');
+  assert.equal(state?.finishBranchDecision?.decision, null);
 });
 
 test('startGraphWorkflow always records Superpowers definition and runtime profile for new runs', async () => {

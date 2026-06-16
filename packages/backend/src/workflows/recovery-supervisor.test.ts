@@ -92,6 +92,20 @@ test('decideRecoveryByDefaultPolicy retries backend restart once and escalates r
   assert.match(repeated.userQuestion ?? '', /连续中断/);
 });
 
+test('decideRecoveryByDefaultPolicy retries stale agent runs once and escalates repeats', () => {
+  const first = decideRecoveryByDefaultPolicy(baseRecoveryInput({
+    incident: incident({ incident_type: 'agent_run_stale', attempt_count: 0 }),
+  }));
+  const repeated = decideRecoveryByDefaultPolicy(baseRecoveryInput({
+    incident: incident({ incident_type: 'agent_run_stale', attempt_count: 2 }),
+  }));
+
+  assert.equal(first.action, 'retry_same_agent');
+  assert.match(first.reason, /重试|复用/u);
+  assert.equal(repeated.action, 'ask_user');
+  assert.match(repeated.userQuestion ?? '', /连续中断|确认/u);
+});
+
 test('decideRecoveryByDefaultPolicy provisions global agent for executor_unavailable', () => {
   const decision = decideRecoveryByDefaultPolicy(baseRecoveryInput({
     incident: incident({ incident_type: 'executor_unavailable' }),

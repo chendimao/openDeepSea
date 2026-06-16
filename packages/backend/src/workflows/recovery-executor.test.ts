@@ -12,6 +12,7 @@ mkdirSync(projectDir);
 process.env.OPENCLAW_ROOM_DB = join(tempDir, 'test.db');
 
 const { messageRepo } = await import('../repos/messages.js');
+const { agentRunRepo } = await import('../repos/agent-runs.js');
 const { projectRepo } = await import('../repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('../repos/rooms.js');
 const { taskRepo } = await import('../repos/tasks.js');
@@ -19,7 +20,7 @@ const { taskEventRepo } = await import('../repos/task-events.js');
 const { workflowIncidentRepo } = await import('../repos/workflow-incidents.js');
 const { workflowRepo } = await import('../repos/workflows.js');
 const { executeRecoveryDecision } = await import('./recovery-executor.js');
-const { emptyAgentWorkflowState, serializeGraphState } = await import('./graph/state.js');
+const { emptyAgentWorkflowState, parseGraphState, serializeGraphState } = await import('./graph/state.js');
 
 test('executeRecoveryDecision retries same agent and records recovery message', async () => {
   const fixture = createFixture('retry same');
@@ -279,6 +280,65 @@ test('executeRecoveryDecision does not block a workflow already awaiting user de
   assert.equal(recoveryMessages(fixture.room.id).length, 0);
 });
 
+test('executeRecoveryDecision restores finish branch approval gate even when graph state is stale blocked', async () => {
+  const fixture = createFixture('stale blocked finish branch gate');
+  workflowRepo.updateGraphState(fixture.workflow.id, serializeGraphState({
+    ...emptyAgentWorkflowState({
+      workflowRunId: fixture.workflow.id,
+      projectId: fixture.project.id,
+      roomId: fixture.room.id,
+      taskId: fixture.task.id,
+      userGoal: fixture.task.title,
+      projectPath: fixture.project.path,
+    }),
+    status: 'blocked',
+    currentNode: 'verify',
+    superpowersPhase: 'code_quality_review',
+    activeSuperpowersStage: 'code_quality_review',
+    error: 'Verification failed: npm run build',
+  }));
+  const step = workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.task.id,
+    stage: 'acceptance',
+    node_name: 'finish_branch',
+    status: 'awaiting_approval',
+    sort_order: 1,
+  });
+  workflowRepo.updateRun(fixture.workflow.id, {
+    status: 'blocked',
+    current_stage: 'acceptance',
+    error: '未识别或高风险的工作流异常：unknown，默认阻塞并等待人工处理。',
+  });
+  const incident = createIncident(fixture, {
+    workflow_step_id: step.id,
+    child_task_id: null,
+    incident_type: 'unknown',
+    error: '未识别或高风险的工作流异常：unknown，默认阻塞并等待人工处理。',
+  });
+
+  const result = await executeRecoveryDecision({
+    incident,
+    decision: decision('mark_blocked'),
+  });
+
+  const latestRun = workflowRepo.getRun(fixture.workflow.id);
+  const latestState = parseGraphState(latestRun?.graph_state ?? null);
+  assert.equal(result.status, 'noop');
+  assert.equal(result.detail, 'workflow is already awaiting user decision');
+  assert.equal(workflowIncidentRepo.get(incident.id)?.status, 'resolved');
+  assert.equal(latestRun?.status, 'awaiting_decision');
+  assert.equal(latestRun?.current_stage, 'acceptance');
+  assert.equal(latestRun?.error, null);
+  assert.equal(latestState?.status, 'awaiting_decision');
+  assert.equal(latestState?.currentNode, 'acceptance');
+  assert.equal(latestState?.currentStepId, step.id);
+  assert.equal(latestState?.superpowersPhase, 'finish_branch');
+  assert.equal(latestState?.activeSuperpowersStage, 'finish_branch');
+  assert.equal(latestState?.finishBranchDecision?.decision, null);
+  assert.equal(recoveryMessages(fixture.room.id).length, 0);
+});
+
 test('executeRecoveryDecision does not retry a workflow already awaiting user decision in graph state', async () => {
   const fixture = createFixture('already awaiting retry');
   workflowRepo.updateGraphState(fixture.workflow.id, serializeGraphState({
@@ -319,6 +379,167 @@ test('executeRecoveryDecision does not retry a workflow already awaiting user de
   assert.equal(workflowRepo.getRun(fixture.workflow.id)?.status, 'awaiting_decision');
   assert.equal(workflowRepo.getRun(fixture.workflow.id)?.error, null);
   assert.equal(recoveryMessages(fixture.room.id).length, 0);
+});
+
+test('executeRecoveryDecision interrupts the stale active agent run before retrying workflow', async () => {
+  const fixture = createFixture('stale active retry');
+  assert.ok(fixture.agent);
+  const step = workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.childTask.id,
+    stage: 'implementation',
+    node_name: 'execute',
+    status: 'running',
+    room_agent_id: fixture.agent.id,
+    prompt: 'stale implementation',
+    sort_order: 1,
+  });
+  const activeRun = agentRunRepo.create({
+    room_id: fixture.room.id,
+    room_agent_id: fixture.agent.id,
+    agent_id: fixture.agent.agent_id,
+    backend: 'codex',
+    task_id: fixture.childTask.id,
+    workflow_run_id: fixture.workflow.id,
+    workflow_step_id: step.id,
+    workflow_stage: 'implementation',
+    prompt: 'stale implementation',
+  });
+  workflowRepo.updateStep(step.id, { agent_run_id: activeRun.id });
+  const incident = createIncident(fixture, {
+    workflow_step_id: step.id,
+    child_task_id: fixture.childTask.id,
+    agent_run_id: activeRun.id,
+    room_agent_id: fixture.agent.id,
+    incident_type: 'agent_run_stale',
+    error: 'Agent run has not updated for 300000ms',
+  });
+  let retried = false;
+
+  const result = await executeRecoveryDecision({
+    incident,
+    decision: decision('retry_same_agent'),
+    retryWorkflowStep: async (workflowRunId) => {
+      retried = true;
+      return retryWithoutStartingAgent(workflowRunId);
+    },
+  });
+
+  assert.equal(result.status, 'executed');
+  assert.equal(retried, true);
+  assert.equal(agentRunRepo.get(activeRun.id)?.status, 'interrupted');
+  assert.match(agentRunRepo.get(activeRun.id)?.error ?? '', /Agent run has not updated/);
+  assert.equal(agentRunRepo.listActiveByWorkflow(fixture.workflow.id).length, 0);
+  assert.equal(workflowIncidentRepo.get(incident.id)?.status, 'resolved');
+});
+
+test('executeRecoveryDecision interrupts a stale local running workflow step before retrying workflow', async () => {
+  const fixture = createFixture('stale local verify');
+  const step = workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.task.id,
+    stage: 'code_review',
+    node_name: 'verify',
+    status: 'running',
+    prompt: 'local verify',
+    sort_order: 1,
+  });
+  const incident = createIncident(fixture, {
+    workflow_step_id: step.id,
+    child_task_id: null,
+    agent_run_id: null,
+    room_agent_id: null,
+    incident_type: 'step_without_active_run',
+    error: `Workflow verify step ${step.id} (running) is stale without an active agent run`,
+  });
+  let retried = false;
+
+  const result = await executeRecoveryDecision({
+    incident,
+    decision: decision('retry_same_agent'),
+    retryWorkflowStep: async (workflowRunId) => {
+      retried = true;
+      return retryWithoutStartingAgent(workflowRunId);
+    },
+  });
+
+  assert.equal(result.status, 'executed');
+  assert.equal(retried, true);
+  assert.equal(workflowRepo.getStep(step.id)?.status, 'skipped');
+  assert.match(workflowRepo.getStep(step.id)?.error ?? '', /stale without an active agent run/);
+  assert.equal(workflowIncidentRepo.get(incident.id)?.status, 'resolved');
+});
+
+test('executeRecoveryDecision restores blocked workflow state when retry execution throws', async () => {
+  const fixture = createFixture('retry throws');
+  assert.ok(fixture.agent);
+  workflowRepo.updateGraphState(fixture.workflow.id, serializeGraphState({
+    ...emptyAgentWorkflowState({
+      workflowRunId: fixture.workflow.id,
+      projectId: fixture.project.id,
+      roomId: fixture.room.id,
+      taskId: fixture.task.id,
+      userGoal: fixture.task.title,
+      projectPath: fixture.project.path,
+    }),
+    currentNode: 'execute',
+    status: 'blocked',
+    error: 'Selected model is at capacity',
+    childTaskIds: [fixture.childTask.id],
+  }));
+  const step = workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.childTask.id,
+    stage: 'implementation',
+    node_name: 'tdd_execute',
+    status: 'failed',
+    room_agent_id: fixture.agent.id,
+    prompt: 'failed implementation',
+    sort_order: 1,
+  });
+  workflowRepo.updateStep(step.id, { error: 'Selected model is at capacity' });
+  const incident = createIncident(fixture, {
+    workflow_step_id: step.id,
+    child_task_id: fixture.childTask.id,
+    room_agent_id: fixture.agent.id,
+    incident_type: 'agent_run_stale',
+    error: 'Selected model is at capacity. Some(ServerOverloaded)',
+  });
+
+  await assert.rejects(
+    executeRecoveryDecision({
+      incident,
+      decision: decision('retry_same_agent'),
+      retryWorkflowStep: async (workflowRunId) => {
+        workflowRepo.updateRun(workflowRunId, { status: 'running', error: null });
+        workflowRepo.updateGraphState(workflowRunId, serializeGraphState({
+          ...emptyAgentWorkflowState({
+            workflowRunId,
+            projectId: fixture.project.id,
+            roomId: fixture.room.id,
+            taskId: fixture.task.id,
+            userGoal: fixture.task.title,
+            projectPath: fixture.project.path,
+          }),
+          currentNode: 'execute',
+          status: 'running',
+          error: null,
+          activeAgentRunId: null,
+          childTaskIds: [fixture.childTask.id],
+        }));
+        throw new Error('graph retry exceeded resume limit');
+      },
+    }),
+    /graph retry exceeded resume limit/,
+  );
+
+  const latestRun = workflowRepo.getRun(fixture.workflow.id);
+  const latestState = parseGraphState(latestRun?.graph_state ?? null);
+  assert.equal(latestRun?.status, 'blocked');
+  assert.match(latestRun?.error ?? '', /自动恢复执行失败：graph retry exceeded resume limit/);
+  assert.equal(latestState?.status, 'blocked');
+  assert.equal(latestState?.activeAgentRunId, null);
+  assert.match(latestState?.error ?? '', /自动恢复执行失败：graph retry exceeded resume limit/);
 });
 
 function createFixture(name: string, options: { createAgent?: boolean } = {}) {

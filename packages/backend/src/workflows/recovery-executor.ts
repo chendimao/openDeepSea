@@ -15,7 +15,7 @@ import type { Task, WorkflowIncident, WorkflowRun } from '../types.js';
 import { ensureGlobalExecutorForRecovery } from './agent-provisioning.js';
 import type { WorkflowRecoveryDecision } from './recovery-supervisor.js';
 import { workflowOrchestrator } from './orchestrator.js';
-import { parseGraphState } from './graph/state.js';
+import { emptyAgentWorkflowState, parseGraphState, serializeGraphState } from './graph/state.js';
 
 export interface WorkflowRecoveryExecutionResult {
   status: 'executed' | 'blocked' | 'noop';
@@ -80,12 +80,12 @@ async function retryWorkflow(
   retryWorkflowStep: WorkflowRetryStepHandler,
 ): Promise<WorkflowRecoveryExecutionResult> {
   const refreshedRun = workflowRepo.getRun(run.id) ?? run;
-  if (isAwaitingUserDecisionGraphState(refreshedRun)) {
-    workflowRepo.updateRun(run.id, { status: 'awaiting_decision', error: null });
+  if (restoreAwaitingUserDecisionIfNeeded(refreshedRun, task)) {
     workflowIncidentRepo.markResolved(incident.id, null);
     return { status: 'noop', detail: 'workflow is already awaiting user decision' };
   }
 
+  interruptStaleIncidentRunOrStep(incident);
   if (agentRunRepo.listActiveByWorkflow(run.id).length > 0) {
     const recorded = writeRecoveryMessage(incident, decision, run, task, '检测到已有运行中的智能体，本次恢复不重复启动。');
     workflowIncidentRepo.markResolved(incident.id, recorded.message.id);
@@ -123,7 +123,12 @@ async function retryWorkflow(
     })();
   }
 
-  await retryWorkflowStep(run.id);
+  try {
+    await retryWorkflowStep(run.id);
+  } catch (err) {
+    restoreWorkflowBlockedAfterRetryFailure(run.id, retryFailureReason(err));
+    throw err;
+  }
   const existingMessage = findEquivalentRecoveryMessage(run.room_id, incident);
   if (existingMessage) {
     workflowIncidentRepo.markResolved(incident.id, existingMessage.id);
@@ -136,6 +141,61 @@ async function retryWorkflow(
 
 function defaultRetryWorkflowStep(workflowRunId: string): Promise<WorkflowRun> {
   return workflowOrchestrator.retryStep(workflowRunId);
+}
+
+function interruptStaleIncidentRunOrStep(incident: WorkflowIncident): void {
+  if (incident.incident_type !== 'agent_run_stale' && incident.incident_type !== 'step_without_active_run') return;
+  interruptStaleIncidentAgentRun(incident);
+  interruptStaleIncidentWorkflowStep(incident);
+}
+
+function interruptStaleIncidentAgentRun(incident: WorkflowIncident): void {
+  if (!incident.agent_run_id) return;
+  const run = agentRunRepo.get(incident.agent_run_id);
+  if (!run || run.workflow_run_id !== incident.workflow_run_id || !isActiveAgentRunStatus(run.status)) return;
+  agentRunRepo.interruptRun(run.id, incident.error ?? 'Workflow recovery interrupted stale active agent run');
+  if (run.workflow_step_id) {
+    const step = workflowRepo.getStep(run.workflow_step_id);
+    if (step?.status === 'running') {
+      workflowRepo.updateStep(step.id, {
+        status: 'interrupted',
+        error: incident.error ?? 'Workflow recovery interrupted stale active agent run',
+      });
+    }
+  }
+}
+
+function interruptStaleIncidentWorkflowStep(incident: WorkflowIncident): void {
+  if (!incident.workflow_step_id) return;
+  const step = workflowRepo.getStep(incident.workflow_step_id);
+  if (!step || step.workflow_run_id !== incident.workflow_run_id || step.status !== 'running') return;
+  workflowRepo.updateStep(step.id, {
+    status: 'interrupted',
+    error: incident.error ?? 'Workflow recovery interrupted stale running workflow step',
+  });
+}
+
+function isActiveAgentRunStatus(status: string): boolean {
+  return status === 'running' || status === 'queued' || status === 'retrying';
+}
+
+function retryFailureReason(err: unknown): string {
+  const reason = err instanceof Error ? err.message : String(err);
+  return `自动恢复执行失败：${reason}`;
+}
+
+function restoreWorkflowBlockedAfterRetryFailure(workflowRunId: string, reason: string): void {
+  const latestRun = workflowRepo.getRun(workflowRunId);
+  const state = parseGraphState(latestRun?.graph_state ?? null);
+  if (state) {
+    workflowRepo.updateGraphState(workflowRunId, JSON.stringify({
+      ...state,
+      status: 'blocked',
+      error: reason,
+      activeAgentRunId: null,
+    }));
+  }
+  workflowRepo.updateRun(workflowRunId, { status: 'blocked', error: reason });
 }
 
 function reassignChildTask(incident: WorkflowIncident, decision: WorkflowRecoveryDecision): void {
@@ -227,8 +287,7 @@ function markBlocked(
   run: WorkflowRun,
   task: Task,
 ): WorkflowRecoveryExecutionResult {
-  if (isAwaitingUserDecisionGraphState(run)) {
-    workflowRepo.updateRun(run.id, { status: 'awaiting_decision', error: null });
+  if (restoreAwaitingUserDecisionIfNeeded(workflowRepo.getRun(run.id) ?? run, task)) {
     workflowIncidentRepo.markResolved(incident.id, null);
     return { status: 'noop', detail: 'workflow is already awaiting user decision' };
   }
@@ -238,10 +297,58 @@ function markBlocked(
   return { status: 'blocked', messageId: recorded.message.id };
 }
 
-function isAwaitingUserDecisionGraphState(run: WorkflowRun): boolean {
+function restoreAwaitingUserDecisionIfNeeded(run: WorkflowRun, task: Task): boolean {
   try {
     const state = parseGraphState(run.graph_state);
-    return state?.status === 'awaiting_decision';
+    if (state?.status === 'awaiting_decision') {
+      workflowRepo.updateRun(run.id, {
+        status: 'awaiting_decision',
+        current_stage: state.currentNode === 'acceptance' || state.superpowersPhase === 'finish_branch'
+          ? 'acceptance'
+          : run.current_stage,
+        error: null,
+      });
+      return true;
+    }
+    const latestStep = [...workflowRepo.listSteps(run.id)].at(-1);
+    if (
+      latestStep?.stage !== 'acceptance' ||
+      latestStep.node_name !== 'finish_branch' ||
+      latestStep.status !== 'awaiting_approval'
+    ) {
+      return false;
+    }
+    const baseState = state ?? emptyAgentWorkflowState({
+      workflowRunId: run.id,
+      projectId: run.project_id,
+      roomId: run.room_id,
+      taskId: run.task_id,
+      userGoal: task.title,
+      projectPath: '',
+    });
+    workflowRepo.updateGraphState(run.id, serializeGraphState({
+      ...baseState,
+      workflowRunId: run.id,
+      projectId: run.project_id,
+      roomId: run.room_id,
+      taskId: run.task_id,
+      userGoal: baseState.userGoal || task.title,
+      status: 'awaiting_decision',
+      error: null,
+      currentNode: 'acceptance',
+      currentStepId: latestStep.id,
+      activeAgentRunId: null,
+      superpowersPhase: 'finish_branch',
+      activeSuperpowersStage: 'finish_branch',
+      finishBranchDecision: baseState.finishBranchDecision ?? {
+        decision: null,
+        options: ['merge_local', 'create_pr', 'keep_branch', 'discard_work'],
+        reason: '等待用户选择分支收尾方式',
+        decidedAt: null,
+      },
+    }));
+    workflowRepo.updateRun(run.id, { status: 'awaiting_decision', current_stage: 'acceptance', error: null });
+    return true;
   } catch {
     return false;
   }

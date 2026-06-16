@@ -23,6 +23,7 @@ const ACTIVE_WORKFLOW_STATUSES = ['draft', 'running', 'awaiting_decision', 'awai
 const ACTIVE_AGENT_RUN_STATUSES = ['running', 'queued'];
 const CHILD_TERMINAL_FAILURE_STATUSES = ['failed', 'cancelled'];
 const ACP_BACKED_GRAPH_NODES: GraphNodeName[] = ['execute', 'review', 'acceptance'];
+const LOCAL_RECOVERABLE_GRAPH_NODES: GraphNodeName[] = ['verify'];
 
 export interface WorkflowMonitorScanOptions {
   now?: number;
@@ -94,6 +95,9 @@ export function scanWorkflowIncidents(options: WorkflowMonitorScanOptions = {}):
   }
   if (detected.length < limit) {
     detected.push(...detectRunningStepsWithoutActiveRun(limit - detected.length));
+  }
+  if (detected.length < limit) {
+    detected.push(...detectStaleLocalRunningSteps(scanNow, staleAgentRunMs, limit - detected.length));
   }
   if (detected.length < limit) {
     detected.push(...detectRunningGraphWorkflowsWithoutActiveRun(limit - detected.length));
@@ -203,6 +207,49 @@ function detectRunningStepsWithoutActiveRun(limit: number): WorkflowIncident[] {
   ).all(...ACTIVE_AGENT_RUN_STATUSES, ...ACTIVE_WORKFLOW_STATUSES, ...ACP_BACKED_GRAPH_NODES, limit) as JoinedWorkflowRow[];
 
   return rows.map((row) => createIncident(row, 'step_without_active_run', 'Workflow step is running without an active agent run'));
+}
+
+function detectStaleLocalRunningSteps(scanNow: number, staleAgentRunMs: number, limit: number): WorkflowIncident[] {
+  const staleBefore = scanNow - staleAgentRunMs;
+  const rows = db.prepare(
+    `SELECT
+       wr.id AS run_id, wr.room_id AS run_room_id, wr.project_id AS run_project_id, wr.task_id AS run_task_id,
+       wr.status AS run_status, wr.current_stage AS run_current_stage, wr.error AS run_error,
+       ws.id AS step_id, ws.task_id AS step_task_id, ws.stage AS step_stage, ws.status AS step_status,
+       ws.room_agent_id AS step_room_agent_id, ws.assigned_room_agent_id AS step_assigned_room_agent_id,
+       ws.scope_read AS step_scope_read, ws.scope_write AS step_scope_write, ws.agent_run_id AS step_agent_run_id,
+       ws.error AS step_error, ws.updated_at AS step_updated_at,
+       ar.id AS agent_run_id, ar.room_agent_id AS agent_run_room_agent_id, ar.agent_id AS agent_run_agent_id,
+       ar.status AS agent_run_status, ar.stdout AS agent_run_stdout, ar.stderr AS agent_run_stderr,
+       ar.activity_log AS agent_run_activity_log, ar.error AS agent_run_error, ar.updated_at AS agent_run_updated_at,
+       parent.title AS parent_title, parent.description AS parent_description, parent.status AS parent_status,
+       child.id AS child_id, child.title AS child_title, child.description AS child_description, child.status AS child_status,
+       child.assigned_agent_id AS child_assigned_agent_id
+     FROM workflow_steps ws
+     JOIN workflow_runs wr ON wr.id = ws.workflow_run_id
+     LEFT JOIN agent_runs ar ON ar.workflow_step_id = ws.id AND ar.status IN (${ACTIVE_AGENT_RUN_STATUSES.map(() => '?').join(',')})
+     LEFT JOIN tasks parent ON parent.id = wr.task_id
+     LEFT JOIN tasks child ON child.id = ws.task_id
+     WHERE ws.status = 'running'
+       AND wr.status IN (${ACTIVE_WORKFLOW_STATUSES.map(() => '?').join(',')})
+       AND ws.node_name IN (${LOCAL_RECOVERABLE_GRAPH_NODES.map(() => '?').join(',')})
+       AND ws.updated_at < ?
+       AND ar.id IS NULL
+     ORDER BY ws.updated_at ASC
+     LIMIT ?`,
+  ).all(
+    ...ACTIVE_AGENT_RUN_STATUSES,
+    ...ACTIVE_WORKFLOW_STATUSES,
+    ...LOCAL_RECOVERABLE_GRAPH_NODES,
+    staleBefore,
+    limit,
+  ) as JoinedWorkflowRow[];
+
+  return rows.map((row) => createIncident(
+    row,
+    'step_without_active_run',
+    `Workflow ${LOCAL_RECOVERABLE_GRAPH_NODES[0] ?? 'local'} step ${row.step_id ?? ''} (${row.step_status ?? 'running'}) is stale without an active agent run`,
+  ));
 }
 
 function detectRunningGraphWorkflowsWithoutActiveRun(limit: number): WorkflowIncident[] {
@@ -341,9 +388,14 @@ function detectBlockedWorkflowErrors(limit: number): WorkflowIncident[] {
   ).all(limit) as JoinedWorkflowRow[];
 
   return rows.map((row) => {
+    if (isAwaitingFinishBranchDecision(row)) return null;
     const error = selectBlockedWorkflowIncidentError(row);
     return createIncident(row, classifyBlockedWorkflowError(error), error);
-  });
+  }).filter((incident): incident is WorkflowIncident => incident !== null);
+}
+
+function isAwaitingFinishBranchDecision(row: JoinedWorkflowRow): boolean {
+  return row.step_status === 'awaiting_approval' && row.step_stage === 'acceptance';
 }
 
 function selectBlockedWorkflowIncidentError(row: JoinedWorkflowRow): string {
@@ -462,6 +514,7 @@ function getChildTaskId(row: JoinedWorkflowRow): string | null {
 
 function classifyBlockedWorkflowError(error: string): WorkflowIncidentType {
   const normalized = error.toLowerCase();
+  if (normalized.includes('backend restarted')) return 'backend_restart_interrupted';
   if (normalized.includes('no executor available')) return 'executor_unavailable';
   if (normalized.includes('process exited with code 130')) return 'agent_run_stale';
   if (normalized.includes('prompt timed out') || normalized.includes('timed out')) return 'agent_run_stale';

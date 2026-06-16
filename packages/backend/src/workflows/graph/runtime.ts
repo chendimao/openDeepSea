@@ -46,6 +46,7 @@ import {
 import { createGraphTools, type GraphRuntimeDeps } from './tools.js';
 import { mapVerificationResultsToEvidence } from './verification.js';
 import { applySuperpowersEvidencePatch, parseSuperpowersEvidence } from './superpowers-evidence.js';
+import { canLeaveTddExecute as canLeaveTddExecuteGate } from './superpowers-gates.js';
 
 const GraphState = Annotation.Root({
   workflowRunId: Annotation<string>(),
@@ -380,7 +381,7 @@ function scheduleBackgroundGraphWorkflowRetry(
     deps.scheduleRetry({ runId, attempt, delayMs, error }, retry);
     return;
   }
-  setTimeout(retry, delayMs);
+  setTimeout(retry, delayMs).unref();
 }
 
 function canRetryBackgroundGraphWorkflow(runId: string): boolean {
@@ -481,7 +482,12 @@ export async function retryGraphWorkflow(id: string, deps: GraphRuntimeDeps = {}
   const tools = createGraphTools(deps);
   const resetChildTaskIds = new Set<string>();
   for (const child of taskRepo.listChildren(run.task_id).filter((item) =>
-    state.childTaskIds.includes(item.id) && (item.status === 'failed' || item.status === 'in_progress'),
+    state.childTaskIds.includes(item.id) && (
+      item.status === 'failed' ||
+      item.status === 'in_progress' ||
+      item.status === 'todo' ||
+      shouldResetWorkflowPlanChildForRetry(state, item.id)
+    ),
   )) {
     const resetChild = db.transaction(() => {
       const after = taskRepo.updateStatus(child.id, 'todo');
@@ -505,7 +511,7 @@ export async function retryGraphWorkflow(id: string, deps: GraphRuntimeDeps = {}
   const retryState: AgentWorkflowState = {
     ...state,
     workflowPlan: resetWorkflowPlanTasksForRetry(state, resetChildTaskIds),
-    currentNode: retryCurrentNode(state),
+    ...normalizeRetryRouteState(state),
     currentStepId: null,
     status: 'running',
     error: null,
@@ -875,12 +881,52 @@ function tryParseGraphState(run: WorkflowRun): { ok: true; state: AgentWorkflowS
 function retryCurrentNode(state: AgentWorkflowState): AgentWorkflowState['currentNode'] {
   if (state.currentNode === 'planning' || (state.currentNode === 'approval' && !state.plan)) return 'context';
   if (state.currentNode === 'approval') return 'approval';
+  if (shouldRetryFromVerify(state)) return 'code_quality_review';
   if (state.currentNode === 'execute') return 'dispatch';
   if (state.currentNode === 'review') return 'dispatch';
   if (state.currentNode === 'repair_decision') return 'review';
   if (state.currentNode === 'verify') return 'dispatch';
   if (state.currentNode === 'acceptance') return 'dispatch';
   return state.currentNode;
+}
+
+function normalizeRetryRouteState(state: AgentWorkflowState): Pick<
+  AgentWorkflowState,
+  'currentNode' | 'superpowersPhase' | 'activeSuperpowersStage'
+> {
+  const currentNode = retryCurrentNode(state);
+  if (currentNode === 'dispatch') {
+    return {
+      currentNode,
+      superpowersPhase: null,
+      activeSuperpowersStage: 'dispatch',
+    };
+  }
+  if (currentNode === 'code_quality_review') {
+    return {
+      currentNode,
+      superpowersPhase: 'code_quality_review',
+      activeSuperpowersStage: 'code_quality_review',
+    };
+  }
+  return {
+    currentNode,
+    superpowersPhase: state.superpowersPhase,
+    activeSuperpowersStage: state.activeSuperpowersStage,
+  };
+}
+
+function shouldRetryFromVerify(state: AgentWorkflowState): boolean {
+  return (state.currentNode === 'verify' || state.currentNode === 'execute') &&
+    state.specComplianceReview?.verdict === 'approved' &&
+    state.codeQualityReview?.verdict === 'approved';
+}
+
+function shouldResetWorkflowPlanChildForRetry(state: AgentWorkflowState, childTaskId: string): boolean {
+  const planIndex = state.childTaskPlanIndexes?.[childTaskId];
+  if (typeof planIndex !== 'number') return false;
+  const planTask = state.workflowPlan?.tasks[planIndex];
+  return planTask?.status === 'failed' || planTask?.status === 'blocked';
 }
 
 async function resumeGraphWorkflowFromState(
@@ -2165,6 +2211,9 @@ function nextNodeFromDefinition(
   if (isTerminalResumeState(state)) return null;
   const node = nodeJustRun ?? currentRouteNodeFromState(state, plan);
   if (!node) return plan.start;
+  if (nodeJustRun === null && node === 'tdd_execute' && !canLeaveTddExecuteGate(state)) {
+    return 'tdd_execute';
+  }
   const outgoing = plan.next.get(node) ?? [];
   if (outgoing.length === 0) {
     if (node === 'agent_assignment') {

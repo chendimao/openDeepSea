@@ -115,6 +115,19 @@ export const agentRunRepo = {
       .all(...ACTIVE_AGENT_RUN_STATUSES) as AgentRun[];
   },
 
+  listActiveByProject(projectId: string): AgentRun[] {
+    return db
+      .prepare(
+        `SELECT agent_runs.*
+         FROM agent_runs
+         JOIN rooms ON rooms.id = agent_runs.room_id
+         WHERE rooms.project_id = ?
+           AND agent_runs.status IN (${ACTIVE_AGENT_RUN_STATUSES.map(() => '?').join(', ')})
+         ORDER BY agent_runs.started_at ASC`,
+      )
+      .all(projectId, ...ACTIVE_AGENT_RUN_STATUSES) as AgentRun[];
+  },
+
   interruptRun(id: string, error: string): AgentRun | undefined {
     const timestamp = now();
     db.prepare(

@@ -233,6 +233,96 @@ test('scanWorkflowIncidents ignores internal running planning step without agent
   );
 });
 
+test('scanWorkflowIncidents detects stale local verify step without active agent run', () => {
+  const fixture = createWorkflowFixture('stale verify step');
+  const state = {
+    ...emptyAgentWorkflowState({
+      workflowRunId: fixture.workflow.id,
+      projectId: fixture.project.id,
+      roomId: fixture.room.id,
+      taskId: fixture.task.id,
+      userGoal: fixture.task.title,
+      projectPath: fixture.project.path,
+    }),
+    currentNode: 'verify' as const,
+    currentStepId: null,
+    activeAgentRunId: null,
+    status: 'running' as const,
+    error: null,
+  };
+  workflowRepo.updateRun(fixture.workflow.id, {
+    status: 'running',
+    current_stage: 'code_review',
+    error: null,
+  });
+  workflowRepo.updateGraphState(fixture.workflow.id, serializeGraphState(state));
+  const step = workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.task.id,
+    stage: 'code_review',
+    node_name: 'verify',
+    status: 'running',
+    sort_order: 1,
+  });
+  workflowRepo.updateGraphState(fixture.workflow.id, serializeGraphState({
+    ...state,
+    currentStepId: step.id,
+  }));
+  db.prepare('UPDATE workflow_steps SET updated_at = ? WHERE id = ?').run(1_000, step.id);
+
+  const incidents = scanWorkflowIncidents({ now: 130_000, staleAgentRunMs: 120_000 });
+  const incident = incidents.find((item) => item.workflow_run_id === fixture.workflow.id);
+
+  assert.equal(incident?.incident_type, 'step_without_active_run');
+  assert.equal(incident?.workflow_step_id, step.id);
+  assert.match(incident?.error ?? '', /verify/i);
+});
+
+test('scanWorkflowIncidents classifies interrupted local verify step as backend restart interruption', () => {
+  const fixture = createWorkflowFixture('interrupted local verify');
+  const state = {
+    ...emptyAgentWorkflowState({
+      workflowRunId: fixture.workflow.id,
+      projectId: fixture.project.id,
+      roomId: fixture.room.id,
+      taskId: fixture.task.id,
+      userGoal: fixture.task.title,
+      projectPath: fixture.project.path,
+    }),
+    currentNode: 'verify' as const,
+    currentStepId: null,
+    activeAgentRunId: null,
+    status: 'running' as const,
+    error: null,
+  };
+  workflowRepo.updateRun(fixture.workflow.id, {
+    status: 'blocked',
+    current_stage: 'code_review',
+    error: 'Backend restarted before workflow step completed',
+  });
+  workflowRepo.updateGraphState(fixture.workflow.id, serializeGraphState(state));
+  const step = workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.task.id,
+    stage: 'code_review',
+    node_name: 'verify',
+    status: 'interrupted',
+    sort_order: 1,
+  });
+  workflowRepo.updateGraphState(fixture.workflow.id, serializeGraphState({
+    ...state,
+    currentStepId: step.id,
+  }));
+  workflowRepo.updateStep(step.id, { error: 'Backend restarted before workflow step completed' });
+
+  const incidents = scanWorkflowIncidents();
+  const incident = incidents.find((item) => item.workflow_run_id === fixture.workflow.id);
+
+  assert.equal(incident?.incident_type, 'backend_restart_interrupted');
+  assert.equal(incident?.workflow_step_id, step.id);
+  assert.match(incident?.error ?? '', /Backend restarted/);
+});
+
 test('scanWorkflowIncidents detects backend restart interrupted agent run', () => {
   const fixture = createWorkflowFixture('backend restart');
   const step = workflowRepo.createStep({
@@ -274,6 +364,30 @@ test('scanWorkflowIncidents detects failed child task under active workflow task
   assert.equal(incident?.incident_type, 'child_task_failed');
   assert.equal(incident?.child_task_id, fixture.childTask.id);
   assert.equal(workflowIncidentRepo.listByWorkflow(fixture.workflow.id).length, 1);
+});
+
+test('scanWorkflowIncidents ignores finish branch approval gates as blocked workflow errors', () => {
+  const fixture = createWorkflowFixture('finish branch approval gate');
+  workflowRepo.createStep({
+    workflow_run_id: fixture.workflow.id,
+    task_id: fixture.task.id,
+    stage: 'acceptance',
+    node_name: 'finish_branch',
+    status: 'awaiting_approval',
+    sort_order: 1,
+  });
+  workflowRepo.updateRun(fixture.workflow.id, {
+    status: 'blocked',
+    current_stage: 'acceptance',
+    error: '未识别或高风险的工作流异常：unknown，默认阻塞并等待人工处理。',
+  });
+
+  const incidents = scanWorkflowIncidents();
+
+  assert.equal(
+    incidents.some((incident) => incident.workflow_run_id === fixture.workflow.id),
+    false,
+  );
 });
 
 test('scanWorkflowIncidents classifies blocked workflow executor errors', () => {
