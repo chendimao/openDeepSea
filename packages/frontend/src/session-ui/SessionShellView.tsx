@@ -2776,7 +2776,7 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
     }
     if (item.kind === 'message' && shouldKeepWorkflowTranscriptGroupOpen(item.message, pendingWorkflowRunId)) {
       pendingWorkflowFlushTimestamp = Math.max(pendingWorkflowFlushTimestamp ?? 0, item.timestamp + 0.1);
-      timeline.push(item);
+      pendingWorkflowMessages.push(item.message);
       continue;
     }
     flushWorkflowMessages();

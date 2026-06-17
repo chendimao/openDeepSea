@@ -1082,14 +1082,15 @@ test('SessionShell hides workflow routing json helper messages from transcript b
   const inspector = html.match(/<aside[^>]+aria-label="Session Inspector"[\s\S]*?<\/aside>/)?.[0] ?? '';
 
   assert.equal((html.match(/data-workflow-chat-message="true"/g) ?? []).length, 1);
-  assert.ok(finalAnswerIndex > transcriptScrollIndex);
-  assert.ok(finalAnswerIndex < workflowMessageIndex);
+  assert.ok(workflowMessageIndex > transcriptScrollIndex);
+  assert.ok(finalAnswerIndex > workflowMessageIndex);
   assert.match(inspector, /data-state="idle"/);
   assert.match(inspector, /已完成/);
   assert.doesNotMatch(html, /用户询问项目说明，只需要直接回答/);
   assert.doesNotMatch(html, /confidence/);
   assert.doesNotMatch(html, /"answer"/);
-  assert.doesNotMatch(workflowCardHtml, /这是一个本地优先的多智能体开发协作项目，用来协调多个 ACP agent/);
+  assert.match(workflowCardHtml, /这是一个本地优先的多智能体开发协作项目，用来协调多个 ACP agent/);
+  assert.doesNotMatch(workflowCardHtml, /已合并 \d+ 条 workflow 事件/);
 });
 
 test('SessionShell hides mixed workflow answer helper blocks when final answer exists', () => {
@@ -1191,16 +1192,18 @@ test('SessionShell hides mixed workflow answer helper blocks when final answer e
   const transcriptScrollIndex = html.indexOf('data-transcript-scroll="true"');
   const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
   const finalAnswerIndex = html.indexOf('这是一个本地优先的多智能体开发协作项目，用来协调多个 ACP agent');
+  const workflowCardHtml = html.slice(workflowMessageIndex, html.indexOf('deepsea-composer-anchor'));
 
   assert.ok(workflowMessageIndex > transcriptScrollIndex);
-  assert.ok(finalAnswerIndex > transcriptScrollIndex);
-  assert.ok(finalAnswerIndex < workflowMessageIndex);
+  assert.ok(finalAnswerIndex > workflowMessageIndex);
   assert.doesNotMatch(html, /我先判断这是一个只读项目理解问题。/);
   assert.doesNotMatch(html, /我在核实可读资料。/);
   assert.doesNotMatch(html, /confidence/);
   assert.doesNotMatch(html, /"intent"/);
   assert.doesNotMatch(html, /"answer"/);
   assert.doesNotMatch(html, /Markdown 显示模式/);
+  assert.match(workflowCardHtml, /这是一个本地优先的多智能体开发协作项目，用来协调多个 ACP agent/);
+  assert.doesNotMatch(workflowCardHtml, /已合并 \d+ 条 workflow 事件/);
 });
 
 test('SessionShell keeps workflow group open when workflow run id is nested in session metadata', () => {
@@ -1273,11 +1276,13 @@ test('SessionShell keeps workflow group open when workflow run id is nested in s
   const transcriptScrollIndex = html.indexOf('data-transcript-scroll="true"');
   const finalAnswerIndex = html.indexOf('这是一个本地优先的多智能体开发协作项目。');
   const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
+  const workflowCardHtml = html.slice(workflowMessageIndex, html.indexOf('deepsea-composer-anchor'));
 
   assert.equal((html.match(/data-workflow-chat-message="true"/g) ?? []).length, 1);
-  assert.ok(finalAnswerIndex > transcriptScrollIndex);
-  assert.ok(finalAnswerIndex < workflowMessageIndex);
+  assert.ok(workflowMessageIndex > transcriptScrollIndex);
+  assert.ok(finalAnswerIndex > workflowMessageIndex);
   assert.doesNotMatch(html, /已进入 Superpowers 工作流：这个项目是什么？/);
+  assert.match(workflowCardHtml, /这是一个本地优先的多智能体开发协作项目。/);
   assert.match(html, /已完成/);
 });
 
