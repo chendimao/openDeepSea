@@ -26,6 +26,7 @@ export function SessionMessageBubble({
   onDisplayModeChange,
   onOpenWorkspaceFile,
   structuredContent,
+  hideDisplayModeSwitch = false,
 }: {
   role: SessionMessageBubbleRole;
   content: string;
@@ -39,6 +40,7 @@ export function SessionMessageBubble({
   onDisplayModeChange?: (mode: SessionMessageDisplayMode) => void;
   onOpenWorkspaceFile?: WorkspaceFileOpenHandler;
   structuredContent?: ReactNode;
+  hideDisplayModeSwitch?: boolean;
 }): JSX.Element {
   const [localDisplayMode, setLocalDisplayMode] = useState<SessionMessageDisplayMode>('preview');
   const activeDisplayMode = displayMode ?? localDisplayMode;
@@ -54,7 +56,9 @@ export function SessionMessageBubble({
         {statusLabel && <strong>{statusLabel}</strong>}
         <div className="deepsea-message-tools">
           {actions}
-          <MarkdownDisplaySwitch content={content} mode={activeDisplayMode} onModeChange={setDisplayMode} />
+          {hideDisplayModeSwitch ? null : (
+            <MarkdownDisplaySwitch content={content} mode={activeDisplayMode} onModeChange={setDisplayMode} />
+          )}
         </div>
       </header>
       <div className="deepsea-message-body">

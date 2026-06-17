@@ -311,38 +311,37 @@ test('SessionShell renders workflow chat message with gate and agent summaries',
   const html = renderSessionShell(payload, { onApproveWorkflowArtifact: () => undefined });
   const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
   const transcriptScrollIndex = html.indexOf('data-transcript-scroll="true"');
+  const composerIndex = html.indexOf('deepsea-composer-anchor');
+  const workflowMessageArea = html.slice(workflowMessageIndex, composerIndex);
 
   assert.match(html, /data-workflow-chat-message="true"/);
   assert.match(html, /规划师 \(Planner\)/);
   assert.match(html, /aria-label="展开当前对话中的全部可折叠内容"/);
-  assert.match(html, /data-workflow-state-stream="true"/);
-  assert.doesNotMatch(html, /data-workflow-view-toggle="true"/);
-  assert.doesNotMatch(html, /data-session-workflow-map="mission"/);
-  assert.doesNotMatch(html, /data-workflow-flow-root="true"/);
-  assert.doesNotMatch(html, /flow-path-parallel/);
-  assert.match(html, /等待 plan gate/);
-  assert.match(html, /1 个门禁/);
-  assert.match(html, /Codex/);
-  assert.match(html, /data-card-tone="agent"/);
-  assert.match(html, /data-card-tone="gate"/);
-  assert.match(html, /deepsea-workflow-state-step/);
-  assert.match(html, /data-workflow-state-stream="true"/);
-  assert.match(html, /data-workflow-artifact-action="approve"/);
-  assert.doesNotMatch(html, /data-workflow-mission-strip="true"/);
+  assert.match(workflowMessageArea, /data-workflow-assignment-summary="true"/);
+  assert.doesNotMatch(workflowMessageArea, /data-workflow-view-toggle="true"/);
+  assert.doesNotMatch(workflowMessageArea, /data-session-workflow-map="mission"/);
+  assert.doesNotMatch(workflowMessageArea, /data-workflow-flow-root="true"/);
+  assert.doesNotMatch(workflowMessageArea, /flow-path-parallel/);
+  assert.match(workflowMessageArea, /等待 plan gate/);
+  assert.match(workflowMessageArea, /1 个门禁/);
+  assert.match(workflowMessageArea, /Codex/);
+  assert.doesNotMatch(workflowMessageArea, /data-card-tone="agent"/);
+  assert.doesNotMatch(workflowMessageArea, /data-card-tone="gate"/);
+  assert.doesNotMatch(workflowMessageArea, /deepsea-workflow-state-step/);
+  assert.doesNotMatch(workflowMessageArea, /data-workflow-state-stream="true"/);
+  assert.doesNotMatch(workflowMessageArea, /Execution Log 合并事件/);
+  assert.match(workflowMessageArea, /data-workflow-artifact-action="approve"/);
+  assert.doesNotMatch(workflowMessageArea, /data-workflow-mission-strip="true"/);
   assert.ok(workflowMessageIndex >= 0);
   assert.ok(workflowMessageIndex > transcriptScrollIndex);
 });
 
 test('SessionShell merges workflow events into a compact preview inside the transcript message', () => {
   const payload = createPayload();
-  payload.activeSession.workflowController = {
-    workflow_run_id: 'workflow-run-merge-1',
-    selected_intent: 'standard_development',
-    active_stage: 'planning',
-    controller: 'planner',
-    next_action: '等待用户确认当前 workflow artifact。',
-    blocker: null,
-  };
+  payload.activeSession.workflowController = null;
+  payload.activeSession.workflowArtifacts = [];
+  payload.activeSession.workflowGates = [];
+  payload.activeSession.workflowAgentAssignments = [];
   payload.activeSession.runs = [];
   payload.activeSession.agentEvents = [];
   payload.activeSession.messages = [
@@ -366,9 +365,12 @@ test('SessionShell merges workflow events into a compact preview inside the tran
 
   const html = renderSessionShell(payload);
 
-  assert.match(html, /Execution Log 合并事件/);
-  assert.match(html, /已合并前 5 条 workflow 事件/);
+  assert.match(html, /data-workflow-state-stream="true"/);
+  assert.match(html, /合并流转/);
+  assert.match(html, /6 条 workflow 事件/);
   assert.match(html, /workflow event 6:/);
+  assert.doesNotMatch(html, /Execution Log 合并事件/);
+  assert.doesNotMatch(html, /已合并前 5 条 workflow 事件/);
   assert.doesNotMatch(html, /workflow event 5:/);
   assert.doesNotMatch(html, /workflow event 1:/);
   assert.doesNotMatch(html, /workflow event 1:.*workflow event 2:.*workflow event 3:.*workflow event 4:.*workflow event 5:.*workflow event 6:/s);
@@ -376,14 +378,10 @@ test('SessionShell merges workflow events into a compact preview inside the tran
 
 test('SessionShell renders workflow events as a compact one-line summary in flow mode', () => {
   const payload = createPayload();
-  payload.activeSession.workflowController = {
-    workflow_run_id: 'workflow-run-compact-1',
-    selected_intent: 'standard_development',
-    active_stage: 'planning',
-    controller: 'planner',
-    blocker: null,
-    next_action: '等待用户确认当前 workflow artifact。',
-  };
+  payload.activeSession.workflowController = null;
+  payload.activeSession.workflowArtifacts = [];
+  payload.activeSession.workflowGates = [];
+  payload.activeSession.workflowAgentAssignments = [];
   payload.activeSession.runs = [];
   payload.activeSession.agentEvents = [];
   payload.activeSession.messages = [
@@ -599,13 +597,14 @@ test('SessionShell only attaches live workflow state to the latest workflow chat
     : html;
 
   assert.equal((transcriptHtml.match(/data-workflow-chat-message="true"/g) ?? []).length, 1);
-  assert.equal((transcriptHtml.match(/data-workflow-state-stream="true"/g) ?? []).length, 1);
+  assert.equal((transcriptHtml.match(/data-workflow-assignment-summary="true"/g) ?? []).length, 1);
   assert.doesNotMatch(transcriptHtml, /工作流已启动/);
-  assert.match(transcriptHtml, /产品经理检测到子任务异常/);
+  assert.doesNotMatch(transcriptHtml, /产品经理检测到子任务异常/);
   const workflowIndex = transcriptHtml.indexOf('data-workflow-chat-message="true"');
   assert.ok(workflowIndex >= 0);
   const latestWorkflowHtml = transcriptHtml.slice(workflowIndex);
-  assert.match(latestWorkflowHtml, /data-workflow-state-stream="true"/);
+  assert.match(latestWorkflowHtml, /data-workflow-assignment-summary="true"/);
+  assert.doesNotMatch(latestWorkflowHtml, /data-workflow-state-stream="true"/);
   assert.doesNotMatch(latestWorkflowHtml, /data-workflow-flow-root="true"/);
   assert.doesNotMatch(latestWorkflowHtml, /data-workflow-view-toggle="true"/);
   assert.match(latestWorkflowHtml, /当前执行者/);
@@ -741,6 +740,117 @@ test('SessionShell renders workflow planner analysis as assistant chat content',
   assert.ok(analysisIndex < workflowMessageIndex);
   assert.match(html, /规划师/);
   assert.doesNotMatch(workflowCardHtml, /我先只读定位删除项目与 active runs 的相关代码/);
+});
+
+test('SessionShell summarizes workflow planner JSON as reply text and assignment structure', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  payload.activeSession.runs = [];
+  payload.activeSession.agentEvents = [];
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-json-summary',
+    selected_intent: 'standard_development',
+    active_stage: 'brainstorming',
+    controller: 'user',
+    blocker: 'Waiting for approved spec artifact version',
+    next_action: '等待用户确认当前 workflow artifact。',
+  };
+  payload.activeSession.workflowArtifacts = [];
+  payload.activeSession.workflowGates = [];
+  payload.activeSession.workflowAgentAssignments = [];
+  payload.activeSession.messages = [
+    {
+      id: 'msg-user-json-summary',
+      session_id: payload.activeSession.session.id,
+      role: 'user',
+      sender_id: 'user',
+      sender_name: 'User',
+      content: '现在移除项目会报 project has active runs，删除项目前自动停止任务。',
+      message_type: 'text',
+      status: 'completed',
+      metadata: null,
+      created_at: now,
+    },
+    {
+      id: 'msg-workflow-json-started',
+      session_id: payload.activeSession.session.id,
+      role: 'system',
+      sender_id: 'workflow',
+      sender_name: '工作流',
+      content: '工作流已启动，进入 analysis 阶段。',
+      message_type: 'system',
+      status: 'completed',
+      metadata: JSON.stringify({ event_type: 'workflow_started', workflow_run_id: 'workflow-run-json-summary' }),
+      created_at: now + 1_000,
+    },
+    {
+      id: 'msg-planner-json-summary',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'planner',
+      sender_name: '规划师',
+      content: [
+        '```json',
+        '{',
+        '  "goal": "将项目移除流程从阻断 active runs 改为删除前自动停止该项目下所有会话的所有任务，然后继续移除项目。",',
+        '  "workflowTemplate": "bugfix",',
+        '  "summary": "这是一个后端主导、前端提示可能受影响的行为修复。核心改动应放在项目删除 API/服务层。",',
+        '  "assumptions": ["project has active runs 当前来自后端项目删除前置校验。"],',
+        '  "steps": [',
+        '    {',
+        '      "title": "定位项目删除与 active runs 校验链路",',
+        '      "intent": "阅读后端项目删除 API、服务/仓储逻辑、run/task 状态模型和当前报错来源。",',
+        '      "assigneeRole": "analyst",',
+        '      "preferredBackend": "codex",',
+        '      "scopeRead": ["packages/backend/src"],',
+        '      "scopeWrite": [],',
+        '      "acceptance": ["明确 project has active runs 的具体抛出位置。"],',
+        '      "dependsOn": []',
+        '    },',
+        '    {',
+        '      "title": "设计并实现删除前停止项目任务",',
+        '      "intent": "在项目删除后端链路中加入自动停止步骤。",',
+        '      "assigneeRole": "executor",',
+        '      "preferredBackend": "codex",',
+        '      "scopeRead": ["packages/backend/src/repos"],',
+        '      "scopeWrite": ["packages/backend/src/routes.ts"],',
+        '      "acceptance": ["删除包含 active runs 的项目时不再返回 project has active runs。"],',
+        '      "dependsOn": ["定位项目删除与 active runs 校验链路"]',
+        '    }',
+        '  ]',
+        '}',
+        '```',
+      ].join('\n'),
+      message_type: 'agent_stream',
+      status: 'completed',
+      metadata: JSON.stringify({
+        workflow_run_id: 'workflow-run-json-summary',
+        workflow_step_id: 'workflow-step-json-summary',
+        agent_run_id: 'agent-run-json-summary',
+      }),
+      created_at: now + 2_000,
+    },
+  ];
+
+  const html = renderSessionShell(payload);
+  const plannerMessageIndex = html.indexOf('data-workflow-planner-summary="true"');
+  const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
+  const plannerSummaryHtml = html.slice(plannerMessageIndex, workflowMessageIndex);
+
+  assert.ok(plannerMessageIndex >= 0);
+  assert.ok(workflowMessageIndex > plannerMessageIndex);
+  assert.match(plannerSummaryHtml, /这是一个后端主导、前端提示可能受影响的行为修复/);
+  assert.match(plannerSummaryHtml, /任务分配/);
+  assert.match(plannerSummaryHtml, /定位项目删除与 active runs 校验链路/);
+  assert.match(plannerSummaryHtml, /analyst · codex/);
+  assert.match(plannerSummaryHtml, /设计并实现删除前停止项目任务/);
+  assert.match(plannerSummaryHtml, /executor · codex/);
+  assert.doesNotMatch(html, /Markdown 显示模式/);
+  assert.doesNotMatch(plannerSummaryHtml, /scopeRead/);
+  assert.doesNotMatch(plannerSummaryHtml, /scopeWrite/);
+  assert.doesNotMatch(plannerSummaryHtml, /dependsOn/);
+  assert.doesNotMatch(plannerSummaryHtml, /workflowTemplate/);
+  assert.doesNotMatch(plannerSummaryHtml, /结构化json/);
 });
 
 test('SessionShell keeps workflow chat layout compact by default', () => {
@@ -912,12 +1022,13 @@ test('SessionShell renders workflow controller and agent assignment table', () =
   const html = renderSessionShell(payload);
 
   assert.match(html, /data-workflow-chat-message="true"/);
-  assert.match(html, /data-workflow-state-stream="true"/);
-  assert.match(html, /deepsea-workflow-state-step/);
+  assert.match(html, /data-workflow-assignment-summary="true"/);
+  assert.doesNotMatch(html, /data-workflow-state-stream="true"/);
+  assert.doesNotMatch(html, /deepsea-workflow-state-step/);
   assert.doesNotMatch(html, /data-workflow-flow-root="true"/);
-  assert.match(html, /Parallel Execution 并行执行/);
-  assert.match(html, /1\. 任务分配与并行启动/);
-  assert.match(html, /2\. 并行执行进度/);
+  assert.doesNotMatch(html, /Parallel Execution 并行执行/);
+  assert.doesNotMatch(html, /1\. 任务分配与并行启动/);
+  assert.doesNotMatch(html, /2\. 并行执行进度/);
   assert.doesNotMatch(html, /Execution Log/);
   assert.match(html, /全栈工程师/);
   assert.match(html, /未找到更匹配/);

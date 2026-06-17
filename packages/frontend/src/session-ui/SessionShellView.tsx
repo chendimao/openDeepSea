@@ -1617,6 +1617,7 @@ type WorkflowViewMode = 'flow' | 'log';
 
 const WORKFLOW_STAGE_ORDER = ['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance'] as const;
 const WORKFLOW_EVENT_PREVIEW_LIMIT = 4;
+const WORKFLOW_PLANNER_ASSIGNMENT_LIMIT = 5;
 
 interface WorkflowChatGroup {
   id: string;
@@ -1675,17 +1676,14 @@ function WorkflowChatMessage({
           ) : null}
         </div>
         {hasLiveWorkflowState ? (
-          <WorkflowChatStateStream
-            status={status}
-            group={group}
-          />
+          <WorkflowLiveAssignmentSummary assignments={group.assignments} />
         ) : hasMergedEventState ? (
           <WorkflowMergedEventStateStream
             status={status}
             messages={group.messages}
           />
         ) : null}
-        {!hasMergedEventState ? (
+        {!hasMergedEventState && !hasLiveWorkflowState ? (
           <WorkflowEventRows
             messages={group.messages}
             expanded={false}
@@ -1696,6 +1694,55 @@ function WorkflowChatMessage({
         ) : null}
       </div>
     </article>
+  );
+}
+
+function WorkflowLiveAssignmentSummary({
+  assignments,
+}: {
+  assignments: WorkflowAgentAssignmentView[];
+}): JSX.Element | null {
+  if (assignments.length === 0) return null;
+  const visibleAssignments = assignments.slice(0, WORKFLOW_PLANNER_ASSIGNMENT_LIMIT);
+  const hiddenCount = Math.max(0, assignments.length - visibleAssignments.length);
+  return (
+    <section
+      className="deepsea-workflow-live-assignments"
+      data-workflow-assignment-summary="true"
+      aria-label="Workflow 子代理分配"
+    >
+      <header>
+        <strong>任务分配</strong>
+        <span>{assignments.length} agents</span>
+      </header>
+      <div>
+        {visibleAssignments.map((assignment, index) => {
+          const assignedAgent = assignment.assigned_agent_name ?? assignment.assigned_agent_id ?? null;
+          const meta = [
+            assignedAgent,
+            assignment.role,
+            assignment.backend ?? assignment.execution_mode,
+          ].filter(Boolean).join(' · ');
+          return (
+            <article className="deepsea-workflow-live-assignment" key={`${assignment.task_id}:${assignment.role}`}>
+              <span className="deepsea-workflow-live-assignment__index" aria-hidden="true">
+                {String(index + 1).padStart(2, '0')}
+              </span>
+              <div className="deepsea-workflow-live-assignment__main">
+                <strong title={assignment.task_title}>{assignment.task_title}</strong>
+                <span>{meta}</span>
+                {assignment.fallback_reason ? <p title={assignment.fallback_reason}>{assignment.fallback_reason}</p> : null}
+              </div>
+            </article>
+          );
+        })}
+        {hiddenCount > 0 ? (
+          <div className="deepsea-workflow-live-assignments__more">
+            另有 {hiddenCount} 个 agent 分配已收起
+          </div>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
@@ -3102,6 +3149,19 @@ function riskApprovalDecisionLabel(status: SessionApprovalStatus): string {
   return '等待确认';
 }
 
+interface WorkflowPlannerSummary {
+  goal: string | null;
+  body: string;
+  assignments: WorkflowPlannerAssignment[];
+}
+
+interface WorkflowPlannerAssignment {
+  title: string;
+  role: string;
+  backend: string | null;
+  intent: string | null;
+}
+
 function TranscriptMessage({
   projectId,
   message,
@@ -3133,6 +3193,7 @@ function TranscriptMessage({
 }): JSX.Element {
   const metadata = parseMessageMetadata(message.metadata);
   const imageJobId = metadata.image_generation_job_id;
+  const workflowPlannerSummary = buildWorkflowPlannerSummary(message, metadata);
   const riskApprovalSourceMessageId = shouldRenderRiskApprovalPanel(message, metadata)
     ? getSessionApprovalSourceMessageId(metadata, message.id)
     : null;
@@ -3159,6 +3220,9 @@ function TranscriptMessage({
     content: message.content,
     accepted: visualCompanionAccepted,
   });
+  const structuredContent = workflowPlannerSummary
+    ? <WorkflowPlannerSummaryView summary={workflowPlannerSummary} />
+    : riskApprovalPanel;
   return (
     <>
       <SessionMessageBubble
@@ -3168,10 +3232,11 @@ function TranscriptMessage({
         statusLabel={message.status === 'queued' || message.status === 'streaming' ? '思考中' : null}
         roleLabel={message.sender_name ?? message.sender_id}
         attachments={metadata.attachments}
-        displayMode={displayMode}
+        displayMode={workflowPlannerSummary ? 'preview' : displayMode}
         onDisplayModeChange={onDisplayModeChange}
         onOpenWorkspaceFile={onOpenWorkspaceFile}
-        structuredContent={riskApprovalPanel}
+        structuredContent={structuredContent}
+        hideDisplayModeSwitch={Boolean(workflowPlannerSummary)}
         actions={(
           <>
             <button
@@ -3218,6 +3283,119 @@ function TranscriptMessage({
       {imageJobId && <ImageJobStatusCard projectId={projectId} jobId={imageJobId} />}
     </>
   );
+}
+
+function WorkflowPlannerSummaryView({ summary }: { summary: WorkflowPlannerSummary }): JSX.Element {
+  const visibleAssignments = summary.assignments.slice(0, WORKFLOW_PLANNER_ASSIGNMENT_LIMIT);
+  const hiddenCount = Math.max(0, summary.assignments.length - visibleAssignments.length);
+  return (
+    <div className="deepsea-workflow-planner-summary" data-workflow-planner-summary="true">
+      <div className="deepsea-workflow-planner-summary__body">
+        {summary.goal ? (
+          <span className="deepsea-workflow-planner-summary__goal" title={summary.goal}>
+            {summary.goal}
+          </span>
+        ) : null}
+        <p>{summary.body}</p>
+      </div>
+      {visibleAssignments.length > 0 ? (
+        <section className="deepsea-workflow-planner-summary__assignments" aria-label="任务分配">
+          <header>
+            <strong>任务分配</strong>
+            <span>{summary.assignments.length} 项</span>
+          </header>
+          <div>
+            {visibleAssignments.map((assignment, index) => (
+              <article className="deepsea-workflow-planner-assignment" key={`${assignment.title}:${index}`}>
+                <span className="deepsea-workflow-planner-assignment__index" aria-hidden="true">
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                <div className="deepsea-workflow-planner-assignment__main">
+                  <strong title={assignment.title}>{assignment.title}</strong>
+                  <span>{formatWorkflowPlannerAssignmentMeta(assignment)}</span>
+                  {assignment.intent ? <p title={assignment.intent}>{assignment.intent}</p> : null}
+                </div>
+              </article>
+            ))}
+            {hiddenCount > 0 ? (
+              <div className="deepsea-workflow-planner-summary__more">
+                另有 {hiddenCount} 项分配已收起
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function buildWorkflowPlannerSummary(
+  message: SessionMessage,
+  metadata: MessageMetadata,
+): WorkflowPlannerSummary | null {
+  if (message.role !== 'assistant') return null;
+  if (!metadata.workflow_run_id && !metadata.workflow_step_id) return null;
+  const payload = parseWorkflowPlannerJsonPayload(message.content);
+  if (!payload) return null;
+  const body = firstNonEmptyString(payload.summary, payload.reason, payload.analysis, payload.description);
+  const goal = firstNonEmptyString(payload.goal, payload.objective);
+  const assignments = parseWorkflowPlannerAssignments(payload.steps);
+  if (!body && !goal && assignments.length === 0) return null;
+  return {
+    goal,
+    body: body ?? goal ?? '已生成 workflow 任务结构。',
+    assignments,
+  };
+}
+
+function parseWorkflowPlannerJsonPayload(content: string): Record<string, unknown> | null {
+  const normalized = stripMarkdownJsonFence(content.trim());
+  if (!normalized.startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(normalized) as unknown;
+    return isWorkflowPlannerRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function stripMarkdownJsonFence(content: string): string {
+  const match = content.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return (match?.[1] ?? content).trim();
+}
+
+function isWorkflowPlannerRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function firstNonEmptyString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
+function parseWorkflowPlannerAssignments(value: unknown): WorkflowPlannerAssignment[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item): WorkflowPlannerAssignment | null => {
+      if (!isWorkflowPlannerRecord(item)) return null;
+      const title = firstNonEmptyString(item.title, item.name, item.task);
+      if (!title) return null;
+      return {
+        title,
+        role: firstNonEmptyString(item.assigneeRole, item.role, item.agentRole) ?? 'agent',
+        backend: firstNonEmptyString(item.preferredBackend, item.backend),
+        intent: firstNonEmptyString(item.intent, item.summary, item.description),
+      };
+    })
+    .filter((item): item is WorkflowPlannerAssignment => item !== null);
+}
+
+function formatWorkflowPlannerAssignmentMeta(assignment: WorkflowPlannerAssignment): string {
+  return [assignment.role, assignment.backend].filter(Boolean).join(' · ');
 }
 
 function buildAgentNamesById(
