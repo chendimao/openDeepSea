@@ -66,7 +66,7 @@ export function createSessionWorkflowIntake(input: SessionWorkflowIntakeInput) {
     project_id: input.project.id,
     task_id: task.id,
     status: 'running',
-    current_stage: 'planning',
+    current_stage: 'analysis',
     approval_required: true,
     graph_version: SUPERPOWERS_V2_GRAPH_VERSION,
     graph_state: serializeGraphState(intakeState),

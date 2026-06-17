@@ -2665,12 +2665,14 @@ type SourceTranscriptTimelineItem =
 
 function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[] {
   const sourceTimeline: SourceTranscriptTimelineItem[] = [
-    ...detail.messages.map((message) => ({
-      kind: 'message' as const,
-      key: `message:${message.id}`,
-      timestamp: message.created_at,
-      message,
-    })),
+    ...detail.messages
+      .filter((message) => !shouldSuppressWorkflowTranscriptMessage(message, detail))
+      .map((message) => ({
+        kind: 'message' as const,
+        key: `message:${message.id}`,
+        timestamp: message.created_at,
+        message,
+      })),
     ...detail.runs.map((run) => ({
       kind: 'run' as const,
       key: `run:${run.id}`,
@@ -2685,6 +2687,7 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
   const workflowStateItem = hasWorkflowTranscriptMessages ? null : buildWorkflowStateChatGroup(detail);
   const timeline: TranscriptTimelineItem[] = [];
   let pendingWorkflowMessages: SessionMessage[] = [];
+  let pendingWorkflowRunId: string | null = null;
 
   const flushWorkflowMessages = () => {
     if (pendingWorkflowMessages.length === 0) return;
@@ -2695,11 +2698,21 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
       group: buildWorkflowChatGroup(detail, pendingWorkflowMessages, { includeWorkflowState: false }),
     });
     pendingWorkflowMessages = [];
+    pendingWorkflowRunId = null;
   };
 
   for (const item of sourceTimeline) {
     if (item.kind === 'message' && isWorkflowTranscriptMessage(item.message)) {
+      const workflowRunId = getMessageWorkflowRunId(item.message);
+      if (pendingWorkflowRunId && workflowRunId && workflowRunId !== pendingWorkflowRunId) {
+        flushWorkflowMessages();
+      }
       pendingWorkflowMessages.push(item.message);
+      pendingWorkflowRunId = workflowRunId ?? pendingWorkflowRunId;
+      continue;
+    }
+    if (item.kind === 'message' && shouldKeepWorkflowTranscriptGroupOpen(item.message, pendingWorkflowRunId)) {
+      timeline.push(item);
       continue;
     }
     flushWorkflowMessages();
@@ -2731,6 +2744,30 @@ function hasWorkflowState(detail: SessionDetail): boolean {
     (detail.workflowGates ?? []).length > 0 ||
     (detail.workflowAgentAssignments ?? []).length > 0
   );
+}
+
+function shouldSuppressWorkflowTranscriptMessage(message: SessionMessage, detail: SessionDetail): boolean {
+  const metadata = parseMessageMetadata(message.metadata);
+  if (metadata.event_type !== 'workflow_started' && metadata.event_type !== 'task_created') return false;
+  const workflowRunId = metadata.workflow_run_id ?? detail.workflowController?.workflow_run_id ?? null;
+  if (!workflowRunId) return false;
+  return detail.messages.some((candidate) => {
+    if (candidate.id === message.id || candidate.created_at <= message.created_at) return false;
+    const candidateMetadata = parseMessageMetadata(candidate.metadata);
+    if (candidateMetadata.workflow_run_id && candidateMetadata.workflow_run_id !== workflowRunId) return false;
+    if (isWorkflowTranscriptMessage(candidate)) return true;
+    return candidate.role === 'assistant' && Boolean(candidateMetadata.workflow_run_id || candidateMetadata.workflow_step_id);
+  });
+}
+
+function shouldKeepWorkflowTranscriptGroupOpen(message: SessionMessage, workflowRunId: string | null): boolean {
+  if (!workflowRunId || message.role !== 'assistant') return false;
+  const metadata = parseMessageMetadata(message.metadata);
+  return metadata.workflow_run_id === workflowRunId || (!metadata.workflow_run_id && metadata.workflow_step_id !== undefined);
+}
+
+function getMessageWorkflowRunId(message: SessionMessage): string | null {
+  return parseMessageMetadata(message.metadata).workflow_run_id ?? null;
 }
 
 function buildWorkflowStateChatGroup(detail: SessionDetail): TranscriptTimelineItem | null {
@@ -2784,8 +2821,8 @@ function isWorkflowTranscriptMessage(message: SessionMessage): boolean {
   const sender = `${message.sender_id} ${message.sender_name ?? ''}`.toLowerCase();
   if (sender.includes('workflow') || sender.includes('工作流')) return true;
   const metadata = parseMessageMetadata(message.metadata);
-  if (metadata.workflow_run_id || metadata.workflow_step_id) return true;
   if (metadata.event_type?.startsWith('workflow_') || metadata.event_type?.startsWith('workflow-')) return true;
+  if ((metadata.workflow_run_id || metadata.workflow_step_id) && message.role !== 'assistant') return true;
   const text = message.content.trim();
   return /^(子任务|产品经理检测|诊断：|决策：|恢复次数：|已决定恢复执行|等待用户确认|当前 workflow|已进入 Superpowers 工作流)/.test(text);
 }

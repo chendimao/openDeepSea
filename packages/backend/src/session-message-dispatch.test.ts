@@ -325,9 +325,12 @@ test('dispatchSessionUserMessage starts graph workflow for approved fullstack se
     () => {
       const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
       const runs = workflowTasks.flatMap((task) => workflowRepo.listByTask(task.id));
-      return runs.some((run) =>
-        run.status === 'blocked' && /approved spec artifact/i.test(run.error ?? '')
-      );
+      return runs.some((run) => {
+        const state = parseGraphState(run.graph_state);
+        return run.status === 'awaiting_approval' &&
+          Boolean(state?.draftSpecArtifactVersionId) &&
+          !state?.draftPlanArtifactVersionId;
+      });
     },
     1000,
     () => {
@@ -341,15 +344,19 @@ test('dispatchSessionUserMessage starts graph workflow for approved fullstack se
     },
   );
   const workflowTasksAfterGate = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
-  const [blockedRun] = workflowTasksAfterGate.flatMap((task) => workflowRepo.listByTask(task.id));
-  assert.ok(blockedRun);
-  const stateAtSpecGate = parseGraphState(blockedRun.graph_state);
+  const [specGateRun] = workflowTasksAfterGate.flatMap((task) => workflowRepo.listByTask(task.id));
+  assert.ok(specGateRun);
+  assert.equal(specGateRun.status, 'awaiting_approval');
+  assert.equal(specGateRun.error, null);
+  const stateAtSpecGate = parseGraphState(specGateRun.graph_state);
   assert.ok(stateAtSpecGate?.draftSpecArtifactVersionId);
   assert.equal(stateAtSpecGate?.draftPlanArtifactVersionId, null);
+  assert.equal(stateAtSpecGate?.error, 'Waiting for approved spec artifact version');
   assert.equal(workflowArtifactVersionRepo.get(stateAtSpecGate.draftSpecArtifactVersionId)?.artifact_type, 'spec');
 
   assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
-  assert.equal(workflowAgentCalls.every((call) => call.stage === 'planning'), true);
+  assert.equal(workflowAgentCalls.some((call) => call.stage === 'analysis'), true);
+  assert.equal(workflowAgentCalls.some((call) => call.stage === 'planning'), true);
 
   const workflowTasks = taskRepo.listByProject(project.id).filter((task) => task.source_message_id === taskMessage.id);
   assert.equal(workflowTasks.length, 1);
@@ -1035,7 +1042,7 @@ test('dispatchSessionUserMessage records low-risk Superpowers intake workflow im
   assert.ok(workflowMessage);
   assert.equal(workflowMessage.message_type, 'system');
   assert.match(workflowMessage.content, /已进入 Superpowers 工作流/);
-  assert.match(workflowMessage.content, /当前阶段：planning/);
+  assert.match(workflowMessage.content, /当前阶段：analysis/);
 
   const workflowMessageMetadata = JSON.parse(workflowMessage.metadata ?? '{}') as {
     session_workflow?: {
@@ -2574,7 +2581,7 @@ function assertSuperpowersIntakeForMessage(input: {
   };
   assert.equal(snapshot.builtinKey, 'superpowers-development');
   assert.equal(snapshot.definition?.metadata?.runtime_profile, 'superpowers');
-  assert.equal(workflowRuns[0]?.current_stage, 'planning');
+  assert.equal(workflowRuns[0]?.current_stage, 'analysis');
   assert.equal(parseGraphState(workflowRuns[0]?.graph_state ?? null)?.activeSuperpowersStage, 'intake');
   assert.equal(
     taskEventRepo.listByTask(workflowTasks[0]!.id).filter((event) => event.type === 'workflow_started').length,

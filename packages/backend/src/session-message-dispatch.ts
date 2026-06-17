@@ -1124,10 +1124,27 @@ function delay(ms: number): Promise<void> {
 
 function shouldAutoApproveWorkflowRun(run: WorkflowRun, approval: SessionApprovalMetadata): boolean {
   if (run.status !== 'awaiting_approval') return false;
+  if (!isWorkflowPlanApprovalGate(run)) return false;
   const workflowRiskLevel = getWorkflowRunHighestRiskLevel(run);
   if (!workflowRiskLevel) return approval.riskAssessment.riskLevel !== 'high';
   if (workflowRiskLevel === 'high') return false;
   return compareRiskLevel(workflowRiskLevel, approval.riskAssessment.riskLevel) <= 0;
+}
+
+function isWorkflowPlanApprovalGate(run: WorkflowRun): boolean {
+  try {
+    const state = parseGraphState(run.graph_state);
+    if (!state) return true;
+    if (state.draftSpecArtifactVersionId && !state.approvedSpecArtifactVersionId) return false;
+    if (state.draftPlanArtifactVersionId && !state.approvedPlanArtifactVersionId) return true;
+    return Boolean(state.plan);
+  } catch {
+    const rawState = parseUnknownJson(run.graph_state);
+    if (!isRecord(rawState)) return true;
+    if (rawState.draftSpecArtifactVersionId && !rawState.approvedSpecArtifactVersionId) return false;
+    if (rawState.draftPlanArtifactVersionId && !rawState.approvedPlanArtifactVersionId) return true;
+    return Boolean(rawState.plan);
+  }
 }
 
 function getWorkflowRunHighestRiskLevel(run: WorkflowRun): TaskRiskAssessment['riskLevel'] | null {
