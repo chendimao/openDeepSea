@@ -436,6 +436,7 @@ function buildWorkflowControllerView(runs: WorkflowRun[]): WorkflowControllerVie
   const blocker = state?.error ?? run.error ?? null;
   return {
     workflow_run_id: run.id,
+    status: run.status,
     selected_intent: state?.selectedIntent ?? null,
     active_stage: activeStage,
     controller: inferWorkflowController(state?.currentNode ?? null, activeStage, run.status),

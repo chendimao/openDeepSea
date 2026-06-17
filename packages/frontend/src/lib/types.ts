@@ -902,6 +902,7 @@ export type SuperpowersSelectedIntent =
 
 export interface WorkflowControllerView {
   workflow_run_id: string;
+  status: WorkflowStatus;
   selected_intent: SuperpowersSelectedIntent | null;
   active_stage: string | null;
   controller: 'planner' | 'worker' | 'reviewer' | 'verifier' | 'user' | null;

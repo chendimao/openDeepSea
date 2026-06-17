@@ -1,4 +1,11 @@
-import type { AcpBackend, AcpPermissionMode, Project, WorkflowArtifactVersionStatus, WorkflowArtifactVersionType } from './types.js';
+import type {
+  AcpBackend,
+  AcpPermissionMode,
+  Project,
+  WorkflowArtifactVersionStatus,
+  WorkflowArtifactVersionType,
+  WorkflowStatus,
+} from './types.js';
 
 export type SessionMode = 'ask' | 'plan' | 'code' | 'debug' | 'review';
 export type SessionPhase =
@@ -342,6 +349,7 @@ export type SuperpowersSelectedIntent =
 
 export interface WorkflowControllerView {
   workflow_run_id: string;
+  status: WorkflowStatus;
   selected_intent: SuperpowersSelectedIntent | null;
   active_stage: string | null;
   controller: 'planner' | 'worker' | 'reviewer' | 'verifier' | 'user' | null;

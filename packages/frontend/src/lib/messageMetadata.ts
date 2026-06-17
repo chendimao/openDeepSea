@@ -326,6 +326,26 @@ function sanitizeReply(value: unknown): MessageReplyMetadata | null {
 }
 
 function sanitizeTaskEventMetadata(value: Record<string, unknown>) {
+  const sessionWorkflow = isRecord(value.session_workflow) ? value.session_workflow : null;
+  const sessionWorkflowBridge = isRecord(value.session_workflow_bridge) ? value.session_workflow_bridge : null;
+  const workflowRunId = firstNonEmptyString(
+    value.workflow_run_id,
+    sessionWorkflow?.workflowRunId,
+    sessionWorkflowBridge?.workflowRunId,
+    sessionWorkflow?.workflow_run_id,
+    sessionWorkflowBridge?.workflow_run_id,
+  );
+  const workflowStepId = firstNonEmptyString(
+    value.workflow_step_id,
+    sessionWorkflow?.workflowStepId,
+    sessionWorkflowBridge?.workflowStepId,
+    sessionWorkflow?.workflow_step_id,
+    sessionWorkflowBridge?.workflow_step_id,
+  );
+  const sourceMessageId = firstNonEmptyString(
+    sessionWorkflow?.sourceMessageId,
+    sessionWorkflowBridge?.sourceMessageId,
+  );
   const eventType = typeof value.event_type === 'string' && isTaskEventType(value.event_type)
     ? value.event_type
     : undefined;
@@ -336,8 +356,8 @@ function sanitizeTaskEventMetadata(value: Record<string, unknown>) {
     task_id: typeof value.task_id === 'string' ? value.task_id : undefined,
     task_title: typeof value.task_title === 'string' ? value.task_title : undefined,
     message_id: typeof value.message_id === 'string' ? value.message_id : undefined,
-    workflow_run_id: typeof value.workflow_run_id === 'string' ? value.workflow_run_id : undefined,
-    workflow_step_id: typeof value.workflow_step_id === 'string' ? value.workflow_step_id : undefined,
+    workflow_run_id: workflowRunId,
+    workflow_step_id: workflowStepId,
     agent_run_id: typeof value.agent_run_id === 'string' ? value.agent_run_id : undefined,
     event_type: eventType,
     origin,
@@ -357,8 +377,20 @@ function sanitizeTaskEventMetadata(value: Record<string, unknown>) {
   if (isRecord(value.agent_event)) {
     metadata.agent_event = value.agent_event as unknown as MessageMetadata['agent_event'];
   }
+  if (sourceMessageId) {
+    metadata.source_message_id = sourceMessageId;
+  }
 
   return metadata;
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
 }
 
 function sanitizeCollaborationDecisionMetadata(value: Record<string, unknown>) {

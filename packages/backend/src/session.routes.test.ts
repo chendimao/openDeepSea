@@ -562,6 +562,7 @@ test('session workspace payload exposes workflow controller and agent assignment
   const payload = buildWorkspacePayload(project, session);
 
   assert.equal(payload.activeSession.workflowController?.workflow_run_id, workflow.id);
+  assert.equal(payload.activeSession.workflowController?.status, 'running');
   assert.equal(payload.activeSession.workflowController?.selected_intent, 'standard_development');
   assert.equal(payload.activeSession.workflowController?.active_stage, 'agent_assignment');
   assert.equal(payload.activeSession.workflowController?.controller, 'planner');
@@ -577,6 +578,76 @@ test('session workspace payload exposes workflow controller and agent assignment
     execution_mode: 'parallel',
     scope_write: ['packages/backend/src/session.routes.ts'],
   }]);
+});
+
+test('session workspace payload exposes completed workflow status', () => {
+  const project = projectRepo.create({
+    name: 'completed workflow controller project',
+    path: mkdtempSync(join(tmpdir(), 'completed-workflow-controller-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Completed workflow room' });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Completed workflow session',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const sourceMessage = sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: 'User',
+    content: '这个项目是什么？',
+    message_type: 'text',
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: sourceMessage.content,
+    priority: 'normal',
+    source_message_id: sourceMessage.id,
+    created_from: 'chat_plan',
+  });
+  const initialState = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: sourceMessage.content,
+    projectPath: project.path,
+  });
+  const workflow = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'completed',
+    current_stage: 'acceptance',
+    approval_required: false,
+    graph_version: 'superpowers-v2',
+    graph_state: serializeGraphState({
+      ...initialState,
+      workflowRunId: 'pending',
+      currentNode: 'answer',
+      selectedIntent: 'answer',
+      activeSuperpowersStage: 'answer',
+    }),
+  });
+  workflowRepo.updateGraphState(workflow.id, serializeGraphState({
+    ...initialState,
+    workflowRunId: workflow.id,
+    currentNode: 'answer',
+    selectedIntent: 'answer',
+    activeSuperpowersStage: 'answer',
+  }));
+
+  const payload = buildWorkspacePayload(project, session);
+
+  assert.equal(payload.activeSession.workflowController?.workflow_run_id, workflow.id);
+  assert.equal(payload.activeSession.workflowController?.status, 'completed');
+  assert.equal(payload.activeSession.workflowController?.selected_intent, 'answer');
+  assert.equal(payload.activeSession.workflowController?.active_stage, 'answer');
+  assert.equal(payload.activeSession.workflowController?.controller, 'planner');
 });
 
 test('session workflow artifact approve endpoint approves linked artifact and updates graph state', async () => {

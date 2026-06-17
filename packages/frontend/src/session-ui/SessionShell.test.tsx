@@ -268,6 +268,7 @@ test('SessionShell renders workflow chat message with gate and agent summaries',
   const payload = createPayload();
   payload.activeSession.workflowController = {
     workflow_run_id: 'workflow-run-1',
+    status: 'running',
     selected_intent: 'standard_development',
     active_stage: 'planning',
     controller: 'planner',
@@ -415,6 +416,7 @@ test('SessionShell renders workflow as a transcript message instead of a top mis
   const payload = createPayload();
   payload.activeSession.workflowController = {
     workflow_run_id: 'workflow-run-chat-1',
+    status: 'awaiting_approval',
     selected_intent: 'standard_development',
     active_stage: 'planning',
     controller: 'planner',
@@ -519,6 +521,7 @@ test('SessionShell only attaches live workflow state to the latest workflow chat
   payload.activeSession.runs = [];
   payload.activeSession.workflowController = {
     workflow_run_id: 'workflow-run-current',
+    status: 'blocked',
     selected_intent: 'standard_development',
     active_stage: 'agent_assignment',
     controller: 'worker',
@@ -676,6 +679,7 @@ test('SessionShell renders workflow planner analysis as assistant chat content',
   payload.activeSession.agentEvents = [];
   payload.activeSession.workflowController = {
     workflow_run_id: 'workflow-run-analysis',
+    status: 'awaiting_approval',
     selected_intent: 'standard_development',
     active_stage: 'brainstorming',
     controller: 'user',
@@ -749,6 +753,7 @@ test('SessionShell summarizes workflow planner JSON as reply text and assignment
   payload.activeSession.agentEvents = [];
   payload.activeSession.workflowController = {
     workflow_run_id: 'workflow-run-json-summary',
+    status: 'awaiting_approval',
     selected_intent: 'standard_development',
     active_stage: 'brainstorming',
     controller: 'user',
@@ -853,6 +858,296 @@ test('SessionShell summarizes workflow planner JSON as reply text and assignment
   assert.doesNotMatch(plannerSummaryHtml, /结构化json/);
 });
 
+test('SessionShell hides workflow routing json helper messages from transcript bubbles', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  payload.activeSession.runs = [];
+  payload.activeSession.agentEvents = [];
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-answer',
+    status: 'completed',
+    selected_intent: 'answer',
+    active_stage: 'answer',
+    controller: 'planner',
+    blocker: null,
+    next_action: null,
+  };
+  payload.activeSession.workflowArtifacts = [];
+  payload.activeSession.workflowGates = [];
+  payload.activeSession.workflowAgentAssignments = [];
+  payload.activeSession.messages = [
+    {
+      id: 'msg-user-answer',
+      session_id: payload.activeSession.session.id,
+      role: 'user',
+      sender_id: 'user',
+      sender_name: 'User',
+      content: '这个项目是什么？',
+      message_type: 'text',
+      status: 'completed',
+      metadata: null,
+      created_at: now,
+    },
+    {
+      id: 'msg-routing-json',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'planner',
+      sender_name: '规划师',
+      content: JSON.stringify({
+        intent: 'answer',
+        confidence: 0.92,
+        reason: '用户询问项目说明，只需要直接回答。',
+      }),
+      message_type: 'agent_stream',
+      status: 'completed',
+      metadata: JSON.stringify({
+        workflow_run_id: 'workflow-run-answer',
+        workflow_step_id: 'workflow-step-route',
+      }),
+      created_at: now + 1_000,
+    },
+    {
+      id: 'msg-answer-json',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'planner',
+      sender_name: '规划师',
+      content: JSON.stringify({
+        answer: '这是一个本地优先的多智能体开发协作项目。',
+      }),
+      message_type: 'agent_stream',
+      status: 'completed',
+      metadata: JSON.stringify({
+        workflow_run_id: 'workflow-run-answer',
+        workflow_step_id: 'workflow-step-answer',
+      }),
+      created_at: now + 2_000,
+    },
+    {
+      id: 'msg-final-answer',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'planner',
+      sender_name: '规划师',
+      content: '这是一个本地优先的多智能体开发协作项目，用来协调多个 ACP agent 完成开发任务。',
+      message_type: 'agent_stream',
+      status: 'completed',
+      metadata: JSON.stringify({
+        workflow_run_id: 'workflow-run-answer',
+        workflow_step_id: 'workflow-step-answer-final',
+      }),
+      created_at: now + 3_000,
+    },
+  ];
+
+  const html = renderSessionShell(payload);
+  const transcriptScrollIndex = html.indexOf('data-transcript-scroll="true"');
+  const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
+  const finalAnswerIndex = html.indexOf('这是一个本地优先的多智能体开发协作项目，用来协调多个 ACP agent');
+  const workflowCardHtml = html.slice(workflowMessageIndex, html.indexOf('deepsea-composer-anchor'));
+  const inspector = html.match(/<aside[^>]+aria-label="Session Inspector"[\s\S]*?<\/aside>/)?.[0] ?? '';
+
+  assert.equal((html.match(/data-workflow-chat-message="true"/g) ?? []).length, 1);
+  assert.ok(finalAnswerIndex > transcriptScrollIndex);
+  assert.ok(finalAnswerIndex < workflowMessageIndex);
+  assert.match(inspector, /data-state="idle"/);
+  assert.match(inspector, /已完成/);
+  assert.doesNotMatch(html, /用户询问项目说明，只需要直接回答/);
+  assert.doesNotMatch(html, /confidence/);
+  assert.doesNotMatch(html, /"answer"/);
+  assert.doesNotMatch(workflowCardHtml, /这是一个本地优先的多智能体开发协作项目，用来协调多个 ACP agent/);
+});
+
+test('SessionShell hides mixed workflow answer helper blocks when final answer exists', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  payload.activeSession.runs = [];
+  payload.activeSession.agentEvents = [];
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-answer-mixed',
+    status: 'completed',
+    selected_intent: 'answer',
+    active_stage: 'answer',
+    controller: 'planner',
+    blocker: null,
+    next_action: null,
+  };
+  payload.activeSession.workflowArtifacts = [];
+  payload.activeSession.workflowGates = [];
+  payload.activeSession.workflowAgentAssignments = [];
+  payload.activeSession.messages = [
+    {
+      id: 'msg-user-answer-mixed',
+      session_id: payload.activeSession.session.id,
+      role: 'user',
+      sender_id: 'user',
+      sender_name: 'User',
+      content: '这个项目是什么？',
+      message_type: 'text',
+      status: 'completed',
+      metadata: null,
+      created_at: now,
+    },
+    {
+      id: 'msg-route-mixed',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'planner',
+      sender_name: '规划师',
+      content: [
+        '我先判断这是一个只读项目理解问题。',
+        '```json',
+        '{',
+        '  "intent": "answer",',
+        '  "confidence": 0.92,',
+        '  "reason": "用户只询问项目说明，不涉及修改。"',
+        '}',
+        '```',
+      ].join('\n'),
+      message_type: 'agent_stream',
+      status: 'completed',
+      metadata: JSON.stringify({
+        workflow_run_id: 'workflow-run-answer-mixed',
+        workflow_step_id: 'workflow-step-route-mixed',
+      }),
+      created_at: now + 1_000,
+    },
+    {
+      id: 'msg-answer-mixed',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'planner',
+      sender_name: '规划师',
+      content: [
+        '我在核实可读资料。',
+        '```json',
+        '{',
+        '  "answer": "这是一个本地优先的多智能体开发协作项目。",',
+        '  "intent": "answer",',
+        '  "confidence": 0.92',
+        '}',
+        '```',
+      ].join('\n'),
+      message_type: 'agent_stream',
+      status: 'completed',
+      metadata: JSON.stringify({
+        workflow_run_id: 'workflow-run-answer-mixed',
+        workflow_step_id: 'workflow-step-answer-mixed',
+      }),
+      created_at: now + 2_000,
+    },
+    {
+      id: 'msg-final-answer-mixed',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'planner',
+      sender_name: '规划师',
+      content: '这是一个本地优先的多智能体开发协作项目，用来协调多个 ACP agent 完成开发任务。',
+      message_type: 'agent_stream',
+      status: 'completed',
+      metadata: JSON.stringify({
+        workflow_run_id: 'workflow-run-answer-mixed',
+        workflow_step_id: 'workflow-step-final-answer-mixed',
+      }),
+      created_at: now + 3_000,
+    },
+  ];
+
+  const html = renderSessionShell(payload);
+  const transcriptScrollIndex = html.indexOf('data-transcript-scroll="true"');
+  const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
+  const finalAnswerIndex = html.indexOf('这是一个本地优先的多智能体开发协作项目，用来协调多个 ACP agent');
+
+  assert.ok(workflowMessageIndex > transcriptScrollIndex);
+  assert.ok(finalAnswerIndex > transcriptScrollIndex);
+  assert.ok(finalAnswerIndex < workflowMessageIndex);
+  assert.doesNotMatch(html, /我先判断这是一个只读项目理解问题。/);
+  assert.doesNotMatch(html, /我在核实可读资料。/);
+  assert.doesNotMatch(html, /confidence/);
+  assert.doesNotMatch(html, /"intent"/);
+  assert.doesNotMatch(html, /"answer"/);
+  assert.doesNotMatch(html, /Markdown 显示模式/);
+});
+
+test('SessionShell keeps workflow group open when workflow run id is nested in session metadata', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  payload.activeSession.runs = [];
+  payload.activeSession.agentEvents = [];
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-nested',
+    status: 'completed',
+    selected_intent: 'answer',
+    active_stage: 'answer',
+    controller: 'planner',
+    blocker: null,
+    next_action: null,
+  };
+  payload.activeSession.workflowArtifacts = [];
+  payload.activeSession.workflowGates = [];
+  payload.activeSession.workflowAgentAssignments = [];
+  payload.activeSession.messages = [
+    {
+      id: 'msg-user-nested',
+      session_id: payload.activeSession.session.id,
+      role: 'user',
+      sender_id: 'user',
+      sender_name: 'User',
+      content: '这个项目是什么？',
+      message_type: 'text',
+      status: 'completed',
+      metadata: null,
+      created_at: now,
+    },
+    {
+      id: 'msg-nested-workflow-started',
+      session_id: payload.activeSession.session.id,
+      role: 'system',
+      sender_id: 'workflow',
+      sender_name: '工作流',
+      content: '已进入 Superpowers 工作流：这个项目是什么？\n当前阶段：analysis\n执行方式：workflow_graph',
+      message_type: 'system',
+      status: 'completed',
+      metadata: JSON.stringify({
+        session_workflow: {
+          workflowRunId: 'workflow-run-nested',
+          sourceMessageId: 'msg-user-nested',
+        },
+      }),
+      created_at: now + 1_000,
+    },
+    {
+      id: 'msg-nested-answer',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'planner',
+      sender_name: '规划师',
+      content: '这是一个本地优先的多智能体开发协作项目。',
+      message_type: 'text',
+      status: 'completed',
+      metadata: JSON.stringify({
+        workflow_run_id: 'workflow-run-nested',
+        workflow_step_id: 'workflow-step-answer-nested',
+        event_type: 'workflow_answer',
+        source_message_id: 'msg-user-nested',
+      }),
+      created_at: now + 2_000,
+    },
+  ];
+
+  const html = renderSessionShell(payload);
+  const transcriptScrollIndex = html.indexOf('data-transcript-scroll="true"');
+  const finalAnswerIndex = html.indexOf('这是一个本地优先的多智能体开发协作项目。');
+  const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
+
+  assert.equal((html.match(/data-workflow-chat-message="true"/g) ?? []).length, 1);
+  assert.ok(finalAnswerIndex > transcriptScrollIndex);
+  assert.ok(finalAnswerIndex < workflowMessageIndex);
+  assert.doesNotMatch(html, /已进入 Superpowers 工作流：这个项目是什么？/);
+  assert.match(html, /已完成/);
+});
+
 test('SessionShell keeps workflow chat layout compact by default', () => {
   assert.match(sessionOsCss, /\.deepsea-message,\s*\.deepsea-run-log\s*\{[^}]*width:\s*min\(100%,\s*600px\)/s);
   assert.match(sessionOsCss, /\.deepsea-message,\s*\.deepsea-run-log\s*\{[^}]*margin-right:\s*auto/s);
@@ -892,6 +1187,7 @@ test('SessionShell surfaces workflow approval action in the inspector', () => {
   const payload = createPayload();
   payload.activeSession.workflowController = {
     workflow_run_id: 'workflow-run-spec-1',
+    status: 'awaiting_approval',
     selected_intent: 'standard_development',
     active_stage: 'brainstorming',
     controller: 'planner',
@@ -940,6 +1236,7 @@ test('SessionShell surfaces running workflow progress in the inspector without a
   payload.activeSession.agentEvents = [];
   payload.activeSession.workflowController = {
     workflow_run_id: 'workflow-run-active-1',
+    status: 'running',
     selected_intent: 'standard_development',
     active_stage: 'implementation',
     controller: 'worker',
@@ -1001,6 +1298,7 @@ test('SessionShell renders workflow controller and agent assignment table', () =
   payload.activeSession.runs = [];
   payload.activeSession.workflowController = {
     workflow_run_id: 'workflow-1',
+    status: 'running',
     selected_intent: 'standard_development',
     active_stage: 'agent_assignment',
     controller: 'planner',

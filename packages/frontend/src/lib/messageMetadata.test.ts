@@ -383,6 +383,34 @@ test('parseMessageMetadata accepts workflow recovery decision task event', () =>
   assert.equal(parsed.event_type, 'workflow_recovery_decided');
 });
 
+test('parseMessageMetadata normalizes nested session workflow identifiers', () => {
+  const parsed = parseMessageMetadata(JSON.stringify({
+    session_workflow: {
+      workflowRunId: 'workflow-nested-1',
+      workflowStepId: 'step-nested-1',
+      sourceMessageId: 'message-nested-1',
+    },
+  }));
+
+  assert.equal(parsed.workflow_run_id, 'workflow-nested-1');
+  assert.equal(parsed.workflow_step_id, 'step-nested-1');
+  assert.equal(parsed.source_message_id, 'message-nested-1');
+});
+
+test('parseMessageMetadata normalizes nested workflow bridge identifiers', () => {
+  const parsed = parseMessageMetadata(JSON.stringify({
+    session_workflow_bridge: {
+      workflowRunId: 'workflow-bridge-1',
+      workflowStepId: 'step-bridge-1',
+      sourceMessageId: 'message-bridge-1',
+    },
+  }));
+
+  assert.equal(parsed.workflow_run_id, 'workflow-bridge-1');
+  assert.equal(parsed.workflow_step_id, 'step-bridge-1');
+  assert.equal(parsed.source_message_id, 'message-bridge-1');
+});
+
 test('parseMessageMetadata preserves workflow risk approval metadata', () => {
   const metadata = parseMessageMetadata(JSON.stringify({
     event_type: 'workflow_stage_changed',

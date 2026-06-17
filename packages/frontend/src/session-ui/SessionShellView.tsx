@@ -2735,17 +2735,19 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
   const timeline: TranscriptTimelineItem[] = [];
   let pendingWorkflowMessages: SessionMessage[] = [];
   let pendingWorkflowRunId: string | null = null;
+  let pendingWorkflowFlushTimestamp: number | null = null;
 
   const flushWorkflowMessages = () => {
     if (pendingWorkflowMessages.length === 0) return;
     timeline.push({
       kind: 'workflow-group',
       key: `workflow-group:${pendingWorkflowMessages.map((message) => message.id).join(':')}`,
-      timestamp: pendingWorkflowMessages[0]?.created_at ?? Date.now(),
+      timestamp: pendingWorkflowFlushTimestamp ?? pendingWorkflowMessages[0]?.created_at ?? Date.now(),
       group: buildWorkflowChatGroup(detail, pendingWorkflowMessages, { includeWorkflowState: false }),
     });
     pendingWorkflowMessages = [];
     pendingWorkflowRunId = null;
+    pendingWorkflowFlushTimestamp = null;
   };
 
   for (const item of sourceTimeline) {
@@ -2759,6 +2761,7 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
       continue;
     }
     if (item.kind === 'message' && shouldKeepWorkflowTranscriptGroupOpen(item.message, pendingWorkflowRunId)) {
+      pendingWorkflowFlushTimestamp = Math.max(pendingWorkflowFlushTimestamp ?? 0, item.timestamp + 0.1);
       timeline.push(item);
       continue;
     }
@@ -2795,6 +2798,7 @@ function hasWorkflowState(detail: SessionDetail): boolean {
 
 function shouldSuppressWorkflowTranscriptMessage(message: SessionMessage, detail: SessionDetail): boolean {
   const metadata = parseMessageMetadata(message.metadata);
+  if (isWorkflowStructuredHelperMessage(message, metadata)) return true;
   if (metadata.event_type !== 'workflow_started' && metadata.event_type !== 'task_created') return false;
   const workflowRunId = metadata.workflow_run_id ?? detail.workflowController?.workflow_run_id ?? null;
   if (!workflowRunId) return false;
@@ -2874,8 +2878,23 @@ function isWorkflowTranscriptMessage(message: SessionMessage): boolean {
   return /^(子任务|产品经理检测|诊断：|决策：|恢复次数：|已决定恢复执行|等待用户确认|当前 workflow|已进入 Superpowers 工作流)/.test(text);
 }
 
+function isWorkflowStructuredHelperMessage(message: SessionMessage, metadata: MessageMetadata): boolean {
+  if (message.role !== 'assistant') return false;
+  if (!metadata.workflow_run_id && !metadata.workflow_step_id) return false;
+  const payload = parseWorkflowPlannerJsonPayload(message.content);
+  if (!payload) return false;
+  if (parseWorkflowPlannerAssignments(payload.steps).length > 0) return false;
+  if (typeof payload.answer === 'string') return true;
+  return typeof payload.intent === 'string' ||
+    typeof payload.selected_intent === 'string' ||
+    typeof payload.confidence === 'number' ||
+    typeof payload.reason === 'string';
+}
+
 function getWorkflowChatStatus(group: WorkflowChatGroup): 'pending' | 'active' | 'blocked' | 'done' {
   if (group.controller?.blocker) return 'blocked';
+  if (group.controller?.status === 'completed') return 'done';
+  if (group.controller?.status === 'failed' || group.controller?.status === 'cancelled') return 'blocked';
   if (group.gates.some((gate) => gate.status === 'pending')) return 'active';
   if (!hasWorkflowChatState(group) && group.messages.length > 0) return inferWorkflowEventGroupStatus(group.messages);
   if (group.messages.length > 0) return 'done';
@@ -3349,19 +3368,22 @@ function buildWorkflowPlannerSummary(
 }
 
 function parseWorkflowPlannerJsonPayload(content: string): Record<string, unknown> | null {
-  const normalized = stripMarkdownJsonFence(content.trim());
-  if (!normalized.startsWith('{')) return null;
-  try {
-    const parsed = JSON.parse(normalized) as unknown;
-    return isWorkflowPlannerRecord(parsed) ? parsed : null;
-  } catch {
-    return null;
+  const normalized = content.trim();
+  const fenced = normalized.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const candidates = [
+    fenced?.[1]?.trim(),
+    normalized,
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  for (const candidate of candidates) {
+    if (!candidate.startsWith('{')) continue;
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (isWorkflowPlannerRecord(parsed)) return parsed;
+    } catch {
+      // Try next candidate.
+    }
   }
-}
-
-function stripMarkdownJsonFence(content: string): string {
-  const match = content.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return (match?.[1] ?? content).trim();
+  return null;
 }
 
 function isWorkflowPlannerRecord(value: unknown): value is Record<string, unknown> {
@@ -4462,10 +4484,24 @@ function getWorkflowInspectorStatus(
       tone: 'idle',
     };
   }
+  if (controller.status === 'completed') {
+    return {
+      label: '已完成',
+      description: controller.next_action ?? 'Workflow 已完成。',
+      tone: 'idle',
+    };
+  }
   if (controller.blocker) {
     return {
       label: '已阻塞',
       description: controller.next_action ?? controller.blocker,
+      tone: 'blocked',
+    };
+  }
+  if (controller.status === 'failed' || controller.status === 'cancelled') {
+    return {
+      label: controller.status === 'cancelled' ? '已取消' : '已失败',
+      description: controller.next_action ?? 'Workflow 已结束，需要查看运行记录确认原因。',
       tone: 'blocked',
     };
   }
