@@ -3307,15 +3307,135 @@
   min-width: 0;
   gap: 6px;
 }
-.deepsea-workflow-planner-summary__goal {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
+.deepsea-workflow-transcript-summary {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  white-space: normal;
+}
+.deepsea-workflow-transcript-summary__lead {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.deepsea-workflow-transcript-summary__lead strong {
   color: var(--deepsea-primary);
   font-size: 11px;
+  font-weight: 860;
+  line-height: 1.25;
+}
+.deepsea-workflow-transcript-summary__lead p {
+  margin: 0;
+  color: var(--deepsea-text);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: normal;
+}
+.deepsea-workflow-transcript-summary__event {
+  margin: 0;
+  color: var(--deepsea-muted);
+  font-family: var(--deepsea-mono);
+  font-size: 9px;
+  line-height: 1.4;
+}
+.deepsea-workflow-transcript-summary__assignments {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--deepsea-primary) 12%, var(--deepsea-border-subtle));
+  padding-top: 8px;
+}
+.deepsea-workflow-transcript-summary__assignments header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.deepsea-workflow-transcript-summary__assignments header strong {
+  color: var(--deepsea-text);
+  font-size: 11px;
+  font-weight: 860;
+  line-height: 1.2;
+}
+.deepsea-workflow-transcript-summary__assignments header span {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 16%, var(--deepsea-border-subtle));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--deepsea-primary) 6%, var(--deepsea-surface));
+  color: var(--deepsea-primary);
+  padding: 1px 6px;
+  font-family: var(--deepsea-mono);
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 13px;
+}
+.deepsea-workflow-transcript-summary__assignments > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+.deepsea-workflow-transcript-assignment {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 7px;
+  align-items: start;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-border-subtle));
+  border-radius: var(--deepsea-radius-lg);
+  background: color-mix(in srgb, var(--deepsea-surface) 96%, var(--deepsea-primary) 2%);
+  padding: 7px;
+}
+.deepsea-workflow-transcript-assignment__index {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--deepsea-primary);
+  color: #fff;
+  font-family: var(--deepsea-mono);
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1;
+}
+.deepsea-workflow-transcript-assignment__main {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.deepsea-workflow-transcript-assignment__main strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--deepsea-text);
+  font-size: 11px;
   font-weight: 850;
-  line-height: 16px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.deepsea-workflow-transcript-assignment__main span {
+  color: var(--deepsea-primary);
+  font-family: var(--deepsea-mono);
+  font-size: 9px;
+  font-weight: 850;
+  line-height: 13px;
+}
+.deepsea-workflow-transcript-assignment__main p {
+  margin: 0;
+  color: var(--deepsea-muted);
+  font-size: 10px;
+  line-height: 15px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.deepsea-workflow-transcript-summary__more {
+  color: var(--deepsea-muted);
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 15px;
 }
 .deepsea-message-body .deepsea-workflow-planner-summary__body p {
   margin: 0;
@@ -3406,17 +3526,6 @@
   font-size: 9px;
   font-weight: 850;
   line-height: 13px;
-}
-.deepsea-message-body .deepsea-workflow-planner-assignment__main p {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  margin: 0;
-  overflow: hidden;
-  color: var(--deepsea-muted);
-  font-size: 10px;
-  line-height: 15px;
-  white-space: normal;
 }
 .deepsea-workflow-planner-summary__more {
   color: var(--deepsea-muted);
@@ -5309,6 +5418,66 @@ button.deepsea-message-attachment {
 }
 .deepsea-run-log-body {
   width: 100%;
+}
+.deepsea-run-compact-body {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.deepsea-run-compact-body__summary {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 10%, var(--deepsea-border-subtle));
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.28);
+  padding: 7px 8px;
+}
+.deepsea-run-compact-body__summary .message-content,
+.deepsea-run-compact-body__summary .markdown-preview {
+  max-width: 100%;
+}
+.deepsea-run-compact-body__summary p,
+.deepsea-run-compact-body__summary .message-content {
+  margin: 0;
+  color: var(--deepsea-text);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.deepsea-run-compact-body__details {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-border-subtle));
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.deepsea-run-compact-body__details summary {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 5px;
+  color: var(--deepsea-primary);
+  padding: 0 8px;
+  font-size: 9px;
+  font-weight: 820;
+  cursor: pointer;
+  user-select: none;
+}
+.deepsea-run-compact-body__details summary::-webkit-details-marker {
+  display: none;
+}
+.deepsea-run-compact-body__details summary svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 160ms ease;
+}
+.deepsea-run-compact-body__details[open] summary svg {
+  transform: rotate(180deg);
+}
+.deepsea-run-compact-body__details[open] {
+  padding-bottom: 7px;
+}
+.deepsea-run-compact-body__details[open] .deepsea-run-timeline,
+.deepsea-run-compact-body__details[open] > .message-content {
+  border-top: 1px solid color-mix(in srgb, var(--deepsea-primary) 8%, var(--deepsea-border-subtle));
+  padding: 7px 8px 0;
 }
 .deepsea-run-event-rail__item[data-kind="error"] {
   border-color: color-mix(in srgb, var(--deepsea-danger) 45%, var(--deepsea-border-subtle));

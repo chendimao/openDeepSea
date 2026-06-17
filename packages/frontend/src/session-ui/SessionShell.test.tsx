@@ -799,7 +799,7 @@ test('SessionShell summarizes workflow planner JSON as reply text and assignment
         '{',
         '  "goal": "将项目移除流程从阻断 active runs 改为删除前自动停止该项目下所有会话的所有任务，然后继续移除项目。",',
         '  "workflowTemplate": "bugfix",',
-        '  "summary": "这是一个后端主导、前端提示可能受影响的行为修复。核心改动应放在项目删除 API/服务层。",',
+        '  "summary": "这是一个后端主导、前端提示可能受影响的行为修复。核心改动应放在项目删除 API/服务层。删除前统一停止 active runs，再执行既有项目删除清理。",',
         '  "assumptions": ["project has active runs 当前来自后端项目删除前置校验。"],',
         '  "steps": [',
         '    {',
@@ -838,24 +838,25 @@ test('SessionShell summarizes workflow planner JSON as reply text and assignment
   ];
 
   const html = renderSessionShell(payload);
-  const plannerMessageIndex = html.indexOf('data-workflow-planner-summary="true"');
   const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
-  const plannerSummaryHtml = html.slice(plannerMessageIndex, workflowMessageIndex);
+  const workflowMessageHtml = html.slice(workflowMessageIndex, html.indexOf('deepsea-composer-anchor'));
 
-  assert.ok(plannerMessageIndex >= 0);
-  assert.ok(workflowMessageIndex > plannerMessageIndex);
-  assert.match(plannerSummaryHtml, /这是一个后端主导、前端提示可能受影响的行为修复/);
-  assert.match(plannerSummaryHtml, /任务分配/);
-  assert.match(plannerSummaryHtml, /定位项目删除与 active runs 校验链路/);
-  assert.match(plannerSummaryHtml, /analyst · codex/);
-  assert.match(plannerSummaryHtml, /设计并实现删除前停止项目任务/);
-  assert.match(plannerSummaryHtml, /executor · codex/);
+  assert.ok(workflowMessageIndex >= 0);
+  assert.match(workflowMessageHtml, /这是一个后端主导、前端提示可能受影响的行为修复/);
+  assert.doesNotMatch(workflowMessageHtml, /删除前统一停止 active runs/);
+  assert.match(workflowMessageHtml, /任务分配/);
+  assert.match(workflowMessageHtml, /定位项目删除与 active runs 校验链路/);
+  assert.match(workflowMessageHtml, /analyst · codex/);
+  assert.match(workflowMessageHtml, /设计并实现删除前停止项目任务/);
+  assert.match(workflowMessageHtml, /executor · codex/);
+  assert.doesNotMatch(workflowMessageHtml, /阅读后端项目删除 API/);
+  assert.doesNotMatch(workflowMessageHtml, /在项目删除后端链路中加入自动停止步骤/);
   assert.doesNotMatch(html, /Markdown 显示模式/);
-  assert.doesNotMatch(plannerSummaryHtml, /scopeRead/);
-  assert.doesNotMatch(plannerSummaryHtml, /scopeWrite/);
-  assert.doesNotMatch(plannerSummaryHtml, /dependsOn/);
-  assert.doesNotMatch(plannerSummaryHtml, /workflowTemplate/);
-  assert.doesNotMatch(plannerSummaryHtml, /结构化json/);
+  assert.doesNotMatch(workflowMessageHtml, /scopeRead/);
+  assert.doesNotMatch(workflowMessageHtml, /scopeWrite/);
+  assert.doesNotMatch(workflowMessageHtml, /dependsOn/);
+  assert.doesNotMatch(workflowMessageHtml, /workflowTemplate/);
+  assert.doesNotMatch(workflowMessageHtml, /结构化json/);
 });
 
 test('SessionShell hides workflow routing json helper messages from transcript bubbles', () => {
@@ -1376,6 +1377,52 @@ test('SessionShell renders agent run as flow capsule with event rail', () => {
   assert.match(html, /输出已流入消息时间线/);
   assert.match(html, /implementing/);
   assert.match(html, /执行输出正文/);
+});
+
+test('SessionShell renders workflow agent runs in compact summary mode by default', () => {
+  const payload = createPayload();
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-compact',
+    status: 'running',
+    selected_intent: 'standard_development',
+    active_stage: 'implementation',
+    controller: 'planner',
+    blocker: null,
+    next_action: '继续执行当前任务。',
+  };
+  payload.activeSession.workflowAgentAssignments = [{
+    task_id: 'task-1',
+    task_title: '实现紧凑 run 视图',
+    role: 'executor',
+    assigned_agent_id: 'agent-codex',
+    assigned_agent_name: '全栈工程师',
+    backend: 'codex',
+    fallback_reason: null,
+    execution_mode: 'serial',
+    scope_write: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
+  }];
+  payload.activeSession.runs = [{
+    ...payload.activeSession.runs[0]!,
+    id: 'run-compact-1',
+    agent_id: 'agent-codex',
+    status: 'completed',
+    stdout: '我会先分析当前项目。最终结论：已完成。',
+    stderr: '',
+    activity_log: '',
+  }];
+  payload.activeSession.agentEvents = [
+    createAgentEvent({ id: 'compact-answer-1', seq: 1, channel: 'answer', event_type: 'agent_message_chunk', content: '我会先分析当前项目。' }),
+    createAgentEvent({ id: 'compact-answer-2', seq: 2, channel: 'answer', event_type: 'agent_message_chunk', content: '最终结论：已完成。' }),
+  ];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-run-flow-capsule="true"/);
+  assert.match(html, /data-compact="true"/);
+  assert.match(html, /data-run-compact-body="true"/);
+  assert.match(html, /查看 agent 过程详情/);
+  assert.match(html, /最终结论：已完成。/);
+  assert.doesNotMatch(html, /我会先分析当前项目。<\/p>/);
 });
 
 test('SessionShell keeps agent run body as a vertical chat message layout', () => {

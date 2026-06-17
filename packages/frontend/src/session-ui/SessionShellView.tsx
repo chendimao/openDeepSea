@@ -1533,6 +1533,7 @@ function TranscriptCanvas({
                 streaming={isRunLive(item.run.status)}
                 now={nowTick}
                 latestTranscriptRunId={latestTranscriptRunId}
+                compactByDefault={hasWorkflowState(detail)}
                 onRetryRun={onRetryRun}
                 onOpenWorkspaceFile={openWorkspaceFilePreview}
                 actions={(
@@ -1639,7 +1640,8 @@ function WorkflowChatMessage({
   onApprove?: (artifactVersionId: string) => void;
   onRequestChange: (artifact: WorkflowArtifactVersionView) => void;
 }): JSX.Element {
-  const summary = formatWorkflowChatSummary(group);
+  const plannerSummary = buildWorkflowChatPlannerSummary(group.messages);
+  const summary = plannerSummary?.body ?? formatWorkflowChatSummary(group);
   const status = getWorkflowChatStatus(group);
   const hasLiveWorkflowState = hasWorkflowChatState(group);
   const hasMergedEventState = !hasLiveWorkflowState && group.messages.length >= 2;
@@ -1664,19 +1666,24 @@ function WorkflowChatMessage({
         <strong>{formatWorkflowFlowStatus(status)}</strong>
       </header>
       <div className="deepsea-message-body deepsea-workflow-chat">
-        <div className="deepsea-workflow-chat__summary-row">
-          <p className="deepsea-workflow-chat__summary-text" title={summary}>{summary}</p>
-          {hasLiveWorkflowState ? (
-            <div className="deepsea-workflow-chat__badges" aria-label="Workflow 摘要">
-              <span>{formatWorkflowIntentLabel(group.controller?.selected_intent)}</span>
-              <span>{formatWorkflowStageLabel(group.controller?.active_stage)}</span>
-              <span>{formatPendingGateCount(group.gates)}</span>
-              <span>{group.assignments.length} agents</span>
-            </div>
-          ) : null}
-        </div>
+        {!plannerSummary ? (
+          <div className="deepsea-workflow-chat__summary-row">
+            <p className="deepsea-workflow-chat__summary-text" title={summary}>{summary}</p>
+            {hasLiveWorkflowState ? (
+              <div className="deepsea-workflow-chat__badges" aria-label="Workflow 摘要">
+                <span>{formatWorkflowIntentLabel(group.controller?.selected_intent)}</span>
+                <span>{formatWorkflowStageLabel(group.controller?.active_stage)}</span>
+                <span>{formatPendingGateCount(group.gates)}</span>
+                <span>{group.assignments.length} agents</span>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {plannerSummary ? (
+          <WorkflowPlannerSummaryView summary={plannerSummary} />
+        ) : null}
         {hasLiveWorkflowState ? (
-          <WorkflowLiveAssignmentSummary assignments={group.assignments} />
+          plannerSummary?.assignments.length ? null : <WorkflowLiveAssignmentSummary assignments={group.assignments} />
         ) : hasMergedEventState ? (
           <WorkflowMergedEventStateStream
             status={status}
@@ -1695,6 +1702,13 @@ function WorkflowChatMessage({
       </div>
     </article>
   );
+}
+
+function buildWorkflowChatPlannerSummary(messages: SessionMessage[]): WorkflowPlannerSummary | null {
+  const summaries = messages
+    .map((message) => buildWorkflowPlannerSummary(message, parseMessageMetadata(message.metadata)))
+    .filter((summary): summary is WorkflowPlannerSummary => summary !== null);
+  return summaries.find((summary) => summary.assignments.length > 0) ?? summaries.at(-1) ?? null;
 }
 
 function WorkflowLiveAssignmentSummary({
@@ -2873,9 +2887,28 @@ function isWorkflowTranscriptMessage(message: SessionMessage): boolean {
   if (sender.includes('workflow') || sender.includes('工作流')) return true;
   const metadata = parseMessageMetadata(message.metadata);
   if (metadata.event_type?.startsWith('workflow_') || metadata.event_type?.startsWith('workflow-')) return true;
-  if ((metadata.workflow_run_id || metadata.workflow_step_id) && message.role !== 'assistant') return true;
+  if (metadata.workflow_run_id || metadata.workflow_step_id) {
+    return message.role !== 'assistant' || isWorkflowAssistantProcessMessage(message, metadata);
+  }
   const text = message.content.trim();
   return /^(子任务|产品经理检测|诊断：|决策：|恢复次数：|已决定恢复执行|等待用户确认|当前 workflow|已进入 Superpowers 工作流)/.test(text);
+}
+
+function isWorkflowAssistantProcessMessage(message: SessionMessage, metadata: MessageMetadata): boolean {
+  const payload = parseWorkflowPlannerJsonPayload(message.content);
+  if (payload && parseWorkflowPlannerAssignments(payload.steps).length > 0) return true;
+  const sender = `${message.sender_id} ${message.sender_name ?? ''}`.toLowerCase();
+  const text = message.content.trim();
+  if (!text) return false;
+  if (sender.includes('执行者') || sender.includes('工程师') || sender.includes('executor') || sender.includes('reviewer')) {
+    return text.length > 120;
+  }
+  if (metadata.agent_run_id && /^(我会|我将|我先|先|接下来|当前|现在|准备|已看到|我已经|继续|测试|构建|补丁|工作区)/.test(text)) {
+    return true;
+  }
+  return metadata.agent_run_id !== undefined &&
+    text.length > 220 &&
+    /superpowers|test-driven-development|TDD|RED|GREEN|npm run|构建|验证|补丁|工作区/.test(text);
 }
 
 function isWorkflowStructuredHelperMessage(message: SessionMessage, metadata: MessageMetadata): boolean {
@@ -3310,11 +3343,6 @@ function WorkflowPlannerSummaryView({ summary }: { summary: WorkflowPlannerSumma
   return (
     <div className="deepsea-workflow-planner-summary" data-workflow-planner-summary="true">
       <div className="deepsea-workflow-planner-summary__body">
-        {summary.goal ? (
-          <span className="deepsea-workflow-planner-summary__goal" title={summary.goal}>
-            {summary.goal}
-          </span>
-        ) : null}
         <p>{summary.body}</p>
       </div>
       {visibleAssignments.length > 0 ? (
@@ -3332,7 +3360,6 @@ function WorkflowPlannerSummaryView({ summary }: { summary: WorkflowPlannerSumma
                 <div className="deepsea-workflow-planner-assignment__main">
                   <strong title={assignment.title}>{assignment.title}</strong>
                   <span>{formatWorkflowPlannerAssignmentMeta(assignment)}</span>
-                  {assignment.intent ? <p title={assignment.intent}>{assignment.intent}</p> : null}
                 </div>
               </article>
             ))}
@@ -3362,9 +3389,16 @@ function buildWorkflowPlannerSummary(
   if (!body && !goal && assignments.length === 0) return null;
   return {
     goal,
-    body: body ?? goal ?? '已生成 workflow 任务结构。',
+    body: compactWorkflowPlannerBody(body ?? goal ?? '已生成 workflow 任务结构。'),
     assignments,
   };
+}
+
+function compactWorkflowPlannerBody(body: string): string {
+  const normalized = body.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '已生成 workflow 任务结构。';
+  const firstSentence = normalized.match(/^.{18,}?[。！？.!?](?=\s|$|[^\d])/u)?.[0] ?? normalized;
+  return firstSentence.length > 140 ? `${firstSentence.slice(0, 140).trimEnd()}...` : firstSentence;
 }
 
 function parseWorkflowPlannerJsonPayload(content: string): Record<string, unknown> | null {
@@ -3410,10 +3444,18 @@ function parseWorkflowPlannerAssignments(value: unknown): WorkflowPlannerAssignm
         title,
         role: firstNonEmptyString(item.assigneeRole, item.role, item.agentRole) ?? 'agent',
         backend: firstNonEmptyString(item.preferredBackend, item.backend),
-        intent: firstNonEmptyString(item.intent, item.summary, item.description),
+        intent: compactWorkflowPlannerAssignmentIntent(firstNonEmptyString(item.intent, item.summary, item.description)),
       };
     })
     .filter((item): item is WorkflowPlannerAssignment => item !== null);
+}
+
+function compactWorkflowPlannerAssignmentIntent(intent: string | null): string | null {
+  if (!intent) return null;
+  const normalized = intent.replace(/\s+/g, ' ').trim();
+  if (!normalized) return null;
+  const firstSentence = normalized.match(/^.{14,}?[。！？.!?](?=\s|$|[^\d])/u)?.[0] ?? normalized;
+  return firstSentence.length > 84 ? `${firstSentence.slice(0, 84).trimEnd()}...` : firstSentence;
 }
 
 function formatWorkflowPlannerAssignmentMeta(assignment: WorkflowPlannerAssignment): string {
@@ -3475,6 +3517,7 @@ function RunFlowCapsule({
   streaming,
   now,
   latestTranscriptRunId,
+  compactByDefault,
   onRetryRun,
   onOpenWorkspaceFile,
   actions,
@@ -3489,13 +3532,20 @@ function RunFlowCapsule({
   streaming: boolean;
   now: number;
   latestTranscriptRunId: string | null;
+  compactByDefault: boolean;
   onRetryRun?: (runId: string) => void;
   onOpenWorkspaceFile?: WorkspaceFileOpenHandler;
   actions: ReactNode;
 }): JSX.Element {
   const railItems = buildRunEventRailItems(runAgentEvents);
+  const compactSummary = buildRunCompactSummary(runAgentEvents, output);
   return (
-    <section className="deepsea-run-log deepsea-run-capsule" data-run-flow-capsule="true" aria-label={`${runLabel} 执行流`}>
+    <section
+      className="deepsea-run-log deepsea-run-capsule"
+      data-run-flow-capsule="true"
+      data-compact={compactByDefault ? 'true' : 'false'}
+      aria-label={`${runLabel} 执行流`}
+    >
       <header className="deepsea-run-capsule__header">
         <div className="deepsea-run-capsule__identity">
           <span className="deepsea-run-capsule__avatar" aria-hidden="true">{formatRunAvatarLabel(runLabel)}</span>
@@ -3539,7 +3589,16 @@ function RunFlowCapsule({
       <div className="deepsea-run-capsule__body">
         <RunEventRail items={railItems} />
         <div className="deepsea-run-log-body">
-          {displayMode === 'source' ? (
+          {compactByDefault ? (
+            <CompactRunBody
+              summary={compactSummary}
+              output={output}
+              displayMode={displayMode}
+              streaming={streaming}
+              events={runAgentEvents}
+              onOpenWorkspaceFile={onOpenWorkspaceFile}
+            />
+          ) : displayMode === 'source' ? (
             <MessageContent content={output} mode={displayMode} suppressTraceEvents />
           ) : (
             <SessionRunTimeline
@@ -3553,6 +3612,52 @@ function RunFlowCapsule({
       </div>
       <GeneratedImageEvidencePanel evidence={runEvidence} />
     </section>
+  );
+}
+
+function CompactRunBody({
+  summary,
+  output,
+  displayMode,
+  streaming,
+  events,
+  onOpenWorkspaceFile,
+}: {
+  summary: string;
+  output: string;
+  displayMode: SessionMessageDisplayMode;
+  streaming: boolean;
+  events: SessionAgentEvent[];
+  onOpenWorkspaceFile?: WorkspaceFileOpenHandler;
+}): JSX.Element {
+  return (
+    <div className="deepsea-run-compact-body" data-run-compact-body="true">
+      <div className="deepsea-run-compact-body__summary">
+        <MessageContent
+          content={summary}
+          mode="preview"
+          streaming={streaming}
+          suppressTraceEvents
+          onOpenWorkspaceFile={onOpenWorkspaceFile}
+        />
+      </div>
+      <details className="deepsea-run-compact-body__details">
+        <summary>
+          <ChevronDown aria-hidden="true" />
+          <span>查看 agent 过程详情</span>
+        </summary>
+        {displayMode === 'source' ? (
+          <MessageContent content={output} mode={displayMode} suppressTraceEvents />
+        ) : (
+          <SessionRunTimeline
+            events={events}
+            fallbackText={output}
+            streaming={streaming}
+            onOpenWorkspaceFile={onOpenWorkspaceFile}
+          />
+        )}
+      </details>
+    </div>
   );
 }
 
@@ -3680,6 +3785,26 @@ function getRunFlowProgress(status: SessionRun['status'], hasOutput: boolean): n
   if (status === 'queued') return 16;
   if (status === 'retrying') return 64;
   return hasOutput ? 78 : 58;
+}
+
+function buildRunCompactSummary(events: SessionAgentEvent[], fallbackText: string): string {
+  const answerText = [...events]
+    .filter(isAnswerTextEvent)
+    .sort((left, right) => left.seq - right.seq || left.created_at - right.created_at)
+    .map((event) => event.content)
+    .join('')
+    .trim();
+  const sourceText = answerText || fallbackText.trim();
+  const paragraphs = sourceText
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+  const candidate = [...paragraphs].reverse().find((paragraph) =>
+    !/^(我会|我将|先|接下来|当前|现在|准备|已看到|我先)/.test(paragraph)
+  ) ?? paragraphs.at(-1) ?? sourceText;
+  const normalized = candidate.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '暂无可展示回复正文。';
+  return normalized.length > 260 ? `${normalized.slice(0, 260).trimEnd()}...` : normalized;
 }
 
 function RunEventRail({ items }: { items: RunEventRailItem[] }): JSX.Element | null {
