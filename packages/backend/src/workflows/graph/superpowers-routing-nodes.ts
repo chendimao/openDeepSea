@@ -50,7 +50,8 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
         requiredFields: ['intent', 'confidence', 'reason'],
         fallbackEvidence,
       });
-      const intent = normalizeSelectedIntent(evidence.intent) ?? fallbackIntent;
+      const plannerIntent = normalizeSelectedIntent(evidence.intent);
+      const intent = reconcileExplicitGoalIntent(plannerIntent ?? fallbackIntent, state.userGoal);
       const routingEvidence = {
         ...evidence,
         intent,
@@ -237,7 +238,11 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
         currentNode: 'debug_plan',
         activeSuperpowersStage: 'debug_plan',
         draftPlanArtifactVersionId: artifact.id,
+        approvedPlanArtifactVersionId: null,
         plan,
+        approval: 'pending',
+        status: 'awaiting_approval',
+        error: 'Waiting for user confirmation of debug plan artifact',
       };
     },
 
@@ -392,9 +397,11 @@ function normalizeSelectedIntent(value: unknown): SuperpowersSelectedIntent | nu
     value === 'analysis' ||
     value === 'lightweight_task' ||
     value === 'standard_development' ||
+    value === 'debug_plan' ||
     value === 'debug' ||
     value === 'review_only'
   ) {
+    if (value === 'debug_plan') return 'debug';
     return value === 'analysis_only' ? 'analysis' : value;
   }
   return null;
@@ -660,12 +667,25 @@ function inferLightweightPlanDefaults(goal: string): {
 }
 
 function inferIntentFromGoal(goal: string): SuperpowersSelectedIntent {
-  if (/分析|解释|为什么|原因|架构/u.test(goal)) return 'analysis';
-  if (/什么|吗|如何|怎么|\?|？/u.test(goal)) return 'answer';
   if (/轻量|小改|文案|配置/u.test(goal)) return 'lightweight_task';
   if (isReviewOnlyGoal(goal)) return 'review_only';
-  if (/修复|bug|报错|失败|debug|调试/u.test(goal)) return 'debug';
+  if (hasExplicitDebugGoal(goal)) return 'debug';
+  if (/分析|解释|为什么|原因|架构/u.test(goal)) return 'analysis';
+  if (/什么|吗|如何|怎么|\?|？/u.test(goal)) return 'answer';
   return 'standard_development';
+}
+
+function reconcileExplicitGoalIntent(
+  intent: SuperpowersSelectedIntent,
+  goal: string,
+): SuperpowersSelectedIntent {
+  if (hasExplicitDebugGoal(goal) && (intent === 'analysis' || intent === 'answer')) return 'debug';
+  if (isReviewOnlyGoal(goal) && intent !== 'review_only') return 'review_only';
+  return intent;
+}
+
+function hasExplicitDebugGoal(goal: string): boolean {
+  return /修复|bug|报错|失败|debug|debug_plan|调试/u.test(goal);
 }
 
 function isReviewOnlyGoal(goal: string): boolean {

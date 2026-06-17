@@ -1208,6 +1208,57 @@ test('Superpowers debug route dispatches and runs systematic debugging worker be
   assert.equal(state?.verificationEvidence?.[0]?.status, 'passed');
 });
 
+test('Superpowers routing normalizes debug_plan planner intent before persisted resume', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-debug-plan-alias-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Debug Plan Alias', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Debug Plan Alias Room' });
+  const planner = addAcpWorkflowAgent(room.id, 'executor');
+  roomAgentRepo.setWorkflowRole(planner.id, 'planner');
+  roomAgentRepo.setCapabilitiesAndRuntime(planner.id, {
+    capabilities: ['planning'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'debug：分析为什么删除项目时可能提示 project has active runs，先给 debug_plan，不要直接修改文件。',
+  });
+
+  const latest = await startGraphWorkflow(task.id, {
+    supervisor: lowConfidenceSupervisor,
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input, {
+      analysisOutput: [
+        '只读定位后给出 debug plan。',
+        '```json',
+        JSON.stringify({
+          intent: 'debug_plan',
+          confidence: 0.92,
+          reason: '用户明确要求 debug_plan，不要直接修改文件。',
+        }),
+        '```',
+      ].join('\n'),
+    }),
+  });
+  const state = parseGraphState(latest.graph_state);
+  const stepNames = workflowRepo.listSteps(latest.id).map((step) => step.node_name);
+  const routingArtifact = workflowArtifactVersionRepo
+    .listByRun(latest.id)
+    .find((artifact) => artifact.artifact_type === 'intent_routing');
+  const routingData = routingArtifact ? JSON.parse(routingArtifact.structured_data) as { intent?: string } : null;
+
+  assert.equal(latest.status, 'awaiting_approval');
+  assert.equal(state?.selectedIntent, 'debug');
+  assert.deepEqual(state?.selectedPath, ['intake', 'route_skills', 'debug_plan']);
+  assert.equal(state?.currentNode, 'debug_plan');
+  assert.equal(routingData?.intent, 'debug');
+  assert.notEqual(state?.selectedIntent, 'answer');
+  assert.equal(stepNames.includes('agent_assignment'), false);
+  assert.equal(stepNames.includes('dispatch'), false);
+});
+
 test('Superpowers debug retry resumes systematic debugging before verification when child is runnable', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-debug-retry-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });

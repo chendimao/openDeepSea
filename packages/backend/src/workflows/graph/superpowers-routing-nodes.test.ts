@@ -175,6 +175,82 @@ test('question-shaped analysis requests use the analysis route instead of direct
   assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'analysis_plan']);
 });
 
+test('debug planner aliases and debug-shaped goals route to debug_plan before analysis', async () => {
+  const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, unknown> }> = [];
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft(input) {
+      createdArtifacts.push({ artifact_type: input.artifact_type, structured_data: input.structured_data });
+      return { id: `artifact-${createdArtifacts.length}` };
+    },
+    createAssistantMessage() {
+      return { id: 'message-unused' };
+    },
+    async invokePlannerStage(input) {
+      if (input.stageId === 'intake') {
+        return {
+          intent: 'debug_plan',
+          confidence: 0.93,
+          reason: '用户明确要求先给 debug_plan，不要直接修改文件。',
+        };
+      }
+      return input.fallbackEvidence;
+    },
+  });
+  const initial = emptyAgentWorkflowState({
+    workflowRunId: 'run-debug-alias',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-1',
+    userGoal: 'debug：分析为什么删除项目时可能提示 project has active runs，先给 debug_plan，不要直接修改文件。',
+    projectPath: '/tmp/project',
+  });
+
+  const intake = await nodes.intake(initial);
+  const routed = await nodes.routeSkills(intake);
+
+  assert.equal(intake.selectedIntent, 'debug');
+  assert.equal(createdArtifacts[0]?.structured_data.intent, 'debug');
+  assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'debug_plan']);
+});
+
+test('explicit debug goals override generic planner analysis evidence', async () => {
+  const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, unknown> }> = [];
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft(input) {
+      createdArtifacts.push({ artifact_type: input.artifact_type, structured_data: input.structured_data });
+      return { id: `artifact-${createdArtifacts.length}` };
+    },
+    createAssistantMessage() {
+      return { id: 'message-unused' };
+    },
+    async invokePlannerStage(input) {
+      if (input.stageId === 'intake') {
+        return {
+          intent: 'analysis',
+          confidence: 0.94,
+          reason: 'planner treated read-only debug planning as analysis',
+        };
+      }
+      return input.fallbackEvidence;
+    },
+  });
+  const initial = emptyAgentWorkflowState({
+    workflowRunId: 'run-debug-explicit',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-1',
+    userGoal: 'debug：分析为什么删除项目时可能提示 project has active runs，先给 debug_plan，不要直接修改文件。',
+    projectPath: '/tmp/project',
+  });
+
+  const intake = await nodes.intake(initial);
+  const routed = await nodes.routeSkills(intake);
+
+  assert.equal(intake.selectedIntent, 'debug');
+  assert.equal(createdArtifacts[0]?.structured_data.intent, 'debug');
+  assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'debug_plan']);
+});
+
 test('lightweightPlan creates a confirmable lightweight plan artifact', async () => {
   const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, unknown> }> = [];
   const nodes = createSuperpowersRoutingNodes({
@@ -259,6 +335,9 @@ test('debugPlan and reviewPlan create plan artifacts for their routes', async ()
 
   assert.equal(debug.currentNode, 'debug_plan');
   assert.equal(debug.draftPlanArtifactVersionId, 'artifact-1');
+  assert.equal(debug.status, 'awaiting_approval');
+  assert.equal(debug.approval, 'pending');
+  assert.match(debug.error ?? '', /debug plan/i);
   assert.equal(review.currentNode, 'review_plan');
   assert.equal(review.draftPlanArtifactVersionId, 'artifact-2');
   assert.deepEqual(createdArtifacts.map((artifact) => artifact.artifact_type), ['plan', 'plan']);

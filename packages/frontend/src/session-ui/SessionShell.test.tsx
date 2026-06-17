@@ -188,6 +188,15 @@ test('SessionShell renders current session todo count beside the session title',
 
 test('SessionShell renders workflow spec and plan gates as read-only artifacts', () => {
   const payload = createPayload();
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-1',
+    status: 'awaiting_approval',
+    selected_intent: 'debug',
+    active_stage: 'debug_plan',
+    controller: 'user',
+    blocker: 'Waiting for user confirmation of debug plan artifact',
+    next_action: '等待用户确认 planner 生成的执行计划。',
+  };
   payload.activeSession.workflowArtifacts = [
     {
       id: 'artifact-plan-1',
@@ -220,6 +229,9 @@ test('SessionShell renders workflow spec and plan gates as read-only artifacts',
 
   assert.match(html, /Plan v1/);
   assert.match(html, /data-workflow-chat-message="true"/);
+  assert.match(workflowMessageArea, />waiting<\/strong>/);
+  assert.doesNotMatch(workflowMessageArea, />blocked<\/strong>/);
+  assert.doesNotMatch(workflowMessageArea, /is-blocked/);
   assert.match(html, /执行前必须确认 plan 版本/);
   assert.match(html, /请求修改/);
   assert.match(html, /确认/);

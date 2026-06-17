@@ -1615,6 +1615,7 @@ function TranscriptCanvas({
 
 type WorkflowMissionStageState = 'done' | 'active' | 'gate' | 'blocked' | 'failed' | 'pending';
 type WorkflowViewMode = 'flow' | 'log';
+type WorkflowChatStatus = 'pending' | 'active' | 'waiting' | 'blocked' | 'done';
 
 const WORKFLOW_STAGE_ORDER = ['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance'] as const;
 const WORKFLOW_EVENT_PREVIEW_LIMIT = 4;
@@ -1765,7 +1766,7 @@ function WorkflowMergedEventStateStream({
   status,
 }: {
   messages: SessionMessage[];
-  status: 'pending' | 'active' | 'blocked' | 'done';
+  status: WorkflowChatStatus;
 }): JSX.Element {
   const flow = buildWorkflowMergedEventFlow(messages, status);
   return (
@@ -1843,7 +1844,7 @@ function WorkflowChatStateStream({
   status,
 }: {
   group: WorkflowChatGroup;
-  status: 'pending' | 'active' | 'blocked' | 'done';
+  status: WorkflowChatStatus;
 }): JSX.Element {
   const cards = buildWorkflowFlowCards(group.controller, group.artifacts, group.gates, group.assignments);
   const distributionCards = cards.slice(0, 2);
@@ -1871,7 +1872,7 @@ function WorkflowChatStateStream({
           index={2}
           title="并行执行进度"
           status={formatWorkflowFlowStatus(status)}
-          tone={status}
+          tone={workflowChatStatusTone(status)}
           cards={executionCards}
         />
         {hiddenCount > 0 ? (
@@ -2341,7 +2342,7 @@ function buildWorkflowFlowCards(
 
 function buildWorkflowMergedEventFlow(
   messages: SessionMessage[],
-  status: 'pending' | 'active' | 'blocked' | 'done',
+  status: WorkflowChatStatus,
 ): {
   phaseLabel: string;
   summary: string;
@@ -2490,11 +2491,16 @@ function formatWorkflowFlowTimelineLabel(controller: WorkflowControllerView | nu
   return `${stage} · ${formatWorkflowEventCount(messages)}`;
 }
 
-function formatWorkflowFlowStatus(status: 'pending' | 'active' | 'blocked' | 'done'): string {
+function formatWorkflowFlowStatus(status: WorkflowChatStatus): string {
   if (status === 'done') return 'done';
+  if (status === 'waiting') return 'waiting';
   if (status === 'active') return 'active';
   if (status === 'blocked') return 'blocked';
   return 'pending';
+}
+
+function workflowChatStatusTone(status: WorkflowChatStatus): 'pending' | 'active' | 'blocked' | 'done' {
+  return status === 'waiting' ? 'active' : status;
 }
 
 function getWorkflowStageState(
@@ -2925,11 +2931,12 @@ function isWorkflowStructuredHelperMessage(message: SessionMessage, metadata: Me
     typeof payload.reason === 'string';
 }
 
-function getWorkflowChatStatus(group: WorkflowChatGroup): 'pending' | 'active' | 'blocked' | 'done' {
+function getWorkflowChatStatus(group: WorkflowChatGroup): WorkflowChatStatus {
+  if (group.controller?.status === 'awaiting_approval') return 'waiting';
   if (group.controller?.blocker) return 'blocked';
   if (group.controller?.status === 'completed') return 'done';
   if (group.controller?.status === 'failed' || group.controller?.status === 'cancelled') return 'blocked';
-  if (group.gates.some((gate) => gate.status === 'pending')) return 'active';
+  if (group.gates.some((gate) => gate.status === 'pending')) return 'waiting';
   if (!hasWorkflowChatState(group) && group.messages.length > 0) return inferWorkflowEventGroupStatus(group.messages);
   if (group.messages.length > 0) return 'done';
   return group.controller || group.artifacts.length > 0 || group.assignments.length > 0 ? 'active' : 'pending';
