@@ -154,6 +154,47 @@ test('dispatchSessionUserMessage routes ordinary chat through workflow intake in
   });
 });
 
+test('dispatchSessionUserMessage routes short factual answer requests through answer workflow intake', async () => {
+  const project = projectRepo.create({
+    name: 'Dispatch Short Factual Answer Workflow',
+    path: mkdtempSync(join(tmpdir(), 'session-dispatch-short-factual-answer-workflow-')),
+  });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Dispatch Short Factual Answer Workflow',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const prompts: string[] = [];
+  setSessionRuntimeAdapterForTest({
+    backend: 'codex',
+    listSessions: async () => [],
+    invoke: async ({ prompt }) => {
+      prompts.push(prompt);
+      return { exitCode: 0, sessionId: 'codex-short-factual-answer', stderr: '' };
+    },
+  });
+
+  const message = await dispatchSessionUserMessage({
+    sessionId: session.id,
+    content: '这个项目的主要用途是什么？只需要简短回答。',
+    mode: 'ask',
+  });
+
+  assert.equal(prompts.length, 0);
+  assert.equal(sessionRunRepo.listBySession(session.id).length, 0);
+  assertSuperpowersIntakeForMessage({
+    projectId: project.id,
+    sessionId: session.id,
+    messageId: message.id,
+  });
+  const workflowTask = taskRepo.listByProject(project.id).find((task) => task.source_message_id === message.id);
+  assert.ok(workflowTask);
+  const workflowRun = workflowRepo.listByTask(workflowTask.id)[0];
+  assert.ok(workflowRun);
+  assert.deepEqual(workflowIntakeEnqueueCalls.slice(-1), [workflowRun.id]);
+});
+
 test('dispatchSessionUserMessage preserves explicit platform skill refs for workflow intake', async () => {
   const project = projectRepo.create({
     name: 'Dispatch Platform Skill Refs',

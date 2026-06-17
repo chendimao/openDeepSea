@@ -681,11 +681,18 @@ function reconcileExplicitGoalIntent(
 ): SuperpowersSelectedIntent {
   if (hasExplicitDebugGoal(goal) && (intent === 'analysis' || intent === 'answer')) return 'debug';
   if (isReviewOnlyGoal(goal) && intent !== 'review_only') return 'review_only';
+  if (intent === 'analysis' && isDirectFactualAnswerGoal(goal)) return 'answer';
   return intent;
 }
 
 function hasExplicitDebugGoal(goal: string): boolean {
   return /修复|bug|报错|失败|debug|debug_plan|调试/u.test(goal);
+}
+
+function isDirectFactualAnswerGoal(goal: string): boolean {
+  if (!/什么|是谁|用途|名称|叫什么|多少|何时|哪里|\?|？/u.test(goal)) return false;
+  if (/分析|为什么|原因|架构|排查|诊断|review|审查|比较|对比|方案/u.test(goal)) return false;
+  return /简短|一句话|只需|只需要|直接回答|只用/u.test(goal);
 }
 
 function isReviewOnlyGoal(goal: string): boolean {

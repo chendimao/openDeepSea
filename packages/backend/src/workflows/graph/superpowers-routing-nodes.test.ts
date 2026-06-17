@@ -150,6 +150,44 @@ test('intake maps analysis-only planner evidence to the analysis route', async (
   assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'analysis_plan']);
 });
 
+test('direct factual answer goals override generic planner analysis evidence', async () => {
+  const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, unknown> }> = [];
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft(input) {
+      createdArtifacts.push({ artifact_type: input.artifact_type, structured_data: input.structured_data });
+      return { id: `artifact-${createdArtifacts.length}` };
+    },
+    createAssistantMessage() {
+      return { id: 'message-unused' };
+    },
+    async invokePlannerStage(input) {
+      if (input.stageId === 'intake') {
+        return {
+          intent: 'analysis',
+          confidence: 0.92,
+          reason: 'planner selected generic analysis for a factual project question',
+        };
+      }
+      return input.fallbackEvidence;
+    },
+  });
+  const initial = emptyAgentWorkflowState({
+    workflowRunId: 'run-answer-factual-question',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-1',
+    userGoal: '这个项目的主要用途是什么？只需要简短回答。',
+    projectPath: '/tmp/project',
+  });
+
+  const intake = await nodes.intake(initial);
+  const routed = await nodes.routeSkills(intake);
+
+  assert.equal(intake.selectedIntent, 'answer');
+  assert.equal(createdArtifacts[0]?.structured_data.intent, 'answer');
+  assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'answer']);
+});
+
 test('question-shaped analysis requests use the analysis route instead of direct answer', async () => {
   const nodes = createSuperpowersRoutingNodes({
     createArtifactVersionDraft() {
