@@ -388,13 +388,14 @@ export function parseRoutingPlannerEvidence(output: string): Record<string, unkn
 function normalizeSelectedIntent(value: unknown): SuperpowersSelectedIntent | null {
   if (
     value === 'answer' ||
+    value === 'analysis_only' ||
     value === 'analysis' ||
     value === 'lightweight_task' ||
     value === 'standard_development' ||
     value === 'debug' ||
     value === 'review_only'
   ) {
-    return value;
+    return value === 'analysis_only' ? 'analysis' : value;
   }
   return null;
 }
@@ -659,11 +660,11 @@ function inferLightweightPlanDefaults(goal: string): {
 }
 
 function inferIntentFromGoal(goal: string): SuperpowersSelectedIntent {
+  if (/分析|解释|为什么|原因|架构/u.test(goal)) return 'analysis';
   if (/什么|吗|如何|怎么|\?|？/u.test(goal)) return 'answer';
   if (/轻量|小改|文案|配置/u.test(goal)) return 'lightweight_task';
   if (isReviewOnlyGoal(goal)) return 'review_only';
   if (/修复|bug|报错|失败|debug|调试/u.test(goal)) return 'debug';
-  if (/分析|解释|为什么|原因|架构/u.test(goal)) return 'analysis';
   return 'standard_development';
 }
 

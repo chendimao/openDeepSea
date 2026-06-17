@@ -112,6 +112,69 @@ test('routing planner evidence overrides heuristic templates when available', as
   assert.equal(lightweight.plan?.verificationCommands[0]?.command, 'git diff --check');
 });
 
+test('intake maps analysis-only planner evidence to the analysis route', async () => {
+  const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, any> }> = [];
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft(input) {
+      createdArtifacts.push({ artifact_type: input.artifact_type, structured_data: input.structured_data });
+      return { id: `artifact-${createdArtifacts.length}` };
+    },
+    createAssistantMessage() {
+      return { id: 'message-unused' };
+    },
+    async invokePlannerStage(input) {
+      if (input.stageId === 'intake') {
+        return {
+          intent: 'analysis_only',
+          confidence: 0.93,
+          reason: '用户要求只读分析原因，不要改代码。',
+        };
+      }
+      return input.fallbackEvidence;
+    },
+  });
+  const initial = emptyAgentWorkflowState({
+    workflowRunId: 'run-analysis-only-routing',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-1',
+    userGoal: '分析一下为什么删除项目会报 project has active runs，只需要分析原因，不要改代码',
+    projectPath: '/tmp/project',
+  });
+
+  const intake = await nodes.intake(initial);
+  const routed = await nodes.routeSkills(intake);
+
+  assert.equal(intake.selectedIntent, 'analysis');
+  assert.equal(createdArtifacts[0]?.structured_data.intent, 'analysis');
+  assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'analysis_plan']);
+});
+
+test('question-shaped analysis requests use the analysis route instead of direct answer', async () => {
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft() {
+      return { id: 'artifact-analysis-question' };
+    },
+    createAssistantMessage() {
+      return { id: 'message-unused' };
+    },
+  });
+  const initial = emptyAgentWorkflowState({
+    workflowRunId: 'run-analysis-question',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-1',
+    userGoal: '分析一下当前项目为什么会报 project has active runs，只需要分析原因，不要改代码',
+    projectPath: '/tmp/project',
+  });
+
+  const intake = await nodes.intake(initial);
+  const routed = await nodes.routeSkills(intake);
+
+  assert.equal(intake.selectedIntent, 'analysis');
+  assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'analysis_plan']);
+});
+
 test('lightweightPlan creates a confirmable lightweight plan artifact', async () => {
   const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, unknown> }> = [];
   const nodes = createSuperpowersRoutingNodes({

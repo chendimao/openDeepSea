@@ -396,8 +396,8 @@ function fakeRoutingPlannerStageOutput(prompt: string): string | null {
 
 function inferFakeRoutingIntent(goal: string): string {
   const normalized = goal.toLowerCase();
-  if (/怎么|为什么|解释|what|why|how/.test(normalized)) return 'answer';
   if (/分析|调研|评估|audit|analysis/.test(normalized)) return 'analysis';
+  if (/怎么|为什么|解释|what|why|how/.test(normalized)) return 'answer';
   if (/debug|报错|失败|异常|排查|修复.*bug/.test(normalized)) return 'debug';
   if (/review|审查|代码审查/.test(normalized)) return 'review_only';
   if (/文案|readme|轻量|小改|配置/.test(normalized)) return 'lightweight_task';

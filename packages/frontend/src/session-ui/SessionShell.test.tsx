@@ -746,6 +746,138 @@ test('SessionShell renders workflow planner analysis as assistant chat content',
   assert.doesNotMatch(workflowCardHtml, /我先只读定位删除项目与 active runs 的相关代码/);
 });
 
+test('SessionShell keeps workflow planner analysis正文 inside the workflow chat bubble', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  payload.activeSession.runs = [];
+  payload.activeSession.agentEvents = [];
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-analysis-body',
+    status: 'running',
+    selected_intent: 'analysis',
+    active_stage: 'analysis',
+    controller: 'planner',
+    blocker: null,
+    next_action: '继续分析根因。',
+  };
+  payload.activeSession.workflowArtifacts = [];
+  payload.activeSession.workflowGates = [];
+  payload.activeSession.workflowAgentAssignments = [];
+  payload.activeSession.messages = [
+    {
+      id: 'msg-user-analysis-body',
+      session_id: payload.activeSession.session.id,
+      role: 'user',
+      sender_id: 'user',
+      sender_name: 'User',
+      content: '分析一下为什么删除项目会报 project has active runs，只需要分析原因，不要改代码。',
+      message_type: 'text',
+      status: 'completed',
+      metadata: null,
+      created_at: now,
+    },
+    {
+      id: 'msg-workflow-analysis-body',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'planner',
+      sender_name: '规划师',
+      content: '我会先只读定位删除项目链路和 active runs 的校验来源，整理根因后再给出分析结论。',
+      message_type: 'agent_stream',
+      status: 'completed',
+      metadata: JSON.stringify({
+        workflow_run_id: 'workflow-run-analysis-body',
+        workflow_step_id: 'workflow-step-analysis-body',
+        agent_run_id: 'agent-run-analysis-body',
+      }),
+      created_at: now + 1_000,
+    },
+  ];
+
+  const html = renderSessionShell(payload);
+  const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
+  const workflowMessageHtml = html.slice(workflowMessageIndex, html.indexOf('deepsea-composer-anchor'));
+
+  assert.match(workflowMessageHtml, /我会先只读定位删除项目链路和 active runs 的校验来源/);
+  assert.doesNotMatch(workflowMessageHtml, /data-workflow-state-stream="true"/);
+  assert.doesNotMatch(workflowMessageHtml, /Execution Log 合并事件/);
+  assert.doesNotMatch(workflowMessageHtml, /Markdown 显示模式/);
+});
+
+test('SessionShell renders workflow analysis JSON conclusion as chat body', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  payload.activeSession.runs = [];
+  payload.activeSession.agentEvents = [];
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-analysis-conclusion',
+    status: 'completed',
+    selected_intent: 'analysis',
+    active_stage: 'analysis_plan',
+    controller: 'planner',
+    blocker: null,
+    next_action: null,
+  };
+  payload.activeSession.workflowArtifacts = [];
+  payload.activeSession.workflowGates = [];
+  payload.activeSession.workflowAgentAssignments = [];
+  payload.activeSession.messages = [
+    {
+      id: 'msg-user-analysis-conclusion',
+      session_id: payload.activeSession.session.id,
+      role: 'user',
+      sender_id: 'user',
+      sender_name: 'User',
+      content: '分析一下为什么删除项目会报 project has active runs，只需要分析原因，不要改代码。',
+      message_type: 'text',
+      status: 'completed',
+      metadata: null,
+      created_at: now,
+    },
+    {
+      id: 'msg-workflow-analysis-started',
+      session_id: payload.activeSession.session.id,
+      role: 'system',
+      sender_id: 'workflow',
+      sender_name: '工作流',
+      content: '工作流已启动，进入 analysis 阶段。',
+      message_type: 'system',
+      status: 'completed',
+      metadata: JSON.stringify({ event_type: 'workflow_started', workflow_run_id: 'workflow-run-analysis-conclusion' }),
+      created_at: now + 1_000,
+    },
+    {
+      id: 'msg-workflow-analysis-conclusion',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'planner',
+      sender_name: '规划师',
+      content: [
+        '```json',
+        '{',
+        '  "conclusion": "这是只读问题诊断任务，边界明确为不修改代码、不进入实现。后续分析应聚焦删除项目接口中的 active runs 校验链路。"',
+        '}',
+        '```',
+      ].join('\n'),
+      message_type: 'agent_stream',
+      status: 'completed',
+      metadata: JSON.stringify({
+        workflow_run_id: 'workflow-run-analysis-conclusion',
+        workflow_step_id: 'workflow-step-analysis-conclusion',
+        agent_run_id: 'agent-run-analysis-conclusion',
+      }),
+      created_at: now + 2_000,
+    },
+  ];
+
+  const html = renderSessionShell(payload);
+  const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
+  const workflowMessageHtml = html.slice(workflowMessageIndex, html.indexOf('deepsea-composer-anchor'));
+
+  assert.match(workflowMessageHtml, /这是只读问题诊断任务，边界明确为不修改代码/);
+  assert.doesNotMatch(workflowMessageHtml, /已合并 2 条 workflow 事件/);
+});
+
 test('SessionShell summarizes workflow planner JSON as reply text and assignment structure', () => {
   const payload = createPayload();
   const now = Date.now();

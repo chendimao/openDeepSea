@@ -2897,6 +2897,7 @@ function isWorkflowTranscriptMessage(message: SessionMessage): boolean {
 function isWorkflowAssistantProcessMessage(message: SessionMessage, metadata: MessageMetadata): boolean {
   const payload = parseWorkflowPlannerJsonPayload(message.content);
   if (payload && parseWorkflowPlannerAssignments(payload.steps).length > 0) return true;
+  if (payload && firstNonEmptyString(payload.summary, payload.conclusion, payload.analysis, payload.description)) return true;
   const sender = `${message.sender_id} ${message.sender_name ?? ''}`.toLowerCase();
   const text = message.content.trim();
   if (!text) return false;
@@ -2935,6 +2936,10 @@ function getWorkflowChatStatus(group: WorkflowChatGroup): 'pending' | 'active' |
 }
 
 function formatWorkflowChatSummary(group: WorkflowChatGroup): string {
+  const narrative = formatWorkflowChatNarrative(group.messages);
+  if (narrative) {
+    return narrative;
+  }
   if (group.controller?.next_action) {
     return group.controller.next_action;
   }
@@ -2949,6 +2954,25 @@ function formatWorkflowChatSummary(group: WorkflowChatGroup): string {
   return group.controller?.next_action
     ?? formatWorkflowMissionMeta(group.controller)
     ?? '等待 workflow 数据';
+}
+
+function formatWorkflowChatNarrative(messages: SessionMessage[]): string | null {
+  for (const message of [...messages].reverse()) {
+    if (message.role !== 'assistant') continue;
+    const narrative = stripWorkflowPlannerHelperJson(message.content);
+    if (narrative) return narrative;
+  }
+  return null;
+}
+
+function stripWorkflowPlannerHelperJson(content: string): string | null {
+  const normalized = content.trim();
+  if (!normalized) return null;
+  const withoutJson = normalized
+    .replace(/```json\s*[\s\S]*?```/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return withoutJson.length > 0 ? withoutJson : null;
 }
 
 function inferWorkflowEventGroupStatus(messages: SessionMessage[]): 'pending' | 'active' | 'blocked' | 'done' {
@@ -3383,7 +3407,13 @@ function buildWorkflowPlannerSummary(
   if (!metadata.workflow_run_id && !metadata.workflow_step_id) return null;
   const payload = parseWorkflowPlannerJsonPayload(message.content);
   if (!payload) return null;
-  const body = firstNonEmptyString(payload.summary, payload.reason, payload.analysis, payload.description);
+  const body = firstNonEmptyString(
+    payload.summary,
+    payload.conclusion,
+    payload.reason,
+    payload.analysis,
+    payload.description,
+  );
   const goal = firstNonEmptyString(payload.goal, payload.objective);
   const assignments = parseWorkflowPlannerAssignments(payload.steps);
   if (!body && !goal && assignments.length === 0) return null;
