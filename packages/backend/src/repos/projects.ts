@@ -215,16 +215,6 @@ export const projectRepo = {
            AND status IN ('in_progress', 'review')`,
       ).run(timestamp, timestamp, projectId);
       db.prepare(
-        `UPDATE task_executors
-         SET status = 'failed',
-             updated_at = ?
-         WHERE task_id IN (
-             SELECT id FROM tasks
-             WHERE project_id = ?
-           )
-           AND status = 'running'`,
-      ).run(timestamp, projectId);
-      db.prepare(
         `DELETE FROM settings
          WHERE scope = 'room'
            AND scope_id IN (SELECT id FROM rooms WHERE project_id = ?)`,
