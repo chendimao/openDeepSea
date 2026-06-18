@@ -454,9 +454,12 @@ test('SessionShell renders workflow agent run capsule inside transcript timeline
   assert.ok(runCapsuleIndex > transcriptScrollIndex);
   assert.match(html, /data-run-flow-capsule="true"/);
   assert.match(html, /data-compact="true"/);
+  assert.match(html, /data-run-inline-state="true"/);
+  assert.match(html, /data-run-process-details="true"/);
   assert.match(html, /Codex/);
   assert.match(html, /子代理执行正文/);
-  assert.match(html, /子代理完成执行/);
+  assert.match(html, /events\s*<em>2 events<\/em>/);
+  assert.match(html, /查看执行过程/);
   assert.doesNotMatch(html, /data-workflow-mission-strip="true"/);
 });
 
