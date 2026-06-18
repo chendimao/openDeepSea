@@ -122,6 +122,62 @@ test('executeRecoveryDecision reuses one recovery message for repeated workflow 
   assert.equal(workflowIncidentRepo.get(secondIncident.id)?.last_message_id, messages[0]?.id);
 });
 
+test('executeRecoveryDecision does not retry a workflow already awaiting artifact approval in graph state', async () => {
+  const fixture = createFixture('awaiting artifact approval retry');
+  workflowRepo.updateRun(fixture.workflow.id, {
+    status: 'awaiting_approval',
+    current_stage: 'planning',
+    error: null,
+  });
+  workflowRepo.updateGraphState(fixture.workflow.id, serializeGraphState({
+    ...emptyAgentWorkflowState({
+      workflowRunId: fixture.workflow.id,
+      projectId: fixture.project.id,
+      roomId: fixture.room.id,
+      taskId: fixture.task.id,
+      userGoal: fixture.task.title,
+      projectPath: fixture.project.path,
+    }),
+    currentNode: 'planning',
+    currentStepId: null,
+    superpowersPhase: 'brainstorming',
+    activeSuperpowersStage: 'brainstorming',
+    draftSpecArtifactVersionId: 'draft-spec-version',
+    designDocPath: 'docs/superpowers/specs/test-design.md',
+    status: 'awaiting_approval',
+    error: 'Waiting for approved spec artifact version',
+  }));
+  const incident = createIncident(fixture, {
+    child_task_id: null,
+    incident_type: 'planner_output_invalid',
+    error: 'missing required evidence: designDocPath',
+  });
+  let retried = false;
+
+  const result = await executeRecoveryDecision({
+    incident,
+    decision: decision('retry_same_agent'),
+    retryWorkflowStep: async (workflowRunId) => {
+      retried = true;
+      return retryWithoutStartingAgent(workflowRunId);
+    },
+  });
+
+  const latestRun = workflowRepo.getRun(fixture.workflow.id);
+  const latestState = parseGraphState(latestRun?.graph_state ?? null);
+  assert.equal(result.status, 'noop');
+  assert.equal(result.detail, 'workflow is already awaiting user decision');
+  assert.equal(retried, false);
+  assert.equal(workflowIncidentRepo.get(incident.id)?.status, 'resolved');
+  assert.equal(latestRun?.status, 'awaiting_approval');
+  assert.equal(latestRun?.current_stage, 'planning');
+  assert.equal(latestRun?.error, null);
+  assert.equal(latestState?.status, 'awaiting_approval');
+  assert.equal(latestState?.currentNode, 'planning');
+  assert.equal(latestState?.draftSpecArtifactVersionId, 'draft-spec-version');
+  assert.equal(recoveryMessages(fixture.room.id).length, 0);
+});
+
 test('executeRecoveryDecision provisions global executor then retries workflow', async () => {
   const fixture = createFixture('global retry', { createAgent: false });
   const incident = createIncident(fixture, {

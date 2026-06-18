@@ -300,6 +300,20 @@ function markBlocked(
 function restoreAwaitingUserDecisionIfNeeded(run: WorkflowRun, task: Task): boolean {
   try {
     const state = parseGraphState(run.graph_state);
+    if (run.status === 'awaiting_approval' || state?.status === 'awaiting_approval') {
+      if (state && state.status !== 'awaiting_approval') {
+        workflowRepo.updateGraphState(run.id, serializeGraphState({
+          ...state,
+          status: 'awaiting_approval',
+          error: null,
+        }));
+      }
+      workflowRepo.updateRun(run.id, {
+        status: 'awaiting_approval',
+        error: null,
+      });
+      return true;
+    }
     if (state?.status === 'awaiting_decision') {
       workflowRepo.updateRun(run.id, {
         status: 'awaiting_decision',
