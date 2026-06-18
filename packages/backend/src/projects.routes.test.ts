@@ -13,6 +13,7 @@ const { projectRepo } = await import('./repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
 const { sessionAgentRuntimeRepo, sessionRepo, sessionRunRepo } = await import('./repos/sessions.js');
 const { taskRepo } = await import('./repos/tasks.js');
+const { taskExecutorRepo } = await import('./repos/task-executors.js');
 const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { workflowRepo } = await import('./repos/workflows.js');
 const { settingsRepo } = await import('./repos/settings.js');
@@ -251,6 +252,55 @@ test('delete project stops active workflow runs and tasks before removing projec
   assert.equal(typeof stepEvent.completed_at, 'number');
   const remainingTask = taskRepo.getIncludingDeleted(task.id);
   assert.notEqual(remainingTask?.status, 'in_progress');
+});
+
+test('delete project stops running task executors before removing project', async () => {
+  const { project, room } = createProjectFixture('active-task-executor');
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'executor-delete-test', agent_name: 'Executor Delete Test' });
+  const task = taskRepo.create({ room_id: room.id, project_id: project.id, title: 'Running Task Executor' });
+  const executor = taskExecutorRepo.ensure({
+    task_id: task.id,
+    room_id: room.id,
+    room_agent_id: agent.id,
+    agent_id: agent.agent_id,
+    acp_session_id: 'task-executor-session',
+  });
+  taskExecutorRepo.updateStatus(executor.id, 'running');
+  db.exec(`
+    CREATE TEMP TABLE task_executor_delete_events (
+      executor_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      old_status TEXT NOT NULL,
+      new_status TEXT NOT NULL
+    );
+    CREATE TEMP TRIGGER record_project_delete_task_executor_update
+    AFTER UPDATE ON task_executors
+    WHEN old.status = 'running'
+      AND new.status <> 'running'
+    BEGIN
+      INSERT INTO task_executor_delete_events (executor_id, task_id, old_status, new_status)
+      VALUES (old.id, old.task_id, old.status, new.status);
+    END;
+  `);
+
+  const res = await request(`/api/projects/${project.id}`, { method: 'DELETE' });
+
+  assert.equal(res.status, 204);
+  const events = db.prepare(`
+    SELECT executor_id, task_id, old_status, new_status
+    FROM task_executor_delete_events
+  `).all() as Array<{
+    executor_id: string;
+    task_id: string;
+    old_status: string;
+    new_status: string;
+  }>;
+  assert.deepEqual(events, [{
+    executor_id: executor.id,
+    task_id: task.id,
+    old_status: 'running',
+    new_status: 'failed',
+  }]);
 });
 
 test('delete project stops active session runs before removing project', async () => {
