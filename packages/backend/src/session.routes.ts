@@ -781,7 +781,13 @@ function shouldResumeAfterArtifactApproval(run: WorkflowRun, artifactType: Workf
   const state = parseGraphState(run.graph_state);
   if (run.status === 'awaiting_approval') return true;
   const error = [run.error, state?.error].filter(Boolean).join('\n');
-  if (artifactType === 'spec') return /approved spec artifact/i.test(error);
+  if (artifactType === 'spec') {
+    return /approved spec artifact/i.test(error) ||
+      (
+        /awaiting approval without a generated plan/i.test(error) &&
+        Boolean(state?.draftSpecArtifactVersionId && !state.approvedSpecArtifactVersionId)
+      );
+  }
   return /approved plan artifact/i.test(error);
 }
 

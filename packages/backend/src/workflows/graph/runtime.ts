@@ -108,6 +108,7 @@ const GraphState = Annotation.Root({
 
 const SUPERVISOR_CONFIDENCE_THRESHOLD = 0.75;
 const BACKGROUND_RETRY_DELAYS_MS = [10_000, 20_000, 40_000, 120_000] as const;
+const MISSING_APPROVAL_PLAN_ERROR = 'Workflow is awaiting approval without a generated plan';
 
 type WorkflowDefinitionSnapshot = {
   id: string;
@@ -739,15 +740,15 @@ export function recoverGraphWorkflow(error: string): number {
   for (const run of tools.listGraphAwaitingApprovalRuns()) {
     try {
       const parsedState = tools.parseGraphState(run.graph_state);
-      if (!parsedState || parsedState.plan) continue;
+      if (!parsedState || parsedState.plan || isAwaitingGraphArtifactApproval(parsedState)) continue;
       const blockedRun = tools.updateRun(run.id, {
         status: 'blocked',
-        error: 'Workflow is awaiting approval without a generated plan',
+        error: MISSING_APPROVAL_PLAN_ERROR,
       });
       const nextState = {
         ...parsedState,
         status: 'blocked' as const,
-        error: 'Workflow is awaiting approval without a generated plan',
+        error: MISSING_APPROVAL_PLAN_ERROR,
       };
       tools.updateGraphState(run.id, serializeGraphState(nextState));
       if (blockedRun) tools.broadcastWorkflowUpdated(blockedRun);
@@ -803,6 +804,14 @@ export function recoverGraphWorkflow(error: string): number {
     count += 1;
   }
   return count;
+}
+
+function isAwaitingGraphArtifactApproval(state: AgentWorkflowState): boolean {
+  return Boolean(
+    (state.draftSpecArtifactVersionId && !state.approvedSpecArtifactVersionId) ||
+    (state.draftPlanArtifactVersionId && !state.approvedPlanArtifactVersionId) ||
+    state.lightweightPlanArtifactVersionId,
+  );
 }
 
 function requireGraphRun(id: string): WorkflowRun {
@@ -894,6 +903,13 @@ function normalizeRetryRouteState(state: AgentWorkflowState): Pick<
   AgentWorkflowState,
   'currentNode' | 'superpowersPhase' | 'activeSuperpowersStage'
 > {
+  if (shouldResumeApprovedSpecGateAfterMissingPlanRecovery(state)) {
+    return {
+      currentNode: 'planning',
+      superpowersPhase: 'spec_review',
+      activeSuperpowersStage: 'spec_review',
+    };
+  }
   const currentNode = retryCurrentNode(state);
   if (currentNode === 'dispatch') {
     return {
@@ -914,6 +930,17 @@ function normalizeRetryRouteState(state: AgentWorkflowState): Pick<
     superpowersPhase: state.superpowersPhase,
     activeSuperpowersStage: state.activeSuperpowersStage,
   };
+}
+
+function shouldResumeApprovedSpecGateAfterMissingPlanRecovery(state: AgentWorkflowState): boolean {
+  return Boolean(
+    state.runtimeProfile === 'superpowers' &&
+    state.currentNode === 'planning' &&
+    !state.plan &&
+    state.approvedSpecArtifactVersionId &&
+    !state.draftSpecArtifactVersionId &&
+    /awaiting approval without a generated plan/i.test(state.error ?? ''),
+  );
 }
 
 function shouldRetryFromVerify(state: AgentWorkflowState): boolean {

@@ -2183,6 +2183,64 @@ test('Superpowers retry resumes interrupted verify after approved reviews instea
   assert.equal(state?.finishBranchDecision?.decision, null);
 });
 
+test('retryGraphWorkflow resumes approved spec gates that were blocked by missing plan recovery', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-spec-retry-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Spec Retry', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Runtime Spec Retry Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Resume approved spec after recovery block',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const approvedSpec = createApprovedSpecArtifactVersion(run.id, task.title);
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...emptyAgentWorkflowState({
+      workflowRunId: run.id,
+      projectId: project.id,
+      roomId: room.id,
+      taskId: task.id,
+      userGoal: task.title,
+      projectPath: project.path,
+    }),
+    runtimeProfile: 'superpowers',
+    currentNode: 'planning',
+    activeSuperpowersStage: 'brainstorming',
+    approvedSpecArtifactVersionId: approvedSpec.id,
+    draftSpecArtifactVersionId: null,
+    status: 'blocked',
+    error: 'Workflow is awaiting approval without a generated plan',
+  }));
+  workflowRepo.updateRun(run.id, {
+    status: 'blocked',
+    current_stage: 'planning',
+    error: 'Workflow is awaiting approval without a generated plan',
+  });
+  const planningCalls: Array<WorkflowStage | null | undefined> = [];
+
+  const latest = await retryGraphWorkflow(run.id, {
+    planner: async () => createApprovalPlan(task.title),
+    runAcpAgent: async (input) => {
+      planningCalls.push(input.workflowStage);
+      return createCompletedAgentRun(room.id, input);
+    },
+  });
+
+  const state = parseGraphState(latest.graph_state);
+  const nodeNames = listRawStepNodeNames(run.id);
+
+  assert.equal(latest.status, 'awaiting_approval');
+  assert.equal(latest.error, null);
+  assert.deepEqual(planningCalls, ['planning']);
+  assert.equal(nodeNames.includes('brainstorming'), false);
+  assert.ok(nodeNames.includes('writing_plans'));
+  assert.equal(state?.approvedSpecArtifactVersionId, approvedSpec.id);
+  assert.equal(state?.draftPlanArtifactVersionId !== null, true);
+  assert.equal(state?.status, 'awaiting_approval');
+  assert.match(state?.error ?? '', /approved plan artifact/i);
+});
+
 test('startGraphWorkflow always records Superpowers definition and runtime profile for new runs', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-superpowers-entry-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });

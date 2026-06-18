@@ -942,6 +942,104 @@ test('session workflow artifact approve endpoint resumes blocked workflow after 
   }
 });
 
+test('session workflow artifact approve endpoint resumes blocked workflow after spec approval gate recovery', async () => {
+  const project = projectRepo.create({
+    name: 'artifact approve spec resume project',
+    path: mkdtempSync(join(tmpdir(), 'session-artifact-approve-spec-resume-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Artifact Approve Spec Resume Room' });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Artifact Approve Spec Resume Session',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const sourceMessage = sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: null,
+    content: '确认 spec 后继续生成计划',
+    metadata: {},
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Artifact approve spec resume workflow',
+    source_message_id: sourceMessage.id,
+    created_from: 'chat_plan',
+  });
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: sourceMessage.content,
+    projectPath: project.path,
+  });
+  const workflowSeed = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'blocked',
+    current_stage: 'planning',
+    approval_required: true,
+    graph_version: 'superpowers-v2',
+    graph_state: serializeGraphState(state),
+  });
+  const workflow = workflowRepo.updateRun(workflowSeed.id, {
+    status: 'blocked',
+    error: 'Workflow is awaiting approval without a generated plan',
+  }) ?? workflowSeed;
+  const draft = workflowArtifactVersionRepo.createDraft({
+    workflow_run_id: workflow.id,
+    artifact_type: 'spec',
+    title: 'Spec',
+    content: '# Spec',
+    structured_data: { designDocPath: 'docs/superpowers/specs/spec.md' },
+    created_by_agent_id: 'planner',
+  });
+  workflowRepo.updateGraphState(workflow.id, serializeGraphState({
+    ...state,
+    workflowRunId: workflow.id,
+    currentNode: 'planning',
+    draftSpecArtifactVersionId: draft.id,
+    approvedSpecArtifactVersionId: null,
+    designDocPath: 'docs/superpowers/specs/spec.md',
+    activeSuperpowersStage: 'brainstorming',
+    status: 'blocked',
+    error: 'Workflow is awaiting approval without a generated plan',
+  }));
+  const enqueued: string[] = [];
+  const originalEnqueue = workflowOrchestrator.enqueueExistingGraphRun;
+  workflowOrchestrator.enqueueExistingGraphRun = (runId) => {
+    enqueued.push(runId);
+    const run = workflowRepo.getRun(runId);
+    assert.ok(run);
+    return { run, enqueued: true };
+  };
+  try {
+    const res = await request(`/api/sessions/${session.id}/workflow-artifacts/${draft.id}/approve`, {
+      method: 'POST',
+    });
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(enqueued, [workflow.id]);
+    const updatedRun = workflowRepo.getRun(workflow.id);
+    assert.equal(updatedRun?.status, 'running');
+    assert.equal(updatedRun?.error, null);
+    const graphState = parseGraphState(updatedRun?.graph_state ?? null);
+    assert.equal(graphState?.approvedSpecArtifactVersionId, draft.id);
+    assert.equal(graphState?.draftSpecArtifactVersionId, null);
+    assert.equal(graphState?.status, 'running');
+    assert.equal(graphState?.error, null);
+  } finally {
+    workflowOrchestrator.enqueueExistingGraphRun = originalEnqueue;
+    setWorkflowOrchestratorGraphDeps({});
+  }
+});
+
 test('session finish branch decision endpoint records decision and resumes workflow', async () => {
   const project = projectRepo.create({
     name: 'finish branch decision project',

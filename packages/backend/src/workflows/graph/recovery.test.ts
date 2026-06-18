@@ -573,6 +573,65 @@ test('recoverGraphWorkflow blocks awaiting approval graph runs that have no plan
   assert.equal(nextState?.plan, null);
 });
 
+test('recoverGraphWorkflow keeps awaiting spec approval graph runs active before plan generation', () => {
+  const projectPath = join(tmpdir(), `graph-recover-spec-gate-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Spec Gate Recovery', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Spec Gate Room' });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Recover awaiting spec approval',
+  });
+  const run = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'awaiting_approval',
+    current_stage: 'planning',
+    graph_version: 'superpowers-v2',
+    graph_state: JSON.stringify({
+      workflowRunId: 'pending',
+      projectId: project.id,
+      roomId: room.id,
+      taskId: task.id,
+      userGoal: task.title,
+      projectPath: project.path,
+      plan: null,
+      currentNode: 'planning',
+      currentStepId: null,
+      activeAgentRunId: null,
+      childTaskIds: [],
+      supervisorAssignments: [],
+      reviewFindings: [],
+      reviewVerdict: null,
+      verificationResults: [],
+      repairAttempts: 0,
+      approval: 'pending',
+      draftSpecArtifactVersionId: 'draft-spec-version',
+      approvedSpecArtifactVersionId: null,
+      activeSuperpowersStage: 'brainstorming',
+      status: 'awaiting_approval',
+      error: 'Waiting for approved spec artifact version',
+    }),
+  });
+  const parsed = parseGraphState(run.graph_state);
+  if (!parsed) throw new Error('graph state missing');
+  workflowRepo.updateGraphState(run.id, JSON.stringify({ ...parsed, workflowRunId: run.id }));
+
+  const count = recoverGraphWorkflow('Backend restarted before graph node completed');
+
+  const updatedRun = workflowRepo.getRun(run.id);
+  const nextState = parseGraphState(updatedRun?.graph_state ?? null);
+
+  assert.equal(count, 0);
+  assert.equal(updatedRun?.status, 'awaiting_approval');
+  assert.equal(updatedRun?.error, null);
+  assert.equal(nextState?.status, 'awaiting_approval');
+  assert.equal(nextState?.draftSpecArtifactVersionId, 'draft-spec-version');
+  assert.equal(nextState?.plan, null);
+});
+
 function runIdPlaceholder(): string {
   return 'pending-run-id';
 }
