@@ -173,7 +173,10 @@ export const projectRepo = {
              current_run_id = NULL,
              updated_at = ?
          WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?)
-           AND current_run_id IS NOT NULL`,
+           AND (
+             status <> 'idle'
+             OR current_run_id IS NOT NULL
+           )`,
       ).run(timestamp, projectId);
       db.prepare(
         `UPDATE workflow_steps

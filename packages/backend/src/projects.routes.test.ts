@@ -430,6 +430,351 @@ test('delete project stops active session runs before removing project', async (
   }]);
 });
 
+test('delete project resets stale session runtimes before removing project', async () => {
+  const { project } = createProjectFixture('stale-session-runtime');
+  const { project: otherProject } = createProjectFixture('other-stale-session-runtime');
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Stale Session Runtime',
+    provider: 'codex',
+    mode: 'code',
+  });
+  const otherSession = sessionRepo.create({
+    project_id: otherProject.id,
+    title: 'Other Stale Session Runtime',
+    provider: 'codex',
+    mode: 'code',
+  });
+  const runtime = sessionAgentRuntimeRepo.upsert({
+    session_id: session.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    status: 'paused',
+    current_run_id: null,
+  });
+  const otherRuntime = sessionAgentRuntimeRepo.upsert({
+    session_id: otherSession.id,
+    agent_id: 'planner',
+    provider: 'codex',
+    status: 'paused',
+    current_run_id: null,
+  });
+  db.exec(`
+    CREATE TEMP TABLE stale_session_runtime_delete_events (
+      runtime_id TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      old_status TEXT NOT NULL,
+      new_status TEXT NOT NULL,
+      old_current_run_id TEXT,
+      new_current_run_id TEXT
+    );
+    CREATE TEMP TRIGGER record_stale_session_runtime_delete_update
+    AFTER UPDATE ON session_agent_runtimes
+    WHEN old.status <> new.status
+      OR COALESCE(old.current_run_id, '') <> COALESCE(new.current_run_id, '')
+    BEGIN
+      INSERT INTO stale_session_runtime_delete_events (
+        runtime_id, session_id, old_status, new_status, old_current_run_id, new_current_run_id
+      )
+      VALUES (
+        old.id, old.session_id, old.status, new.status, old.current_run_id, new.current_run_id
+      );
+    END;
+  `);
+
+  const res = await request(`/api/projects/${project.id}`, { method: 'DELETE' });
+
+  assert.equal(res.status, 204);
+  assert.equal(projectRepo.get(project.id), undefined);
+  assert.notEqual(projectRepo.get(otherProject.id), undefined);
+  assert.deepEqual(
+    db.prepare(`
+      SELECT runtime_id, session_id, old_status, new_status, old_current_run_id, new_current_run_id
+      FROM stale_session_runtime_delete_events
+    `).all(),
+    [{
+      runtime_id: runtime.id,
+      session_id: session.id,
+      old_status: 'paused',
+      new_status: 'idle',
+      old_current_run_id: null,
+      new_current_run_id: null,
+    }],
+  );
+  assert.equal(sessionAgentRuntimeRepo.getByAgent(otherSession.id, otherRuntime.agent_id, otherRuntime.provider)?.status, 'paused');
+});
+
+test('delete project cancels active runs across sessions without touching another project', async () => {
+  const { project, room } = createProjectFixture('all-active-run-types');
+  const { project: otherProject, room: otherRoom } = createProjectFixture('all-active-run-types-other');
+  const firstSession = sessionRepo.create({
+    project_id: project.id,
+    title: 'First Active Session Runs',
+    provider: 'codex',
+    mode: 'code',
+  });
+  const secondSession = sessionRepo.create({
+    project_id: project.id,
+    title: 'Second Active Session Runs',
+    provider: 'codex',
+    mode: 'code',
+  });
+  const otherSession = sessionRepo.create({
+    project_id: otherProject.id,
+    title: 'Other Active Session Run',
+    provider: 'codex',
+    mode: 'code',
+  });
+  const sessionRunInputs = [
+    { sessionId: firstSession.id, status: 'queued' },
+    { sessionId: firstSession.id, status: 'running' },
+    { sessionId: secondSession.id, status: 'retrying' },
+    { sessionId: secondSession.id, status: 'paused' },
+  ] as const;
+  const sessionRuns = sessionRunInputs.map(({ sessionId, status }) =>
+    sessionRunRepo.create({
+      agent_id: `agent-${status}`,
+      session_id: sessionId,
+      provider: 'codex',
+      status,
+      mode: 'code',
+      prompt: `session ${status}`,
+    }),
+  );
+  const [queuedSessionRun, runningSessionRun, retryingSessionRun, pausedSessionRun] = sessionRuns;
+  const sessionControllers = sessionRuns.map((run) => runRegistry.create(run.id));
+  const otherSessionRuns = ['queued', 'running', 'retrying', 'paused'].map((status) =>
+    sessionRunRepo.create({
+      session_id: otherSession.id,
+      agent_id: `other-session-agent-${status}`,
+      provider: 'codex',
+      status: status as 'queued' | 'running' | 'retrying' | 'paused',
+      mode: 'code',
+      prompt: `other session ${status}`,
+    }),
+  );
+  const [otherQueuedSessionRun, otherRunningSessionRun, otherRetryingSessionRun, otherPausedSessionRun] = otherSessionRuns;
+  const otherSessionControllers = otherSessionRuns.map((run) => runRegistry.create(run.id));
+
+  const agent = roomAgentRepo.add({ room_id: room.id, agent_id: 'project-agent', agent_name: 'Project Agent' });
+  const agentRuns = ['queued', 'running', 'retrying'].map((status) =>
+    agentRunRepo.create({
+      room_id: room.id,
+      room_agent_id: agent.id,
+      agent_id: agent.agent_id,
+      backend: 'codex',
+      status: status as 'queued' | 'running' | 'retrying',
+      prompt: `agent ${status}`,
+    }),
+  );
+  const [queuedAgentRun, runningAgentRun, retryingAgentRun] = agentRuns;
+  const agentControllers = agentRuns.map((run) => runRegistry.create(run.id));
+  const otherAgent = roomAgentRepo.add({
+    room_id: otherRoom.id,
+    agent_id: 'other-project-agent',
+    agent_name: 'Other Project Agent',
+  });
+  const otherAgentRuns = ['queued', 'running', 'retrying'].map((status) =>
+    agentRunRepo.create({
+      room_id: otherRoom.id,
+      room_agent_id: otherAgent.id,
+      agent_id: otherAgent.agent_id,
+      backend: 'codex',
+      status: status as 'queued' | 'running' | 'retrying',
+      prompt: `other agent ${status}`,
+    }),
+  );
+  const [otherQueuedAgentRun, otherRunningAgentRun, otherRetryingAgentRun] = otherAgentRuns;
+  const otherAgentControllers = otherAgentRuns.map((run) => runRegistry.create(run.id));
+
+  const task = taskRepo.create({ room_id: room.id, project_id: project.id, title: 'Workflow Task' });
+  taskRepo.updateStatus(task.id, 'in_progress');
+  const workflowRun = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'running',
+  });
+  const workflowStep = workflowRepo.createStep({
+    workflow_run_id: workflowRun.id,
+    task_id: task.id,
+    stage: 'implementation',
+    status: 'awaiting_approval',
+    sort_order: 1,
+  });
+  const executor = taskExecutorRepo.ensure({
+    task_id: task.id,
+    room_id: room.id,
+    room_agent_id: agent.id,
+    agent_id: agent.agent_id,
+    acp_session_id: 'task-executor-session',
+  });
+  taskExecutorRepo.updateStatus(executor.id, 'running');
+
+  const otherTask = taskRepo.create({ room_id: otherRoom.id, project_id: otherProject.id, title: 'Other Workflow Task' });
+  taskRepo.updateStatus(otherTask.id, 'in_progress');
+  const otherWorkflowRun = workflowRepo.createRun({
+    room_id: otherRoom.id,
+    project_id: otherProject.id,
+    task_id: otherTask.id,
+    status: 'running',
+  });
+  const otherWorkflowStep = workflowRepo.createStep({
+    workflow_run_id: otherWorkflowRun.id,
+    task_id: otherTask.id,
+    stage: 'implementation',
+    status: 'running',
+    sort_order: 1,
+  });
+  const otherExecutor = taskExecutorRepo.ensure({
+    task_id: otherTask.id,
+    room_id: otherRoom.id,
+    room_agent_id: otherAgent.id,
+    agent_id: otherAgent.agent_id,
+    acp_session_id: 'other-task-executor-session',
+  });
+  taskExecutorRepo.updateStatus(otherExecutor.id, 'running');
+
+  db.exec(`
+    CREATE TEMP TABLE all_active_delete_session_run_events (
+      run_id TEXT NOT NULL,
+      old_status TEXT NOT NULL,
+      new_status TEXT NOT NULL
+    );
+    CREATE TEMP TRIGGER record_all_active_delete_session_run_update
+    AFTER UPDATE ON session_runs
+    WHEN old.status IN ('queued', 'running', 'retrying', 'paused')
+      AND new.status NOT IN ('queued', 'running', 'retrying', 'paused')
+    BEGIN
+      INSERT INTO all_active_delete_session_run_events (run_id, old_status, new_status)
+      VALUES (old.id, old.status, new.status);
+    END;
+    CREATE TEMP TABLE all_active_delete_agent_run_events (
+      run_id TEXT NOT NULL,
+      old_status TEXT NOT NULL,
+      new_status TEXT NOT NULL
+    );
+    CREATE TEMP TRIGGER record_all_active_delete_agent_run_update
+    AFTER UPDATE ON agent_runs
+    WHEN old.status IN ('queued', 'running', 'retrying')
+      AND new.status NOT IN ('queued', 'running', 'retrying')
+    BEGIN
+      INSERT INTO all_active_delete_agent_run_events (run_id, old_status, new_status)
+      VALUES (old.id, old.status, new.status);
+    END;
+    CREATE TEMP TABLE all_active_delete_workflow_run_events (
+      run_id TEXT NOT NULL,
+      old_status TEXT NOT NULL,
+      new_status TEXT NOT NULL
+    );
+    CREATE TEMP TRIGGER record_all_active_delete_workflow_run_update
+    AFTER UPDATE ON workflow_runs
+    WHEN old.status IN ('draft', 'running', 'awaiting_decision', 'awaiting_approval', 'blocked')
+      AND new.status NOT IN ('draft', 'running', 'awaiting_decision', 'awaiting_approval', 'blocked')
+    BEGIN
+      INSERT INTO all_active_delete_workflow_run_events (run_id, old_status, new_status)
+      VALUES (old.id, old.status, new.status);
+    END;
+    CREATE TEMP TABLE all_active_delete_workflow_step_events (
+      step_id TEXT NOT NULL,
+      workflow_run_id TEXT NOT NULL,
+      old_status TEXT NOT NULL,
+      new_status TEXT NOT NULL
+    );
+    CREATE TEMP TRIGGER record_all_active_delete_workflow_step_update
+    AFTER UPDATE ON workflow_steps
+    WHEN old.status IN ('pending', 'running', 'awaiting_approval')
+      AND new.status NOT IN ('pending', 'running', 'awaiting_approval')
+    BEGIN
+      INSERT INTO all_active_delete_workflow_step_events (step_id, workflow_run_id, old_status, new_status)
+      VALUES (old.id, old.workflow_run_id, old.status, new.status);
+    END;
+    CREATE TEMP TABLE all_active_delete_task_executor_events (
+      executor_id TEXT NOT NULL,
+      task_id TEXT NOT NULL,
+      old_status TEXT NOT NULL,
+      new_status TEXT NOT NULL
+    );
+    CREATE TEMP TRIGGER record_all_active_delete_task_executor_update
+    AFTER UPDATE ON task_executors
+    WHEN old.status = 'running'
+      AND new.status <> 'running'
+    BEGIN
+      INSERT INTO all_active_delete_task_executor_events (executor_id, task_id, old_status, new_status)
+      VALUES (old.id, old.task_id, old.status, new.status);
+    END;
+  `);
+
+  const res = await request(`/api/projects/${project.id}`, { method: 'DELETE' });
+
+  assert.equal(res.status, 204);
+  assert.equal(await res.text(), '');
+  assert.equal(projectRepo.get(project.id), undefined);
+  assert.notEqual(projectRepo.get(otherProject.id), undefined);
+  assert.deepEqual(sessionControllers.map((controller) => controller.signal.aborted), [true, true, true, true]);
+  assert.deepEqual(agentControllers.map((controller) => controller.signal.aborted), [true, true, true]);
+  assert.deepEqual(otherSessionControllers.map((controller) => controller.signal.aborted), [false, false, false, false]);
+  assert.deepEqual(otherAgentControllers.map((controller) => controller.signal.aborted), [false, false, false]);
+  assert.deepEqual(otherSessionRuns.map((run) => sessionRunRepo.get(run.id)?.status), [
+    'queued',
+    'running',
+    'retrying',
+    'paused',
+  ]);
+  assert.deepEqual(sessionRunRepo.get(otherQueuedSessionRun!.id)?.status, 'queued');
+  assert.deepEqual(sessionRunRepo.get(otherRunningSessionRun!.id)?.status, 'running');
+  assert.deepEqual(sessionRunRepo.get(otherRetryingSessionRun!.id)?.status, 'retrying');
+  assert.deepEqual(sessionRunRepo.get(otherPausedSessionRun!.id)?.status, 'paused');
+  assert.deepEqual(otherAgentRuns.map((run) => agentRunRepo.get(run.id)?.status), ['queued', 'running', 'retrying']);
+  assert.deepEqual(agentRunRepo.get(otherQueuedAgentRun!.id)?.status, 'queued');
+  assert.deepEqual(agentRunRepo.get(otherRunningAgentRun!.id)?.status, 'running');
+  assert.deepEqual(agentRunRepo.get(otherRetryingAgentRun!.id)?.status, 'retrying');
+  assert.equal(workflowRepo.getRun(otherWorkflowRun.id)?.status, 'running');
+  assert.equal(workflowRepo.getStep(otherWorkflowStep.id)?.status, 'running');
+  assert.equal(taskExecutorRepo.get(otherExecutor.id)?.status, 'running');
+
+  const sessionEvents = db.prepare(`
+    SELECT run_id, old_status, new_status
+    FROM all_active_delete_session_run_events
+    ORDER BY old_status ASC
+  `).all() as Array<{ run_id: string; old_status: string; new_status: string }>;
+  assert.deepEqual(sessionEvents, [
+    { run_id: pausedSessionRun!.id, old_status: 'paused', new_status: 'cancelled' },
+    { run_id: queuedSessionRun!.id, old_status: 'queued', new_status: 'cancelled' },
+    { run_id: retryingSessionRun!.id, old_status: 'retrying', new_status: 'cancelled' },
+    { run_id: runningSessionRun!.id, old_status: 'running', new_status: 'cancelled' },
+  ]);
+  assert.deepEqual(
+    db.prepare(`
+      SELECT run_id, old_status, new_status
+      FROM all_active_delete_agent_run_events
+      ORDER BY old_status ASC
+    `).all(),
+    [
+      { run_id: queuedAgentRun!.id, old_status: 'queued', new_status: 'cancelled' },
+      { run_id: retryingAgentRun!.id, old_status: 'retrying', new_status: 'cancelled' },
+      { run_id: runningAgentRun!.id, old_status: 'running', new_status: 'cancelled' },
+    ],
+  );
+  assert.deepEqual(
+    db.prepare('SELECT run_id, old_status, new_status FROM all_active_delete_workflow_run_events').all(),
+    [{ run_id: workflowRun.id, old_status: 'running', new_status: 'cancelled' }],
+  );
+  assert.deepEqual(
+    db.prepare('SELECT step_id, workflow_run_id, old_status, new_status FROM all_active_delete_workflow_step_events').all(),
+    [{
+      step_id: workflowStep.id,
+      workflow_run_id: workflowRun.id,
+      old_status: 'awaiting_approval',
+      new_status: 'cancelled',
+    }],
+  );
+  assert.deepEqual(
+    db.prepare('SELECT executor_id, task_id, old_status, new_status FROM all_active_delete_task_executor_events').all(),
+    [{ executor_id: executor.id, task_id: task.id, old_status: 'running', new_status: 'failed' }],
+  );
+});
+
 test('delete project removes internal records and scoped settings only', async () => {
   const { project, room, projectPath } = createProjectFixture('delete-success');
   settingsRepo.updateProject(project.id, { auto_distill_enabled: false });
