@@ -260,6 +260,8 @@ export function createGraphNodes(tools: GraphTools): GraphRuntimeNodes {
           workflowPlan,
           currentNode: 'dispatch',
           currentStepId: existingStep?.id ?? state.currentStepId,
+          superpowersPhase: state.currentNode === 'dispatch' ? null : state.superpowersPhase,
+          activeSuperpowersStage: 'dispatch',
           childTaskIds: existingChildTaskIds,
           childTaskPlanIndexes,
         };

@@ -38,6 +38,17 @@ test('createSessionWorkflowIntake creates task and superpowers v2 workflow for u
     workspaceFileRefs: [],
     libraryFileRefs: [],
     platformSkillRefs: [],
+    riskAssessment: {
+      taskKind: 'chat_answer',
+      riskLevel: 'low',
+      requiresApproval: false,
+      approvalReason: '',
+      confidence: 0.8,
+      reasons: ['short answer'],
+      scopeRead: [],
+      scopeWrite: [],
+      verificationCommands: [],
+    },
   });
 
   assert.equal(taskRepo.get(result.task.id)?.source_message_id, sourceMessage.id);
@@ -56,6 +67,7 @@ test('createSessionWorkflowIntake creates task and superpowers v2 workflow for u
   assert.equal(state?.currentNode, 'context');
   assert.equal(state?.activeSuperpowersStage, 'intake');
   assert.equal(state?.selectedIntent, null);
+  assert.equal(state?.riskAssessment?.taskKind, 'chat_answer');
   assert.deepEqual(state?.selectedPath, []);
   assert.equal(state?.routingArtifactVersionId, null);
   assert.equal(state?.analysisArtifactVersionId, null);

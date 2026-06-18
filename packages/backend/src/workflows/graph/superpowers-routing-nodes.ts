@@ -38,7 +38,7 @@ export interface SuperpowersRoutingNodeTools {
 export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools) {
   return {
     async intake(state: AgentWorkflowState): Promise<AgentWorkflowState> {
-      const fallbackIntent = state.selectedIntent ?? inferIntentFromGoal(state.userGoal);
+      const fallbackIntent = inferStateIntent(state);
       const fallbackEvidence = {
         intent: fallbackIntent,
         confidence: fallbackIntent === 'answer' ? 0.7 : 0.6,
@@ -51,7 +51,7 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
         fallbackEvidence,
       });
       const plannerIntent = normalizeSelectedIntent(evidence.intent);
-      const intent = reconcileExplicitGoalIntent(plannerIntent ?? fallbackIntent, state.userGoal);
+      const intent = reconcileExplicitGoalIntent(plannerIntent ?? fallbackIntent, state);
       const routingEvidence = {
         ...evidence,
         intent,
@@ -76,7 +76,7 @@ export function createSuperpowersRoutingNodes(tools: SuperpowersRoutingNodeTools
     },
 
     async routeSkills(state: AgentWorkflowState): Promise<AgentWorkflowState> {
-      const intent = state.selectedIntent ?? inferIntentFromGoal(state.userGoal);
+      const intent = inferStateIntent(state);
       return {
         ...state,
         currentNode: 'route_skills',
@@ -666,10 +666,34 @@ function inferLightweightPlanDefaults(goal: string): {
   };
 }
 
+function inferStateIntent(state: AgentWorkflowState): SuperpowersSelectedIntent {
+  return state.selectedIntent ?? inferIntentFromRiskAssessment(state) ?? inferIntentFromGoal(state.userGoal);
+}
+
+function inferIntentFromRiskAssessment(state: AgentWorkflowState): SuperpowersSelectedIntent | null {
+  const taskKind = state.riskAssessment?.taskKind;
+  if (taskKind === 'chat_answer') return 'answer';
+  if (taskKind === 'brainstorming') return 'standard_development';
+  if (taskKind === 'code_review') return 'review_only';
+  if (taskKind === 'bug_fix') return 'debug';
+  if (
+    taskKind === 'frontend_change' ||
+    taskKind === 'backend_change' ||
+    taskKind === 'fullstack_change' ||
+    taskKind === 'test_only' ||
+    taskKind === 'docs_only' ||
+    taskKind === 'ops_or_config'
+  ) {
+    return 'standard_development';
+  }
+  return null;
+}
+
 function inferIntentFromGoal(goal: string): SuperpowersSelectedIntent {
   if (/轻量|小改|文案|配置/u.test(goal)) return 'lightweight_task';
   if (isReviewOnlyGoal(goal)) return 'review_only';
   if (hasExplicitDebugGoal(goal)) return 'debug';
+  if (isDirectAnswerGoal(goal)) return 'answer';
   if (/分析|解释|为什么|原因|架构/u.test(goal)) return 'analysis';
   if (/什么|吗|如何|怎么|\?|？/u.test(goal)) return 'answer';
   return 'standard_development';
@@ -677,11 +701,14 @@ function inferIntentFromGoal(goal: string): SuperpowersSelectedIntent {
 
 function reconcileExplicitGoalIntent(
   intent: SuperpowersSelectedIntent,
-  goal: string,
+  state: AgentWorkflowState,
 ): SuperpowersSelectedIntent {
+  if (inferIntentFromRiskAssessment(state) === 'answer') return 'answer';
+  const goal = state.userGoal;
   if (hasExplicitDebugGoal(goal) && (intent === 'analysis' || intent === 'answer')) return 'debug';
   if (isReviewOnlyGoal(goal) && intent !== 'review_only') return 'review_only';
-  if (intent === 'analysis' && isDirectFactualAnswerGoal(goal)) return 'answer';
+  if (intent === 'review_only' && isImplementationGoal(goal)) return 'standard_development';
+  if (intent === 'analysis' && isDirectAnswerGoal(goal)) return 'answer';
   return intent;
 }
 
@@ -689,17 +716,21 @@ function hasExplicitDebugGoal(goal: string): boolean {
   return /修复|bug|报错|失败|debug|debug_plan|调试/u.test(goal);
 }
 
-function isDirectFactualAnswerGoal(goal: string): boolean {
-  if (!/什么|是谁|用途|名称|叫什么|多少|何时|哪里|\?|？/u.test(goal)) return false;
-  if (/分析|为什么|原因|架构|排查|诊断|review|审查|比较|对比|方案/u.test(goal)) return false;
-  return /简短|一句话|只需|只需要|直接回答|只用/u.test(goal);
+function isDirectAnswerGoal(goal: string): boolean {
+  if (!/为什么|原因|什么|是谁|用途|名称|叫什么|多少|何时|哪里|\?|？/u.test(goal)) return false;
+  if (!/简短|一句话|只需|只需要|直接回答|只用/u.test(goal)) return false;
+  return !/分析|排查|诊断|review|审查|比较|对比|方案/u.test(goal);
 }
 
 function isReviewOnlyGoal(goal: string): boolean {
   if (!/review|审查|代码审查|检查\s*(?:diff|代码|变更)|review\s*(?:diff|code|changes)/iu.test(goal)) return false;
   if (/只做.{0,12}(?:审查|review)|只(?:进行)?(?:代码)?审查|不要\s*(?:修改|更改|改动|编辑|实现)/iu.test(goal)) return true;
   const normalized = goal.replace(/不要\s*(?:修改|更改|改动|编辑|实现)/gu, '');
-  return !/新增|创建|实现|开发|修改|更新|补充|修复|重构|测试|脚本|使\s*.+通过|add|create|implement|develop|modify|update|fix|refactor|test|script/iu.test(normalized);
+  return !isImplementationGoal(normalized);
+}
+
+function isImplementationGoal(goal: string): boolean {
+  return /新增|创建|实现|开发|修改|更新|补充|修复|重构|测试|脚本|界面|功能|页面|使\s*.+通过|add|create|implement|develop|modify|update|fix|refactor|test|script|feature|page|ui/iu.test(goal);
 }
 
 function selectedPathForIntent(intent: SuperpowersSelectedIntent): string[] {

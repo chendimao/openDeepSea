@@ -302,6 +302,7 @@ function startSessionWorkflowIntake(input: {
     workspaceFileRefs: input.workspaceFileRefs,
     libraryFileRefs: input.libraryFileRefs,
     platformSkillRefs: input.platformSkillRefs,
+    riskAssessment: input.assessment,
   });
   mergeSessionExecutionMetadata({
     sessionId: input.session.id,

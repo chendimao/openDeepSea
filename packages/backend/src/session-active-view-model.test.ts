@@ -134,3 +134,73 @@ test('buildActiveSessionSummaries exposes created and last viewed timestamps for
   assert.equal(summary.last_viewed_at, viewed?.last_viewed_at);
   assert.equal(summary.updated_at, viewed?.updated_at);
 });
+
+test('buildActiveSessionSummaries reports file changes per session without leaking across sessions', () => {
+  const project = projectRepo.create({
+    name: 'Sidebar Change Count Project',
+    path: mkdtempSync(join(tmpdir(), 'active-summary-change-count-')),
+  });
+  const changedSession = sessionRepo.create({
+    project_id: project.id,
+    title: '有文件变更',
+    workspace_path: project.path,
+  });
+  const cleanSession = sessionRepo.create({
+    project_id: project.id,
+    title: '无文件变更',
+    workspace_path: project.path,
+  });
+
+  sessionEvidenceRepo.create({
+    session_id: changedSession.id,
+    event_type: 'file_diff',
+    title: '文件变更',
+    summary: '修改 A',
+    payload: {
+      path: 'packages/frontend/src/A.tsx',
+    },
+  });
+  sessionEvidenceRepo.create({
+    session_id: changedSession.id,
+    event_type: 'file_diff',
+    title: '文件变更',
+    summary: '修改 B',
+    payload: {
+      event: {
+        payload: {
+          path: 'packages/backend/src/B.ts',
+        },
+      },
+    },
+  });
+  sessionEvidenceRepo.create({
+    session_id: changedSession.id,
+    event_type: 'file_diff',
+    title: '文件变更',
+    summary: '再次修改 B',
+    payload: {
+      event: {
+        payload: {
+          path: 'packages/backend/src/B.ts',
+        },
+      },
+    },
+  });
+  sessionEvidenceRepo.create({
+    session_id: cleanSession.id,
+    event_type: 'status',
+    title: '状态更新',
+    summary: '正在执行',
+  });
+
+  const summaries = buildActiveSessionSummaries();
+
+  assert.equal(
+    summaries.find((summary) => summary.id === changedSession.id)?.latest_event_summary,
+    '本会话 2 个文件变更',
+  );
+  assert.equal(
+    summaries.find((summary) => summary.id === cleanSession.id)?.latest_event_summary,
+    '正在执行',
+  );
+});

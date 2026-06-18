@@ -378,10 +378,10 @@ test('SessionShell merges workflow events into a compact preview inside the tran
 
   const html = renderSessionShell(payload);
 
-  assert.match(html, /data-workflow-state-stream="true"/);
-  assert.match(html, /合并流转/);
-  assert.match(html, /6 条 workflow 事件/);
+  assert.match(html, /data-workflow-merged-summary="true"/);
+  assert.match(html, /6 条工作流事件/);
   assert.match(html, /workflow event 6:/);
+  assert.doesNotMatch(html, /data-workflow-state-stream="true"/);
   assert.doesNotMatch(html, /Execution Log 合并事件/);
   assert.doesNotMatch(html, /已合并前 5 条 workflow 事件/);
   assert.doesNotMatch(html, /workflow event 5:/);
@@ -519,8 +519,9 @@ test('SessionShell merges consecutive workflow transcript messages into one work
   const html = renderSessionShell(payload);
 
   assert.equal((html.match(/data-workflow-chat-message="true"/g) ?? []).length, 1);
-  assert.match(html, /已合并 2 条 workflow 事件/);
-  assert.match(html, /data-workflow-state-stream="true"/);
+  assert.match(html, /已合并 3 条工作流事件/);
+  assert.match(html, /data-workflow-merged-summary="true"/);
+  assert.doesNotMatch(html, /data-workflow-state-stream="true"/);
   assert.doesNotMatch(html, /deepsea-workflow-events" data-expanded="false" data-compact="true"/);
   assert.doesNotMatch(html, /implementation 阶段已完成/);
   assert.match(html, /TDD evidence gate requires records/);
@@ -676,11 +677,11 @@ test('SessionShell renders merged workflow events as a readable state stream wit
   const html = renderSessionShell(payload);
 
   assert.match(html, /data-workflow-chat-message="true"/);
-  assert.match(html, /data-workflow-state-stream="true"/);
-  assert.match(html, /已合并 2 条 workflow 事件/);
-  assert.match(html, /验证 · 合并流转/);
-  assert.match(html, /阶段推进与执行输出/);
-  assert.match(html, /pass/);
+  assert.match(html, /data-workflow-merged-summary="true"/);
+  assert.match(html, /3 条工作流事件/);
+  assert.match(html, /验证 · 最新流转/);
+  assert.match(html, /任务「删除项目前停止 active runs」进入 verify 阶段。/);
+  assert.doesNotMatch(html, /"verdict": "pass"/);
   assert.doesNotMatch(html, /data-workflow-flow-root="true"/);
 });
 
@@ -1001,6 +1002,91 @@ test('SessionShell summarizes workflow planner JSON as reply text and assignment
   assert.doesNotMatch(workflowMessageHtml, /dependsOn/);
   assert.doesNotMatch(workflowMessageHtml, /workflowTemplate/);
   assert.doesNotMatch(workflowMessageHtml, /结构化json/);
+});
+
+test('SessionShell hides workflow control JSON from workflow chat body', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  payload.activeSession.runs = [];
+  payload.activeSession.agentEvents = [];
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-control-json',
+    status: 'awaiting_approval',
+    selected_intent: 'standard_development',
+    active_stage: 'brainstorming',
+    controller: 'user',
+    blocker: 'Waiting for approved spec artifact version',
+    next_action: '等待用户确认当前 workflow artifact。',
+  };
+  payload.activeSession.workflowArtifacts = [{
+    id: 'artifact-control-json-spec',
+    workflow_run_id: 'workflow-run-control-json',
+    artifact_type: 'spec',
+    version: 1,
+    status: 'draft',
+    title: '项目删除修复规格',
+    content: '确认删除项目前停止 active runs。',
+    structured_data: null,
+    created_by_agent_id: 'planner',
+    change_request_message_id: null,
+    approved_by: null,
+    approved_at: null,
+    created_at: now + 2_000,
+  }];
+  payload.activeSession.workflowGates = [{
+    kind: 'spec_confirm',
+    workflow_run_id: 'workflow-run-control-json',
+    artifact_version_id: 'artifact-control-json-spec',
+    status: 'pending',
+    reason: '等待用户确认 planner 生成的需求/设计规格。',
+  }];
+  payload.activeSession.workflowAgentAssignments = [];
+  payload.activeSession.messages = [
+    {
+      id: 'msg-user-control-json',
+      session_id: payload.activeSession.session.id,
+      role: 'user',
+      sender_id: 'user',
+      sender_name: 'User',
+      content: '实现设置页，并完成审查验证。',
+      message_type: 'text',
+      status: 'completed',
+      metadata: null,
+      created_at: now,
+    },
+    {
+      id: 'msg-workflow-control-json',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'planner',
+      sender_name: '规划师',
+      content: JSON.stringify({
+        superpowers: {
+          designDocPath: 'docs/superpowers/specs/fake-workflow-design.md',
+          designReviewVerdict: 'approved',
+        },
+      }),
+      message_type: 'agent_stream',
+      status: 'completed',
+      metadata: JSON.stringify({
+        workflow_run_id: 'workflow-run-control-json',
+        workflow_step_id: 'workflow-step-control-json',
+      }),
+      created_at: now + 1_000,
+    },
+  ];
+
+  const html = renderSessionShell(payload);
+  const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
+  const workflowMessageHtml = html.slice(workflowMessageIndex, html.indexOf('deepsea-composer-anchor'));
+
+  assert.ok(workflowMessageIndex >= 0);
+  assert.match(workflowMessageHtml, /等待用户确认当前 workflow artifact。/);
+  assert.match(workflowMessageHtml, /data-workflow-artifact-action="approve"/);
+  assert.doesNotMatch(workflowMessageHtml, /superpowers/);
+  assert.doesNotMatch(workflowMessageHtml, /designDocPath/);
+  assert.doesNotMatch(workflowMessageHtml, /fake-workflow-design/);
+  assert.doesNotMatch(workflowMessageHtml, /\{&quot;superpowers&quot;/);
 });
 
 test('SessionShell hides workflow routing json helper messages from transcript bubbles', () => {
@@ -1512,10 +1598,12 @@ test('SessionShell renders agent run as flow capsule with event rail', () => {
   const html = renderSessionShell(payload);
 
   assert.match(html, /data-run-flow-capsule="true"/);
+  assert.match(html, /data-run-inline-state="true"/);
+  assert.match(html, /data-run-process-details="true"/);
+  assert.match(html, /查看执行过程/);
+  assert.match(html, /执行中|等待|完成|阻塞/);
   assert.match(html, /data-run-event-rail="true"/);
-  assert.match(html, /data-run-dynamic-monitor="true"/);
-  assert.match(html, /执行链路/);
-  assert.match(html, /实时活动/);
+  assert.doesNotMatch(html, /data-run-dynamic-monitor="true"/);
   assert.match(html, /deepsea-run-state-stream/);
   assert.match(html, /deepsea-workflow-state-step/);
   assert.match(html, /deepsea-workflow-state-step__progress/);

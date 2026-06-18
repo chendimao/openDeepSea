@@ -7,6 +7,7 @@ import type { PlatformSkillRef, Project, Room, Session, SessionMessage } from '.
 import { wsHub } from '../ws-hub.js';
 import { emptyAgentWorkflowState, serializeGraphState } from './graph/state.js';
 import { SUPERPOWERS_V2_GRAPH_VERSION } from './superpowers-stage-registry.js';
+import type { TaskRiskAssessment } from './task-risk.js';
 
 interface SessionWorkflowIntakeInput {
   project: Project;
@@ -17,6 +18,7 @@ interface SessionWorkflowIntakeInput {
   workspaceFileRefs: string[];
   libraryFileRefs: string[];
   platformSkillRefs: PlatformSkillRef[];
+  riskAssessment?: TaskRiskAssessment | null;
 }
 
 export function createSessionWorkflowIntake(input: SessionWorkflowIntakeInput) {
@@ -60,6 +62,7 @@ export function createSessionWorkflowIntake(input: SessionWorkflowIntakeInput) {
     selectedPath: [],
     routingArtifactVersionId: null,
     analysisArtifactVersionId: null,
+    riskAssessment: input.riskAssessment ?? null,
   };
   const workflow = workflowRepo.createRun({
     room_id: input.room.id,

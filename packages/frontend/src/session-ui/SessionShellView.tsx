@@ -1768,31 +1768,21 @@ function WorkflowMergedEventStateStream({
   messages: SessionMessage[];
   status: WorkflowChatStatus;
 }): JSX.Element {
-  const flow = buildWorkflowMergedEventFlow(messages, status);
+  const summary = buildWorkflowMergedEventSummary(messages, status);
   return (
     <div
-      className="deepsea-workflow-state-stream deepsea-workflow-state-stream--events"
-      data-workflow-state-stream="true"
+      className="deepsea-workflow-merged-summary"
+      data-workflow-merged-summary="true"
       aria-label="合并后的 Workflow 流转"
     >
-      <div className="deepsea-workflow-state-stream__head">
-        <span>{flow.summary}</span>
-        <strong>{formatWorkflowFlowStatus(status)}</strong>
+      <div className="deepsea-workflow-merged-summary__head">
+        <span aria-hidden="true" />
+        <strong>{summary.eventCount} 条工作流事件</strong>
+        <em>{formatWorkflowFlowStatus(status)}</em>
       </div>
-      <div className="deepsea-workflow-state-stream__phase">
-        <span>{flow.phaseLabel}</span>
-      </div>
-      <div className="deepsea-workflow-state-stream__nodes">
-        {flow.nodes.map((node, index) => (
-          <WorkflowChatStateNode
-            key={`${node.title}:${index}`}
-            index={index + 1}
-            title={node.title}
-            status={node.status}
-            tone={node.tone}
-            cards={node.cards}
-          />
-        ))}
+      <div className="deepsea-workflow-merged-summary__body">
+        <span>{summary.phaseLabel}</span>
+        <p title={summary.latestText}>{summary.latestText}</p>
       </div>
     </div>
   );
@@ -2340,79 +2330,22 @@ function buildWorkflowFlowCards(
   return [...distributionCards, ...executionCards];
 }
 
-function buildWorkflowMergedEventFlow(
+function buildWorkflowMergedEventSummary(
   messages: SessionMessage[],
   status: WorkflowChatStatus,
 ): {
   phaseLabel: string;
-  summary: string;
-  nodes: WorkflowMergedEventNode[];
+  latestText: string;
+  eventCount: number;
 } {
   const latestMessage = messages[messages.length - 1] ?? null;
   const latestWorkflowMessage = findLatestWorkflowMessage(messages) ?? latestMessage;
-  const latestReviewMessage = findLatestReviewMessage(messages);
-  const latestRecoveryMessage = [...messages].reverse().find((message) => workflowMessageEventType(message) === 'workflow_recovery_decided') ?? null;
-  const agentRunCount = countDistinctWorkflowAgentRuns(messages);
-  const recoveryCount = messages.filter((message) => workflowMessageEventType(message) === 'workflow_recovery_decided').length;
   const stageLabel = inferWorkflowStageFromMessage(latestWorkflowMessage) ?? inferWorkflowStageFromMessage(latestMessage) ?? 'workflow';
-  const reviewStatus = latestReviewMessage ? inferWorkflowReviewStatus(latestReviewMessage) : null;
-  const eventTone = status === 'blocked' ? 'blocked' : status === 'done' ? 'done' : 'active';
-  const latestPreview = latestMessage ? formatWorkflowEventPreview(latestMessage.content) : '等待 workflow 事件';
-
+  const latestPreview = latestMessage ? formatWorkflowEventPreview(latestMessage.content) : '等待工作流事件';
   return {
-    phaseLabel: `${stageLabel} · 合并流转`,
-    summary: `${messages.length} 条 workflow 事件 · 最新：${latestPreview}`,
-    nodes: [
-      {
-        title: '阶段推进与执行输出',
-        status: status === 'blocked' ? '阻塞' : status === 'done' ? '已记录' : '进行中',
-        tone: eventTone,
-        cards: [
-          {
-            icon: Brain,
-            tone: 'controller',
-            title: stageLabel,
-            status: workflowMessageEventType(latestWorkflowMessage) ?? 'workflow',
-            detail: [
-              latestWorkflowMessage ? formatWorkflowEventPreview(latestWorkflowMessage.content) : '等待 workflow 阶段事件',
-              recoveryCount > 0 ? `${recoveryCount} 次恢复诊断` : null,
-            ].filter(Boolean).join(' · '),
-            progress: status === 'blocked' ? 42 : status === 'done' ? 100 : 74,
-          },
-          {
-            icon: GitFork,
-            tone: 'agent',
-            title: 'Agent runs',
-            status: agentRunCount > 0 ? `${agentRunCount} runs` : `${messages.length} events`,
-            detail: latestMessage ? formatWorkflowEventPreview(latestMessage.content) : '暂无 agent run 事件',
-            progress: agentRunCount > 0 ? 78 : 58,
-          },
-        ],
-      },
-      {
-        title: '审查与验收信号',
-        status: reviewStatus === 'pass' ? 'PASS' : reviewStatus === 'changes_requested' ? '待修改' : status === 'blocked' ? '阻塞' : '待确认',
-        tone: reviewStatus === 'pass' || status === 'done' ? 'done' : eventTone,
-        cards: [
-          {
-            icon: ShieldCheck,
-            tone: reviewStatus === 'changes_requested' ? 'gate' : 'event',
-            title: '代码审查',
-            status: reviewStatus ?? 'pending',
-            detail: latestReviewMessage ? formatWorkflowEventPreview(latestReviewMessage.content) : '等待 reviewer 输出',
-            progress: reviewStatus === 'pass' ? 100 : reviewStatus === 'changes_requested' ? 48 : 36,
-          },
-          {
-            icon: RefreshCcw,
-            tone: 'event',
-            title: '恢复诊断',
-            status: recoveryCount > 0 ? `${recoveryCount} 次` : 'pending',
-            detail: latestRecoveryMessage ? formatWorkflowEventPreview(latestRecoveryMessage.content) : '等待恢复信号',
-            progress: recoveryCount > 0 ? 88 : 24,
-          },
-        ],
-      },
-    ],
+    phaseLabel: `${stageLabel} · 最新流转`,
+    latestText: latestPreview,
+    eventCount: messages.length,
   };
 }
 
@@ -2421,23 +2354,6 @@ function findLatestWorkflowMessage(messages: SessionMessage[]): SessionMessage |
     const eventType = workflowMessageEventType(message);
     return Boolean(eventType?.startsWith('workflow_') || eventType?.startsWith('workflow-') || message.sender_id === 'workflow');
   }) ?? null;
-}
-
-function findLatestReviewMessage(messages: SessionMessage[]): SessionMessage | null {
-  return [...messages].reverse().find((message) => {
-    const sender = `${message.sender_id} ${message.sender_name ?? ''}`.toLowerCase();
-    if (sender.includes('review') || sender.includes('审查')) return true;
-    return /"verdict"\s*:\s*"(?:pass|changes_requested|fail)"/i.test(message.content);
-  }) ?? null;
-}
-
-function countDistinctWorkflowAgentRuns(messages: SessionMessage[]): number {
-  const runIds = new Set<string>();
-  for (const message of messages) {
-    const metadata = parseMessageMetadata(message.metadata);
-    if (metadata.agent_run_id) runIds.add(metadata.agent_run_id);
-  }
-  return runIds.size;
 }
 
 function workflowMessageEventType(message: SessionMessage | null): string | null {
@@ -2453,15 +2369,6 @@ function inferWorkflowStageFromMessage(message: SessionMessage | null): string |
   if (eventType === 'workflow_started') return '计划';
   if (eventType === 'workflow_recovery_decided') return '恢复';
   if (eventType === 'workflow_stage_changed') return '阶段推进';
-  return null;
-}
-
-function inferWorkflowReviewStatus(message: SessionMessage): 'pass' | 'changes_requested' | 'failed' | null {
-  if (/"verdict"\s*:\s*"pass"/i.test(message.content)) return 'pass';
-  if (/"verdict"\s*:\s*"changes_requested"/i.test(message.content)) return 'changes_requested';
-  if (/"verdict"\s*:\s*"fail(?:ed)?"/i.test(message.content)) return 'failed';
-  if (/通过|pass/i.test(message.content)) return 'pass';
-  if (/changes_requested|请求修改|需要修改/.test(message.content)) return 'changes_requested';
   return null;
 }
 
@@ -2951,12 +2858,12 @@ function formatWorkflowChatSummary(group: WorkflowChatGroup): string {
     return group.controller.next_action;
   }
   if (hasWorkflowChatState(group) && group.messages.length > 0) {
-    return `已合并 ${group.messages.length} 条 workflow 事件，当前显示主流程流转。`;
+    return `已合并 ${group.messages.length} 条工作流事件，当前仅显示最新流转摘要。`;
   }
   if (group.messages.length > 0) {
     const latestMessage = group.messages[group.messages.length - 1];
-    const preview = latestMessage ? formatWorkflowEventPreview(latestMessage.content) : '等待 workflow 事件';
-    return `已合并 ${group.messages.length} 条 workflow 事件，最新：${preview}`;
+    const preview = latestMessage ? formatWorkflowEventPreview(latestMessage.content) : '等待工作流事件';
+    return `已合并 ${group.messages.length} 条工作流事件，最新：${preview}`;
   }
   return group.controller?.next_action
     ?? formatWorkflowMissionMeta(group.controller)
@@ -2975,11 +2882,20 @@ function formatWorkflowChatNarrative(messages: SessionMessage[]): string | null 
 function stripWorkflowPlannerHelperJson(content: string): string | null {
   const normalized = content.trim();
   if (!normalized) return null;
+  const standalonePayload = parseStandaloneWorkflowJsonPayload(normalized);
+  if (standalonePayload) {
+    if (isWorkflowControlJsonPayload(standalonePayload)) return null;
+    return compactWorkflowPlannerBody(readWorkflowPayloadBody(standalonePayload) ?? '');
+  }
   const withoutJson = normalized
     .replace(/```json\s*[\s\S]*?```/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
-  return withoutJson.length > 0 ? withoutJson : null;
+  if (!withoutJson) return null;
+  const payload = parseStandaloneWorkflowJsonPayload(withoutJson);
+  if (!payload) return withoutJson;
+  if (isWorkflowControlJsonPayload(payload)) return null;
+  return compactWorkflowPlannerBody(readWorkflowPayloadBody(payload) ?? '');
 }
 
 function inferWorkflowEventGroupStatus(messages: SessionMessage[]): 'pending' | 'active' | 'blocked' | 'done' {
@@ -3004,12 +2920,26 @@ function formatWorkflowEventLabel(message: SessionMessage): string {
 }
 
 function formatWorkflowEventPreview(content: string): string {
-  const normalized = content
+  const trimmed = content.trim();
+  const standalonePayload = parseStandaloneWorkflowJsonPayload(trimmed);
+  if (standalonePayload) {
+    if (isWorkflowControlJsonPayload(standalonePayload)) return '已记录工作流控制事件';
+    const readableBody = readWorkflowPayloadBody(standalonePayload);
+    if (readableBody) return compactWorkflowPlannerBody(readableBody);
+  }
+  const normalized = trimmed
+    .replace(/```json\s*[\s\S]*?```/gi, '')
     .replace(/^```[a-zA-Z0-9_-]*\s*/g, '')
     .replace(/```\s*$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
   if (!normalized) return 'workflow event recorded';
+  const payload = parseStandaloneWorkflowJsonPayload(normalized);
+  if (payload) {
+    if (isWorkflowControlJsonPayload(payload)) return '已记录工作流控制事件';
+    const readableBody = readWorkflowPayloadBody(payload);
+    if (readableBody) return compactWorkflowPlannerBody(readableBody);
+  }
   return normalized.length > 96 ? `${normalized.slice(0, 96).trimEnd()}...` : normalized;
 }
 
@@ -3438,6 +3368,19 @@ function compactWorkflowPlannerBody(body: string): string {
   return firstSentence.length > 140 ? `${firstSentence.slice(0, 140).trimEnd()}...` : firstSentence;
 }
 
+function readWorkflowPayloadBody(payload: Record<string, unknown>): string | null {
+  return firstNonEmptyString(
+    payload.summary,
+    payload.conclusion,
+    payload.answer,
+    payload.reason,
+    payload.analysis,
+    payload.description,
+    payload.goal,
+    payload.objective,
+  );
+}
+
 function parseWorkflowPlannerJsonPayload(content: string): Record<string, unknown> | null {
   const normalized = content.trim();
   const fenced = normalized.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
@@ -3455,6 +3398,42 @@ function parseWorkflowPlannerJsonPayload(content: string): Record<string, unknow
     }
   }
   return null;
+}
+
+function parseStandaloneWorkflowJsonPayload(content: string): Record<string, unknown> | null {
+  const normalized = content.trim();
+  if (!normalized) return null;
+  const fenced = normalized.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const candidate = fenced?.[1]?.trim() ?? normalized;
+  if (!candidate.startsWith('{') || !candidate.endsWith('}')) return null;
+  try {
+    const parsed = JSON.parse(candidate) as unknown;
+    return isWorkflowPlannerRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isWorkflowControlJsonPayload(payload: Record<string, unknown>): boolean {
+  if (isWorkflowPlannerRecord(payload.superpowers)) return true;
+  if (isWorkflowPlannerRecord(payload.superpowers_routing)) return true;
+  if (isWorkflowPlannerRecord(payload.task_readiness)) return true;
+  if (isWorkflowPlannerRecord(payload.task_execution)) return true;
+  const readableBody = readWorkflowPayloadBody(payload);
+  if (readableBody) return false;
+  if (parseWorkflowPlannerAssignments(payload.steps).length > 0) return false;
+  const keys = Object.keys(payload);
+  return keys.length > 0 && keys.every((key) => (
+    key === 'intent' ||
+    key === 'selected_intent' ||
+    key === 'confidence' ||
+    key === 'workflowTemplate' ||
+    key === 'needsApproval' ||
+    key === 'assumptions' ||
+    key === 'risks' ||
+    key === 'verification' ||
+    key === 'metadata'
+  ));
 }
 
 function isWorkflowPlannerRecord(value: unknown): value is Record<string, unknown> {
@@ -3576,6 +3555,8 @@ function RunFlowCapsule({
 }): JSX.Element {
   const railItems = buildRunEventRailItems(runAgentEvents);
   const compactSummary = buildRunCompactSummary(runAgentEvents, output);
+  const flowCards = buildRunFlowCards(run, runAgentEvents, failureDetails);
+  const showProcessDetails = railItems.length > 0 || flowCards.length > 0 || runAgentEvents.length > 0 || failureDetails.length > 0;
   return (
     <section
       className="deepsea-run-log deepsea-run-capsule"
@@ -3602,29 +3583,12 @@ function RunFlowCapsule({
         </div>
         <div className="deepsea-message-tools deepsea-message-tools--run">{actions}</div>
       </header>
-      <div className="deepsea-run-dynamic-monitor" data-run-dynamic-monitor="true">
-        <div className="deepsea-run-dynamic-monitor__header">
-          <span>执行链路</span>
-          <strong>实时活动</strong>
-        </div>
-        <RunStateStream
-          status={getRunFlowStatus(run.status)}
-          summary={formatRunFlowSummary(run)}
-          cards={buildRunFlowCards(run, runAgentEvents, failureDetails)}
-        />
-        <div className="deepsea-run-log-mode" aria-label="Run 日志视图">
-          <strong>{railItems.length} groups</strong>
-          <span>日志已在下方执行事件与消息流中展开。</span>
-        </div>
-      </div>
-      <AgentThoughtPanel
-        run={run}
-        evidence={runEvidence}
-        agentEvents={runAgentEvents}
-        failureDetails={failureDetails}
+      <RunInlineStateStrip
+        status={getRunFlowStatus(run.status)}
+        summary={formatRunFlowSummary(run)}
+        cards={flowCards}
       />
       <div className="deepsea-run-capsule__body">
-        <RunEventRail items={railItems} />
         <div className="deepsea-run-log-body">
           {compactByDefault ? (
             <CompactRunBody
@@ -3647,8 +3611,67 @@ function RunFlowCapsule({
           )}
         </div>
       </div>
+      {showProcessDetails ? (
+        <details className="deepsea-run-process-details" data-run-process-details="true">
+          <summary>
+            <ChevronDown aria-hidden="true" />
+            <span>查看执行过程</span>
+            <strong>{railItems.length} groups</strong>
+          </summary>
+          <div className="deepsea-run-process-details__body">
+            <RunStateStream
+              status={getRunFlowStatus(run.status)}
+              summary={formatRunFlowSummary(run)}
+              cards={flowCards}
+            />
+            <RunEventRail items={railItems} />
+            <AgentThoughtPanel
+              run={run}
+              evidence={runEvidence}
+              agentEvents={runAgentEvents}
+              failureDetails={failureDetails}
+            />
+          </div>
+        </details>
+      ) : null}
       <GeneratedImageEvidencePanel evidence={runEvidence} />
     </section>
+  );
+}
+
+function RunInlineStateStrip({
+  status,
+  summary,
+  cards,
+}: {
+  status: 'pending' | 'active' | 'blocked' | 'done';
+  summary: string;
+  cards: WorkflowFlowCard[];
+}): JSX.Element {
+  const visibleCards = cards.slice(0, 3);
+  return (
+    <div
+      className="deepsea-run-inline-state"
+      data-run-inline-state="true"
+      data-state={status}
+      aria-label="Agent run 精简流转"
+    >
+      <div className="deepsea-run-inline-state__summary">
+        <span className="deepsea-run-inline-state__dot" aria-hidden="true" />
+        <strong>{formatRunInlineStatusLabel(status)}</strong>
+        <span title={summary}>{summary}</span>
+      </div>
+      {visibleCards.length > 0 ? (
+        <div className="deepsea-run-inline-state__steps" aria-label="执行阶段摘要">
+          {visibleCards.map((card) => (
+            <span key={`${card.title}:${card.detail}`} data-card-tone={card.tone}>
+              {card.title}
+              <em>{card.status}</em>
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -3764,6 +3787,13 @@ function getRunFlowStatus(status: SessionRun['status']): 'pending' | 'active' | 
   if (status === 'completed') return 'done';
   if (status === 'running' || status === 'retrying') return 'active';
   return 'pending';
+}
+
+function formatRunInlineStatusLabel(status: 'pending' | 'active' | 'blocked' | 'done'): string {
+  if (status === 'done') return '完成';
+  if (status === 'active') return '执行中';
+  if (status === 'blocked') return '阻塞';
+  return '等待';
 }
 
 function formatRunFlowSummary(run: SessionRun): string {

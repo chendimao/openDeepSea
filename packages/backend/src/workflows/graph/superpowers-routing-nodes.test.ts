@@ -188,6 +188,57 @@ test('direct factual answer goals override generic planner analysis evidence', a
   assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'answer']);
 });
 
+test('chat answer risk assessment overrides generic analysis routing evidence', async () => {
+  const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, unknown> }> = [];
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft(input) {
+      createdArtifacts.push({ artifact_type: input.artifact_type, structured_data: input.structured_data });
+      return { id: `artifact-${createdArtifacts.length}` };
+    },
+    createAssistantMessage() {
+      return { id: 'message-unused' };
+    },
+    async invokePlannerStage(input) {
+      if (input.stageId === 'intake') {
+        return {
+          intent: 'analysis',
+          confidence: 0.6,
+          reason: 'generic fallback treated why wording as analysis',
+        };
+      }
+      return input.fallbackEvidence;
+    },
+  });
+  const initial = {
+    ...emptyAgentWorkflowState({
+      workflowRunId: 'run-chat-answer-risk-assessment',
+      projectId: 'project-1',
+      roomId: 'room-1',
+      taskId: 'task-1',
+      userGoal: '为什么这个系统要使用 workflow-first？请用一句话回答。',
+      projectPath: '/tmp/project',
+    }),
+    riskAssessment: {
+      taskKind: 'chat_answer' as const,
+      riskLevel: 'low' as const,
+      requiresApproval: false,
+      approvalReason: '',
+      confidence: 0.82,
+      reasons: ['short chat answer request'],
+      scopeRead: [],
+      scopeWrite: [],
+      verificationCommands: [],
+    },
+  };
+
+  const intake = await nodes.intake(initial);
+  const routed = await nodes.routeSkills(intake);
+
+  assert.equal(intake.selectedIntent, 'answer');
+  assert.equal(createdArtifacts[0]?.structured_data.intent, 'answer');
+  assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'answer']);
+});
+
 test('question-shaped analysis requests use the analysis route instead of direct answer', async () => {
   const nodes = createSuperpowersRoutingNodes({
     createArtifactVersionDraft() {
@@ -415,6 +466,44 @@ test('routeSkills keeps development requests with review wording on standard dev
   assert.deepEqual(development.selectedPath, ['intake', 'route_skills', 'brainstorming']);
   assert.equal(reviewOnly.selectedIntent, 'review_only');
   assert.deepEqual(reviewOnly.selectedPath, ['intake', 'route_skills', 'review_plan']);
+});
+
+test('explicit implementation goals override generic planner review-only evidence', async () => {
+  const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, unknown> }> = [];
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft(input) {
+      createdArtifacts.push({ artifact_type: input.artifact_type, structured_data: input.structured_data });
+      return { id: `artifact-${createdArtifacts.length}` };
+    },
+    createAssistantMessage() {
+      return { id: 'message-unused' };
+    },
+    async invokePlannerStage(input) {
+      if (input.stageId === 'intake') {
+        return {
+          intent: 'review_only',
+          confidence: 0.93,
+          reason: 'planner over-weighted incidental review wording',
+        };
+      }
+      return input.fallbackEvidence;
+    },
+  });
+  const initial = emptyAgentWorkflowState({
+    workflowRunId: 'run-standard-over-review',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-standard',
+    userGoal: '实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。',
+    projectPath: '/tmp/project',
+  });
+
+  const intake = await nodes.intake(initial);
+  const routed = await nodes.routeSkills(intake);
+
+  assert.equal(intake.selectedIntent, 'standard_development');
+  assert.equal(createdArtifacts[0]?.structured_data.intent, 'standard_development');
+  assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'brainstorming']);
 });
 
 test('routeSkills prioritizes lightweight and pure review intents over incidental wording', async () => {

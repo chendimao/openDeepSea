@@ -818,6 +818,92 @@ test('Superpowers routing runtime uses planner evidence before heuristic fallbac
   assert.equal(routingStep?.status, 'completed');
 });
 
+test('Superpowers routing keeps chat_answer risk assessments on answer path', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-chat-answer-routing-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Chat Answer Routing', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Chat Answer Routing Room' });
+  const planner = roomAgentRepo.listByRoom(room.id).find((agent) => agent.agent_id === 'planner')
+    ?? roomAgentRepo.add({ room_id: room.id, agent_id: 'planner', agent_name: 'Planner' });
+  roomAgentRepo.setWorkflowRole(planner.id, 'planner');
+  roomAgentRepo.setCapabilitiesAndRuntime(planner.id, {
+    capabilities: ['planning'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
+  const session = sessionRepo.create({ project_id: project.id, title: 'Runtime chat answer routing session' });
+  const sourceMessage = sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    content: '为什么这个系统要使用 workflow-first？请用一句话回答。',
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: '为什么这个系统要使用 workflow-first？请用一句话回答。',
+    source_message_id: sourceMessage.id,
+  });
+  const run = createGraphWorkflowRun(task.id);
+  const initialState = emptyAgentWorkflowState({
+    workflowRunId: run.id,
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: task.title,
+    projectPath: project.path,
+  });
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...initialState,
+    riskAssessment: {
+      taskKind: 'chat_answer',
+      riskLevel: 'low',
+      requiresApproval: false,
+      approvalReason: '',
+      confidence: 0.82,
+      reasons: ['short chat answer request'],
+      scopeRead: [],
+      scopeWrite: [],
+      verificationCommands: [],
+    },
+  }));
+
+  const latest = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => {
+      if (input.workflowStage === 'analysis') {
+        return createCompletedAgentRun(room.id, input, {
+          analysisOutput: [
+            '```json',
+            JSON.stringify({
+              intent: 'analysis',
+              confidence: 0.6,
+              reason: 'generic why wording fallback selected analysis',
+              answer: 'workflow-first 让所有会话请求都进入同一套可审计的路由、门禁和执行状态机。',
+            }),
+            '```',
+          ].join('\n'),
+        });
+      }
+      return createCompletedAgentRun(room.id, input);
+    },
+  });
+  const state = parseGraphState(latest.graph_state);
+  const routingArtifact = workflowArtifactVersionRepo
+    .listByRun(latest.id)
+    .find((artifact) => artifact.artifact_type === 'intent_routing');
+  const routingData = parseStructuredData(routingArtifact?.structured_data);
+  const assistantMessages = messageRepo.listByRoom(room.id)
+    .filter((message) => message.sender_type === 'agent')
+    .map((message) => message.content);
+
+  assert.equal(latest.status, 'completed');
+  assert.equal(state?.selectedIntent, 'answer');
+  assert.equal(state?.currentNode, 'answer');
+  assert.equal(routingData.intent, 'answer');
+  assert.equal(assistantMessages.some((content) => content.includes('workflow-first 让所有会话请求')), true);
+});
+
 test('Superpowers actual runtime executes TDD, two-stage reviews, verify, and waits at finish branch decision', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-superpowers-actual-route-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
