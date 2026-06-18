@@ -4685,6 +4685,71 @@
   color: var(--deepsea-primary);
   font-size: 8px;
 }
+.deepsea-workflow-finish-branch {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 16%, var(--deepsea-border-subtle));
+  border-radius: 6px;
+  background:
+    linear-gradient(90deg, rgba(0, 74, 198, 0.07), rgba(0, 195, 163, 0.04)),
+    rgba(255, 255, 255, 0.3);
+  padding: 7px;
+}
+.deepsea-workflow-finish-branch__body {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.deepsea-workflow-finish-branch__body strong {
+  color: var(--deepsea-text);
+  font-size: 10px;
+  font-weight: 860;
+  line-height: 1.2;
+}
+.deepsea-workflow-finish-branch__body span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--deepsea-muted);
+  font-size: 9px;
+  line-height: 1.25;
+  white-space: normal;
+}
+.deepsea-workflow-finish-branch__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+.deepsea-workflow-finish-branch__actions button {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--deepsea-primary) 18%, var(--deepsea-border-subtle));
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.46);
+  color: var(--deepsea-text);
+  padding: 3px 6px;
+  font-size: 9px;
+  font-weight: 820;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.deepsea-workflow-finish-branch__actions button[data-finish-branch-decision="keep_branch"] {
+  border-color: color-mix(in srgb, var(--deepsea-ok) 34%, var(--deepsea-border-subtle));
+  color: var(--deepsea-ok);
+}
+.deepsea-workflow-finish-branch__actions button[data-finish-branch-decision="discard_work"] {
+  border-color: color-mix(in srgb, var(--deepsea-danger) 28%, var(--deepsea-border-subtle));
+  color: var(--deepsea-danger);
+}
+.deepsea-workflow-finish-branch__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
 .deepsea-message.deepsea-message--workflow .deepsea-workflow-flow-card p,
 .deepsea-run-capsule .deepsea-workflow-flow-card p {
   margin: 0;

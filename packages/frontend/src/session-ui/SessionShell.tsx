@@ -1,5 +1,10 @@
 import React from 'react';
-import type { ActiveSessionSummary, SessionTodoStats, SessionWorkspacePayload } from '../lib/types';
+import type {
+  ActiveSessionSummary,
+  SessionTodoStats,
+  SessionWorkspacePayload,
+  SuperpowersFinishBranchDecisionValue,
+} from '../lib/types';
 import { SessionShellView, type SessionKnowledgeActionKey, type SessionKnowledgeSaveInput } from './SessionShellView';
 import type { SessionComposerSubmit } from './session-file-composer-model';
 
@@ -21,6 +26,7 @@ export function SessionShell({
   onToggleSessionPin,
   onSaveKnowledge,
   onApproveWorkflowArtifact,
+  onSubmitFinishBranchDecision,
   savingKnowledgeKey,
   todoStats,
 }: {
@@ -39,6 +45,7 @@ export function SessionShell({
   onToggleSessionPin?: (session: ActiveSessionSummary) => void;
   onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
   onApproveWorkflowArtifact?: (artifactVersionId: string) => void;
+  onSubmitFinishBranchDecision?: (workflowRunId: string, decision: SuperpowersFinishBranchDecisionValue) => void;
   savingKnowledgeKey?: SessionKnowledgeActionKey | null;
   todoStats?: SessionTodoStats | null;
 }): JSX.Element {
@@ -59,6 +66,7 @@ export function SessionShell({
       onToggleSessionPin={onToggleSessionPin}
       onSaveKnowledge={onSaveKnowledge}
       onApproveWorkflowArtifact={onApproveWorkflowArtifact}
+      onSubmitFinishBranchDecision={onSubmitFinishBranchDecision}
       savingKnowledgeKey={savingKnowledgeKey}
       todoStats={todoStats}
     />

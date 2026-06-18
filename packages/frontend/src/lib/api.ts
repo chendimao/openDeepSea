@@ -91,6 +91,7 @@ import type {
   WorkflowArtifactVersionView,
   WorkflowRole,
   WorkflowRun,
+  SuperpowersFinishBranchDecisionValue,
   WorkspaceDirectoryResponse,
   WorkspaceEntryMutationResponse,
   WorkspaceFilePreview,
@@ -698,6 +699,15 @@ export const api = {
   approveWorkflowArtifactVersion: (sessionId: string, artifactVersionId: string) =>
     request<WorkflowArtifactVersionView>(`/sessions/${sessionId}/workflow-artifacts/${artifactVersionId}/approve`, {
       method: 'POST',
+    }),
+  submitSessionFinishBranchDecision: (
+    sessionId: string,
+    workflowRunId: string,
+    decision: SuperpowersFinishBranchDecisionValue,
+  ) =>
+    request<WorkflowRun>(`/sessions/${sessionId}/workflows/${workflowRunId}/finish-branch-decision`, {
+      method: 'POST',
+      body: JSON.stringify({ decision }),
     }),
   getHistoryRecord: (historyRecordId: string) =>
     request<HistoryRecord>(`/history-records/${historyRecordId}`),

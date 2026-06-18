@@ -4,7 +4,14 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ActiveSessionSummary, ProjectUsedAgentsPayload, SessionAgentEvent, SessionMessage, SessionWorkspacePayload } from '../lib/types';
+import type {
+  ActiveSessionSummary,
+  ProjectUsedAgentsPayload,
+  SessionAgentEvent,
+  SessionMessage,
+  SessionWorkspacePayload,
+  SuperpowersFinishBranchDecisionValue,
+} from '../lib/types';
 import { I18nProvider } from '../lib/i18n';
 import {
   SessionShellView,
@@ -347,6 +354,42 @@ test('SessionShell renders workflow chat message with gate and agent summaries',
   assert.doesNotMatch(workflowMessageArea, /data-workflow-mission-strip="true"/);
   assert.ok(workflowMessageIndex >= 0);
   assert.ok(workflowMessageIndex > transcriptScrollIndex);
+});
+
+test('SessionShell renders finish branch decision actions inside workflow chat message', () => {
+  const payload = createPayload();
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-finish-branch',
+    status: 'awaiting_decision',
+    selected_intent: 'standard_development',
+    active_stage: 'finish_branch',
+    controller: 'user',
+    blocker: null,
+    next_action: '等待用户选择分支收尾方式。',
+    finishBranchDecision: {
+      decision: null,
+      options: ['merge_local', 'create_pr', 'keep_branch', 'discard_work'],
+      reason: '等待用户选择分支收尾方式',
+      decidedAt: null,
+    },
+  };
+  payload.activeSession.workflowArtifacts = [];
+  payload.activeSession.workflowGates = [];
+  payload.activeSession.workflowAgentAssignments = [];
+
+  const html = renderSessionShell(payload, { onSubmitFinishBranchDecision: () => undefined });
+  const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
+  const composerIndex = html.indexOf('deepsea-composer-anchor');
+  const workflowMessageArea = html.slice(workflowMessageIndex, composerIndex);
+
+  assert.match(workflowMessageArea, /data-workflow-finish-branch-decision="true"/);
+  assert.match(workflowMessageArea, /保留当前分支/);
+  assert.match(workflowMessageArea, /合并到本地主线/);
+  assert.match(workflowMessageArea, /创建 PR/);
+  assert.match(workflowMessageArea, /丢弃本次工作/);
+  assert.match(workflowMessageArea, /data-finish-branch-decision="keep_branch"/);
+  assert.match(workflowMessageArea, /waiting/);
+  assert.doesNotMatch(workflowMessageArea, /data-workflow-mission-strip="true"/);
 });
 
 test('SessionShell merges workflow events into a compact preview inside the transcript message', () => {
@@ -4332,6 +4375,7 @@ function renderSessionShell(
     onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
     onRetryRun?: (runId: string) => void;
     onApproveWorkflowArtifact?: (artifactVersionId: string) => void;
+    onSubmitFinishBranchDecision?: (workflowRunId: string, decision: SuperpowersFinishBranchDecisionValue) => void;
     savingKnowledgeKey?: SessionKnowledgeActionKey | null;
   } = {},
 ): string {
@@ -4349,6 +4393,7 @@ function renderSessionShell(
           onRetryRun={options.onRetryRun}
           onSaveKnowledge={options.onSaveKnowledge}
           onApproveWorkflowArtifact={options.onApproveWorkflowArtifact}
+          onSubmitFinishBranchDecision={options.onSubmitFinishBranchDecision}
           savingKnowledgeKey={options.savingKnowledgeKey}
         />
       </QueryClientProvider>

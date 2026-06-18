@@ -79,6 +79,20 @@ export function assessTaskRisk(input: TaskRiskAssessmentInput): TaskRiskAssessme
   let requiresApproval = false;
   let approvalReason = '';
 
+  if (taskKind === 'chat_answer') {
+    return {
+      taskKind,
+      riskLevel,
+      requiresApproval,
+      approvalReason,
+      confidence: profile.confidence,
+      reasons: [...reasons, 'chat answer is read-only'],
+      scopeRead,
+      scopeWrite,
+      verificationCommands: input.verificationCommands ?? [],
+    };
+  }
+
   const highRiskReason = getHighRiskReason(scopeWrite, writeIntentText);
   if (highRiskReason) {
     riskLevel = 'high';

@@ -671,6 +671,9 @@ function inferStateIntent(state: AgentWorkflowState): SuperpowersSelectedIntent 
 }
 
 function inferIntentFromRiskAssessment(state: AgentWorkflowState): SuperpowersSelectedIntent | null {
+  if (isAnalysisOnlyGoal(state.userGoal) && !isExplicitDebugCommandGoal(state.userGoal) && !isReviewOnlyGoal(state.userGoal)) {
+    return 'analysis';
+  }
   const taskKind = state.riskAssessment?.taskKind;
   if (taskKind === 'chat_answer') return 'answer';
   if (taskKind === 'brainstorming') return 'standard_development';
@@ -705,15 +708,24 @@ function reconcileExplicitGoalIntent(
 ): SuperpowersSelectedIntent {
   if (inferIntentFromRiskAssessment(state) === 'answer') return 'answer';
   const goal = state.userGoal;
-  if (hasExplicitDebugGoal(goal) && (intent === 'analysis' || intent === 'answer')) return 'debug';
   if (isReviewOnlyGoal(goal) && intent !== 'review_only') return 'review_only';
-  if (intent === 'review_only' && isImplementationGoal(goal)) return 'standard_development';
+  if (isAnalysisOnlyGoal(goal) && !isExplicitDebugCommandGoal(goal) && intent !== 'review_only') return 'analysis';
+  if (hasExplicitDebugGoal(goal) && (intent === 'analysis' || intent === 'answer')) return 'debug';
+  if (intent === 'review_only' && isImplementationGoal(goal) && !isReviewOnlyGoal(goal)) return 'standard_development';
   if (intent === 'analysis' && isDirectAnswerGoal(goal)) return 'answer';
   return intent;
 }
 
+function isAnalysisOnlyGoal(goal: string): boolean {
+  return /(?:只|仅).{0,12}(?:分析|排查|诊断|看原因|找原因)|(?:不要|不|无需).{0,8}(?:改代码|修改代码|修改|实现|修复|编辑|写文件|动代码)|只读分析/u.test(goal);
+}
+
+function isExplicitDebugCommandGoal(goal: string): boolean {
+  return /debug|debug_plan|调试/u.test(goal);
+}
+
 function hasExplicitDebugGoal(goal: string): boolean {
-  return /修复|bug|报错|失败|debug|debug_plan|调试/u.test(goal);
+  return /修复|bug|报错|失败|debug|debug_plan|调试|排查|诊断/u.test(goal);
 }
 
 function isDirectAnswerGoal(goal: string): boolean {

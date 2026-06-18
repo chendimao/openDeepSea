@@ -828,6 +828,116 @@ test('session workflow artifact approve endpoint resumes blocked workflow after 
   }
 });
 
+test('session finish branch decision endpoint records decision and resumes workflow', async () => {
+  const project = projectRepo.create({
+    name: 'finish branch decision project',
+    path: mkdtempSync(join(tmpdir(), 'session-finish-branch-decision-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Finish Branch Decision Room' });
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Finish Branch Decision Session',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const sourceMessage = sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: null,
+    content: '完成任务后选择保留当前分支',
+    metadata: {},
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Finish branch decision workflow',
+    source_message_id: sourceMessage.id,
+    created_from: 'chat_plan',
+  });
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: sourceMessage.content,
+    projectPath: project.path,
+  });
+  const workflow = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'awaiting_decision',
+    current_stage: 'acceptance',
+    approval_required: false,
+    graph_version: 'superpowers-v2',
+    graph_state: serializeGraphState({
+      ...state,
+      workflowRunId: 'pending',
+      currentNode: 'finish_branch',
+      superpowersPhase: 'finish_branch',
+      activeSuperpowersStage: 'agent_assignment',
+      status: 'awaiting_decision',
+      finishBranchDecision: {
+        decision: null,
+        options: ['merge_local', 'create_pr', 'keep_branch', 'discard_work'],
+        reason: '等待用户选择分支收尾方式',
+        decidedAt: null,
+      },
+    }),
+  });
+  workflowRepo.updateGraphState(workflow.id, serializeGraphState({
+    ...state,
+    workflowRunId: workflow.id,
+    currentNode: 'finish_branch',
+    superpowersPhase: 'finish_branch',
+    activeSuperpowersStage: 'agent_assignment',
+    status: 'awaiting_decision',
+    finishBranchDecision: {
+      decision: null,
+      options: ['merge_local', 'create_pr', 'keep_branch', 'discard_work'],
+      reason: '等待用户选择分支收尾方式',
+      decidedAt: null,
+    },
+  }));
+
+  const pendingPayload = buildWorkspacePayload(project, session);
+  const pendingController = pendingPayload.activeSession.workflowController as unknown as {
+    finishBranchDecision?: { decision: string | null } | null;
+  };
+  assert.equal(pendingController.finishBranchDecision?.decision, null);
+  assert.equal(pendingPayload.activeSession.workflowController?.active_stage, 'finish_branch');
+
+  const enqueued: string[] = [];
+  const originalEnqueue = workflowOrchestrator.enqueueExistingGraphRun;
+  workflowOrchestrator.enqueueExistingGraphRun = (runId) => {
+    enqueued.push(runId);
+    const run = workflowRepo.getRun(runId);
+    assert.ok(run);
+    return { run, enqueued: true };
+  };
+  try {
+    const res = await request(`/api/sessions/${session.id}/workflows/${workflow.id}/finish-branch-decision`, {
+      method: 'POST',
+      body: JSON.stringify({ decision: 'keep_branch' }),
+    });
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(enqueued, [workflow.id]);
+    const updatedRun = workflowRepo.getRun(workflow.id);
+    assert.equal(updatedRun?.status, 'running');
+    assert.equal(updatedRun?.error, null);
+    const graphState = parseGraphState(updatedRun?.graph_state ?? null);
+    assert.equal(graphState?.status, 'running');
+    assert.equal(graphState?.finishBranchDecision?.decision, 'keep_branch');
+    assert.equal(graphState?.finishBranchDecision?.decidedAt !== null, true);
+  } finally {
+    workflowOrchestrator.enqueueExistingGraphRun = originalEnqueue;
+    setWorkflowOrchestratorGraphDeps({});
+  }
+});
+
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const server = app.listen(0);
   try {

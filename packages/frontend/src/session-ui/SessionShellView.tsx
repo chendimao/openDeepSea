@@ -54,6 +54,7 @@ import type {
   SessionTodoStats,
   SessionWorkspacePayload,
   StatusSnapshot,
+  SuperpowersFinishBranchDecisionValue,
   WorkflowArtifactVersionView,
   WorkflowAgentAssignmentView,
   WorkflowControllerView,
@@ -168,6 +169,7 @@ export function SessionShellView({
   onToggleSessionPin,
   onSaveKnowledge,
   onApproveWorkflowArtifact,
+  onSubmitFinishBranchDecision,
   savingKnowledgeKey,
   todoStats,
 }: {
@@ -186,6 +188,7 @@ export function SessionShellView({
   onToggleSessionPin?: (session: ActiveSessionSummary) => void;
   onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
   onApproveWorkflowArtifact?: (artifactVersionId: string) => void;
+  onSubmitFinishBranchDecision?: (workflowRunId: string, decision: SuperpowersFinishBranchDecisionValue) => void;
   savingKnowledgeKey?: SessionKnowledgeActionKey | null;
   todoStats?: SessionTodoStats | null;
 }): JSX.Element {
@@ -226,6 +229,7 @@ export function SessionShellView({
               onRetryRun={onRetryRun}
               onSaveKnowledge={onSaveKnowledge}
               onApproveWorkflowArtifact={onApproveWorkflowArtifact}
+              onSubmitFinishBranchDecision={onSubmitFinishBranchDecision}
               savingKnowledgeKey={savingKnowledgeKey}
               todoStats={todoStats}
             />
@@ -1314,6 +1318,7 @@ function TranscriptCanvas({
   onRetryRun,
   onSaveKnowledge,
   onApproveWorkflowArtifact,
+  onSubmitFinishBranchDecision,
   savingKnowledgeKey,
   todoStats,
 }: {
@@ -1324,6 +1329,7 @@ function TranscriptCanvas({
   onRetryRun?: (runId: string) => void;
   onSaveKnowledge?: (input: SessionKnowledgeSaveInput) => void;
   onApproveWorkflowArtifact?: (artifactVersionId: string) => void;
+  onSubmitFinishBranchDecision?: (workflowRunId: string, decision: SuperpowersFinishBranchDecisionValue) => void;
   savingKnowledgeKey?: SessionKnowledgeActionKey | null;
   todoStats?: SessionTodoStats | null;
 }): JSX.Element {
@@ -1490,6 +1496,7 @@ function TranscriptCanvas({
                 key={item.key}
                 group={item.group}
                 onApprove={onApproveWorkflowArtifact}
+                onSubmitFinishBranchDecision={onSubmitFinishBranchDecision}
                 onRequestChange={(artifact) => onSendMessage({
                   content: buildWorkflowArtifactChangeRequestContent(artifact),
                   workflowArtifactChangeRequest: {
@@ -1635,10 +1642,12 @@ interface WorkflowChatGroup {
 function WorkflowChatMessage({
   group,
   onApprove,
+  onSubmitFinishBranchDecision,
   onRequestChange,
 }: {
   group: WorkflowChatGroup;
   onApprove?: (artifactVersionId: string) => void;
+  onSubmitFinishBranchDecision?: (workflowRunId: string, decision: SuperpowersFinishBranchDecisionValue) => void;
   onRequestChange: (artifact: WorkflowArtifactVersionView) => void;
 }): JSX.Element {
   const plannerSummary = buildWorkflowChatPlannerSummary(group.messages);
@@ -1695,6 +1704,12 @@ function WorkflowChatMessage({
           <WorkflowEventRows
             messages={group.messages}
             expanded={false}
+          />
+        ) : null}
+        {hasLiveWorkflowState ? (
+          <WorkflowFinishBranchDecision
+            controller={group.controller}
+            onSubmitDecision={onSubmitFinishBranchDecision}
           />
         ) : null}
         {hasLiveWorkflowState ? (
@@ -1756,6 +1771,50 @@ function WorkflowLiveAssignmentSummary({
             另有 {hiddenCount} 个 agent 分配已收起
           </div>
         ) : null}
+      </div>
+    </section>
+  );
+}
+
+function WorkflowFinishBranchDecision({
+  controller,
+  onSubmitDecision,
+}: {
+  controller: WorkflowControllerView | null;
+  onSubmitDecision?: (workflowRunId: string, decision: SuperpowersFinishBranchDecisionValue) => void;
+}): JSX.Element | null {
+  const decision = controller?.finishBranchDecision ?? null;
+  const options = decision?.options ?? [];
+  if (
+    !controller ||
+    controller.status !== 'awaiting_decision' ||
+    decision?.decision ||
+    options.length === 0
+  ) {
+    return null;
+  }
+  return (
+    <section
+      className="deepsea-workflow-finish-branch"
+      data-workflow-finish-branch-decision="true"
+      aria-label="Workflow 分支收尾方式"
+    >
+      <div className="deepsea-workflow-finish-branch__body">
+        <strong>选择收尾方式</strong>
+        <span>{decision?.reason ?? controller.next_action ?? '等待用户选择分支收尾方式'}</span>
+      </div>
+      <div className="deepsea-workflow-finish-branch__actions">
+        {options.map((option) => (
+          <button
+            type="button"
+            key={option}
+            data-finish-branch-decision={option}
+            disabled={!onSubmitDecision}
+            onClick={() => onSubmitDecision?.(controller.workflow_run_id, option)}
+          >
+            {formatFinishBranchDecisionLabel(option)}
+          </button>
+        ))}
       </div>
     </section>
   );
@@ -2406,6 +2465,13 @@ function formatWorkflowFlowStatus(status: WorkflowChatStatus): string {
   return 'pending';
 }
 
+function formatFinishBranchDecisionLabel(decision: SuperpowersFinishBranchDecisionValue): string {
+  if (decision === 'merge_local') return '合并到本地主线';
+  if (decision === 'create_pr') return '创建 PR';
+  if (decision === 'keep_branch') return '保留当前分支';
+  return '丢弃本次工作';
+}
+
 function workflowChatStatusTone(status: WorkflowChatStatus): 'pending' | 'active' | 'blocked' | 'done' {
   return status === 'waiting' ? 'active' : status;
 }
@@ -2839,7 +2905,7 @@ function isWorkflowStructuredHelperMessage(message: SessionMessage, metadata: Me
 }
 
 function getWorkflowChatStatus(group: WorkflowChatGroup): WorkflowChatStatus {
-  if (group.controller?.status === 'awaiting_approval') return 'waiting';
+  if (group.controller?.status === 'awaiting_approval' || group.controller?.status === 'awaiting_decision') return 'waiting';
   if (group.controller?.blocker) return 'blocked';
   if (group.controller?.status === 'completed') return 'done';
   if (group.controller?.status === 'failed' || group.controller?.status === 'cancelled') return 'blocked';

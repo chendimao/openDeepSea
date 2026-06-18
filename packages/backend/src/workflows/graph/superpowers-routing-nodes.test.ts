@@ -264,6 +264,54 @@ test('question-shaped analysis requests use the analysis route instead of direct
   assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'analysis_plan']);
 });
 
+test('analysis-only goals override bug-fix risk assessment when user forbids code changes', async () => {
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft() {
+      return { id: 'artifact-analysis-risk' };
+    },
+    createAssistantMessage() {
+      return { id: 'message-unused' };
+    },
+    async invokePlannerStage(input) {
+      if (input.stageId === 'intake') {
+        return {
+          intent: 'analysis',
+          confidence: 0.97,
+          reason: '用户明确要求分析原因，不要改代码。',
+        };
+      }
+      return input.fallbackEvidence;
+    },
+  });
+  const initial = {
+    ...emptyAgentWorkflowState({
+      workflowRunId: 'run-analysis-risk-assessment',
+      projectId: 'project-1',
+      roomId: 'room-1',
+      taskId: 'task-1',
+      userGoal: '分析一下项目删除 active runs 报错原因，不要改代码。',
+      projectPath: '/tmp/project',
+    }),
+    riskAssessment: {
+      taskKind: 'bug_fix' as const,
+      riskLevel: 'high' as const,
+      requiresApproval: true,
+      approvalReason: 'security/permissions/deletion/credential/sandbox changes require approval',
+      confidence: 0.63,
+      reasons: ['bugfix signals matched'],
+      scopeRead: [],
+      scopeWrite: [],
+      verificationCommands: [],
+    },
+  };
+
+  const intake = await nodes.intake(initial);
+  const routed = await nodes.routeSkills(intake);
+
+  assert.equal(intake.selectedIntent, 'analysis');
+  assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'analysis_plan']);
+});
+
 test('debug planner aliases and debug-shaped goals route to debug_plan before analysis', async () => {
   const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, unknown> }> = [];
   const nodes = createSuperpowersRoutingNodes({
@@ -329,6 +377,44 @@ test('explicit debug goals override generic planner analysis evidence', async ()
     roomId: 'room-1',
     taskId: 'task-1',
     userGoal: 'debug：分析为什么删除项目时可能提示 project has active runs，先给 debug_plan，不要直接修改文件。',
+    projectPath: '/tmp/project',
+  });
+
+  const intake = await nodes.intake(initial);
+  const routed = await nodes.routeSkills(intake);
+
+  assert.equal(intake.selectedIntent, 'debug');
+  assert.equal(createdArtifacts[0]?.structured_data.intent, 'debug');
+  assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'debug_plan']);
+});
+
+test('troubleshooting questions override answer planner evidence to debug route', async () => {
+  const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, unknown> }> = [];
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft(input) {
+      createdArtifacts.push({ artifact_type: input.artifact_type, structured_data: input.structured_data });
+      return { id: `artifact-${createdArtifacts.length}` };
+    },
+    createAssistantMessage() {
+      return { id: 'message-unused' };
+    },
+    async invokePlannerStage(input) {
+      if (input.stageId === 'intake') {
+        return {
+          intent: 'answer',
+          confidence: 0.97,
+          reason: 'generic why wording selected answer',
+        };
+      }
+      return input.fallbackEvidence;
+    },
+  });
+  const initial = emptyAgentWorkflowState({
+    workflowRunId: 'run-debug-question',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-1',
+    userGoal: '排查为什么删除项目会报 project has active runs。',
     projectPath: '/tmp/project',
   });
 
@@ -504,6 +590,44 @@ test('explicit implementation goals override generic planner review-only evidenc
   assert.equal(intake.selectedIntent, 'standard_development');
   assert.equal(createdArtifacts[0]?.structured_data.intent, 'standard_development');
   assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'brainstorming']);
+});
+
+test('explicit review-only goals keep review route even with no-edit wording', async () => {
+  const createdArtifacts: Array<{ artifact_type: WorkflowArtifactVersionType; structured_data: Record<string, unknown> }> = [];
+  const nodes = createSuperpowersRoutingNodes({
+    createArtifactVersionDraft(input) {
+      createdArtifacts.push({ artifact_type: input.artifact_type, structured_data: input.structured_data });
+      return { id: `artifact-${createdArtifacts.length}` };
+    },
+    createAssistantMessage() {
+      return { id: 'message-unused' };
+    },
+    async invokePlannerStage(input) {
+      if (input.stageId === 'intake') {
+        return {
+          intent: 'review_only',
+          confidence: 0.97,
+          reason: '用户要求只审查，不要修改代码。',
+        };
+      }
+      return input.fallbackEvidence;
+    },
+  });
+  const initial = emptyAgentWorkflowState({
+    workflowRunId: 'run-review-no-edit-evidence',
+    projectId: 'project-1',
+    roomId: 'room-1',
+    taskId: 'task-review-only',
+    userGoal: '只审查当前 workflow 相关改动，不要修改代码。',
+    projectPath: '/tmp/project',
+  });
+
+  const intake = await nodes.intake(initial);
+  const routed = await nodes.routeSkills(intake);
+
+  assert.equal(intake.selectedIntent, 'review_only');
+  assert.equal(createdArtifacts[0]?.structured_data.intent, 'review_only');
+  assert.deepEqual(routed.selectedPath, ['intake', 'route_skills', 'review_plan']);
 });
 
 test('routeSkills prioritizes lightweight and pure review intents over incidental wording', async () => {

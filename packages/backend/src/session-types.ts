@@ -6,6 +6,7 @@ import type {
   WorkflowArtifactVersionType,
   WorkflowStatus,
 } from './types.js';
+import type { SuperpowersFinishBranchDecision } from './workflows/graph/state.js';
 
 export type SessionMode = 'ask' | 'plan' | 'code' | 'debug' | 'review';
 export type SessionPhase =
@@ -355,6 +356,7 @@ export interface WorkflowControllerView {
   controller: 'planner' | 'worker' | 'reviewer' | 'verifier' | 'user' | null;
   blocker: string | null;
   next_action: string | null;
+  finishBranchDecision?: SuperpowersFinishBranchDecision | null;
 }
 
 export interface WorkflowAgentAssignmentView {

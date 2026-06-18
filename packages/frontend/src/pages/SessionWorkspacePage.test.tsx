@@ -97,6 +97,15 @@ test('SessionWorkspacePage wires workflow artifact approval through the API and 
   assert.match(source, /onApproveWorkflowArtifact=\{\(artifactVersionId\) => approveWorkflowArtifactMutation\.mutate\(artifactVersionId\)\}/);
 });
 
+test('SessionWorkspacePage wires finish branch decision through the session API', () => {
+  const source = readFileSync(new URL('./SessionWorkspacePage.tsx', import.meta.url), 'utf8');
+
+  assert.match(source, /const submitFinishBranchDecisionMutation = useMutation\(/);
+  assert.match(source, /api\.submitSessionFinishBranchDecision\(\s*workspacePayload\.activeSession\.session\.id,\s*input\.workflowRunId,\s*input\.decision,\s*\)/s);
+  assert.match(source, /onSubmitFinishBranchDecision=\{\(workflowRunId,\s*decision\) =>\s*submitFinishBranchDecisionMutation\.mutate\(\{\s*workflowRunId,\s*decision\s*\}\)\}/s);
+  assert.doesNotMatch(source, /api\.submitWorkflowDecision|\/workflows\/\$\{id\}\/decisions/);
+});
+
 test('SessionWorkspacePage keeps workflow artifact edits routed through normal planner messages', () => {
   assert.match(sessionWorkspacePageSource, /onSendMessage=\{\(message\) => runSessionCommand\(message,\s*workspacePayload,\s*\{/);
   assert.match(sessionWorkspacePageSource, /workflowArtifactChangeRequest:\s*message\.workflowArtifactChangeRequest/);

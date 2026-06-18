@@ -962,6 +962,72 @@ test('Superpowers actual runtime executes TDD, two-stage reviews, verify, and wa
   assert.equal(nodeNames.includes('review'), false);
 });
 
+test('Superpowers finish branch decision resumes through acceptance and completion', async () => {
+  const projectPath = join(tmpdir(), `graph-runtime-superpowers-finish-resume-${Date.now()}`);
+  mkdirSync(projectPath, { recursive: true });
+  const project = projectRepo.create({ name: 'Graph Runtime Superpowers Finish Resume', path: projectPath });
+  const room = roomRepo.create({ project_id: project.id, name: 'Graph Superpowers Finish Resume Room' });
+  const acceptor = addAcpWorkflowAgent(room.id, 'acceptor');
+  roomAgentRepo.setCapabilitiesAndRuntime(acceptor.id, {
+    capabilities: ['backend'],
+    default_runtime: 'acp',
+    tool_policy: { allowed: ['read_files'] },
+    workspace_policy: { read: ['.'], write: [] },
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Resume after finish branch decision',
+  });
+  const run = createGraphWorkflowRun(task.id);
+  workflowRepo.updateGraphState(run.id, JSON.stringify({
+    ...createRunnableSuperpowersState(run.id, project.id, room.id, task.id, task.title, project.path),
+    plan: {
+      ...createRunnableSuperpowersPlan(task.title),
+      verification: ['node --version'],
+      verificationCommands: [
+        { command: 'node --version', reason: 'verify review evidence flow', required: true },
+      ],
+    },
+    tddEvidence: [
+      { stage: 'RED', command: 'node --test', passed: false, summary: 'failed as expected' },
+      { stage: 'GREEN', command: 'node --test', passed: true, summary: 'passed' },
+    ],
+  }));
+
+  const awaitingDecision = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+  const awaitingState = parseGraphState(awaitingDecision.graph_state);
+  assert.equal(awaitingDecision.status, 'awaiting_decision');
+  assert.equal(awaitingState?.superpowersPhase, 'finish_branch');
+
+  workflowRepo.updateRun(run.id, { status: 'running', error: null });
+  workflowRepo.updateGraphState(run.id, serializeGraphState({
+    ...awaitingState!,
+    status: 'running',
+    error: null,
+    finishBranchDecision: {
+      decision: 'keep_branch',
+      options: ['merge_local', 'create_pr', 'keep_branch', 'discard_work'],
+      reason: '用户选择保留当前分支',
+      decidedAt: '2026-06-18T00:00:00.000Z',
+    },
+  }));
+
+  const completed = await continueGraphWorkflow(run.id, {
+    runAcpAgent: async (input) => createCompletedAgentRun(room.id, input),
+  });
+  const completedState = parseGraphState(completed.graph_state);
+  const nodeNames = listRawStepNodeNames(run.id);
+
+  assert.equal(completed.status, 'completed');
+  assert.equal(completedState?.currentNode, 'memory');
+  assert.equal(completedState?.status, 'completed');
+  assert.equal(completedState?.finishBranchDecision?.decision, 'keep_branch');
+  assert.equal(nodeNames.includes('acceptance'), true);
+});
+
 test('Superpowers review stages run current room reviewer agents instead of auto-approving', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-superpowers-agent-review-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });

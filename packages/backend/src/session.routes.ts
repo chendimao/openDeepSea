@@ -63,6 +63,7 @@ import { workflowOrchestrator } from './workflows/orchestrator.js';
 export const sessionRouter = Router();
 
 const sessionModeSchema = z.enum(['ask', 'plan', 'code', 'debug', 'review']);
+const finishBranchDecisionSchema = z.enum(['merge_local', 'create_pr', 'keep_branch', 'discard_work']);
 
 sessionRouter.get('/active-sessions', listActiveSessions);
 sessionRouter.get('/projects/:projectId/sessions', listProjectSessions);
@@ -71,6 +72,7 @@ sessionRouter.get('/sessions/:sessionId', getSessionDetail);
 sessionRouter.patch('/sessions/:sessionId', updateSession);
 sessionRouter.get('/sessions/:sessionId/todo-stats', getSessionTodoStats);
 sessionRouter.post('/sessions/:sessionId/workflow-artifacts/:artifactVersionId/approve', approveSessionWorkflowArtifact);
+sessionRouter.post('/sessions/:sessionId/workflows/:workflowRunId/finish-branch-decision', submitSessionFinishBranchDecision);
 sessionRouter.get('/history-records/:historyRecordId', getHistoryRecord);
 sessionRouter.post('/history-records/:historyRecordId/resume-brief/regenerate', regenerateResumeBrief);
 sessionRouter.get('/history-records/:historyRecordId/export', exportHistoryRecord);
@@ -209,6 +211,59 @@ function approveSessionWorkflowArtifact(req: { params: { sessionId: string; arti
   broadcastSessionWorkspaceSnapshot(session);
   const view = toWorkflowArtifactVersionView(approved);
   res.json(view);
+}
+
+function submitSessionFinishBranchDecision(
+  req: { params: { sessionId: string; workflowRunId: string }; body: unknown },
+  res: Response,
+): void {
+  const session = sessionRepo.get(req.params.sessionId);
+  if (!session) {
+    res.status(404).json({ error: 'session not found' });
+    return;
+  }
+  const run = workflowRepo.getRun(req.params.workflowRunId);
+  if (!run || !sessionOwnsWorkflowRun(session, run)) {
+    res.status(404).json({ error: 'workflow run not found for session' });
+    return;
+  }
+  const parsed = z.object({
+    decision: finishBranchDecisionSchema,
+  }).safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.flatten() });
+    return;
+  }
+  const state = parseGraphState(run.graph_state);
+  if (!state || state.superpowersPhase !== 'finish_branch' || run.status !== 'awaiting_decision') {
+    res.status(409).json({ error: 'workflow is not awaiting finish branch decision' });
+    return;
+  }
+  const nextState: AgentWorkflowState = {
+    ...state,
+    status: 'running',
+    error: null,
+    finishBranchDecision: {
+      decision: parsed.data.decision,
+      options: state.finishBranchDecision?.options?.length
+        ? state.finishBranchDecision.options
+        : ['merge_local', 'create_pr', 'keep_branch', 'discard_work'],
+      reason: state.finishBranchDecision?.reason ?? '用户已选择分支收尾方式',
+      decidedAt: new Date().toISOString(),
+    },
+  };
+  const graphStateUpdated = workflowRepo.updateGraphState(run.id, serializeGraphState(nextState));
+  const updated = workflowRepo.updateRun(run.id, {
+    status: 'running',
+    error: null,
+  }) ?? graphStateUpdated;
+  if (!updated) {
+    res.status(404).json({ error: 'workflow run not found' });
+    return;
+  }
+  workflowOrchestrator.enqueueExistingGraphRun(updated.id);
+  broadcastSessionWorkspaceSnapshot(session);
+  res.json(updated);
 }
 
 function getHistoryRecord(req: { params: { historyRecordId: string } }, res: Response): void {
@@ -432,7 +487,9 @@ function buildWorkflowControllerView(runs: WorkflowRun[]): WorkflowControllerVie
   const run = latestWorkflowRun(runs);
   if (!run) return null;
   const state = parseGraphState(run.graph_state);
-  const activeStage = state?.activeSuperpowersStage ?? run.current_stage ?? null;
+  const activeStage = state?.superpowersPhase === 'finish_branch'
+    ? 'finish_branch'
+    : state?.activeSuperpowersStage ?? run.current_stage ?? null;
   const blocker = state?.error ?? run.error ?? null;
   return {
     workflow_run_id: run.id,
@@ -442,6 +499,7 @@ function buildWorkflowControllerView(runs: WorkflowRun[]): WorkflowControllerVie
     controller: inferWorkflowController(state?.currentNode ?? null, activeStage, run.status),
     blocker,
     next_action: inferWorkflowNextAction(state, run, blocker),
+    finishBranchDecision: state?.finishBranchDecision ?? null,
   };
 }
 
@@ -520,6 +578,12 @@ function latestWorkflowRun(runs: WorkflowRun[]): WorkflowRun | null {
     const runTime = run.updated_at || run.created_at;
     return runTime > latestTime ? run : latest;
   }, null);
+}
+
+function sessionOwnsWorkflowRun(session: Session, run: WorkflowRun): boolean {
+  const task = taskRepo.get(run.task_id);
+  if (!task || task.project_id !== session.project_id || !task.source_message_id) return false;
+  return sessionMessageRepo.listBySession(session.id).some((message) => message.id === task.source_message_id);
 }
 
 function inferWorkflowController(

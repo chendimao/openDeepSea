@@ -121,6 +121,23 @@ test('returns verification commands and requires approval for low-confidence tas
   assert.deepEqual(assessment.verificationCommands, verificationCommands);
 });
 
+test('keeps workflow terminology questions as low-risk chat answers', () => {
+  const assessment = assessTaskRisk({
+    title: '为什么这个系统要使用 workflow-first？请用一句话回答。',
+    description: '为什么这个系统要使用 workflow-first？请用一句话回答。',
+    scopeRead: [],
+    scopeWrite: [],
+    verificationCommands,
+  });
+
+  assert.equal(assessment.taskKind, 'chat_answer');
+  assert.equal(assessment.riskLevel, 'low');
+  assert.equal(assessment.requiresApproval, false);
+  assert.equal(assessment.approvalReason, '');
+  assert.ok(assessment.reasons.includes('chat answer is read-only'));
+  assert.deepEqual(assessment.verificationCommands, verificationCommands);
+});
+
 test('requires approval for a single workflow shared schema or types file', () => {
   const assessment = assessTaskRisk({
     title: 'Adjust risk state',

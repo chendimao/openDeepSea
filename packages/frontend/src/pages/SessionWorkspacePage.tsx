@@ -21,6 +21,7 @@ import type {
   SessionPlanItem,
   SessionTodoStats,
   SessionWorkspacePayload,
+  SuperpowersFinishBranchDecisionValue,
 } from '../lib/types';
 import { sessionSocket, type WsServerEvent } from '../lib/ws';
 import { CompactPreviewSurface } from '../session-ui/CompactPreviewSurface';
@@ -530,6 +531,30 @@ export function SessionWorkspacePage({
     },
   });
 
+  const submitFinishBranchDecisionMutation = useMutation({
+    mutationFn: (input: { workflowRunId: string; decision: SuperpowersFinishBranchDecisionValue }) => {
+      if (!workspacePayload) throw new Error('Session 未加载');
+      return api.submitSessionFinishBranchDecision(
+        workspacePayload.activeSession.session.id,
+        input.workflowRunId,
+        input.decision,
+      );
+    },
+    onSuccess: () => {
+      const payloadSnapshot = workspacePayload;
+      if (payloadSnapshot) {
+        sessionSocket.requestSessionWorkspace({
+          projectId: payloadSnapshot.activeSession.session.project_id,
+          sessionId: payloadSnapshot.activeSession.session.id,
+        });
+      }
+      toast.success('工作流收尾方式已确认');
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : '确认工作流收尾方式失败');
+    },
+  });
+
   if (!activeProjectId) {
     return (
       <div className="session-shell session-shell--empty">
@@ -626,6 +651,8 @@ export function SessionWorkspacePage({
       onToggleSessionPin={(session) => toggleSessionPinMutation.mutate(session)}
       onSaveKnowledge={(input) => saveKnowledgeMutation.mutate(input)}
       onApproveWorkflowArtifact={(artifactVersionId) => approveWorkflowArtifactMutation.mutate(artifactVersionId)}
+      onSubmitFinishBranchDecision={(workflowRunId, decision) =>
+        submitFinishBranchDecisionMutation.mutate({ workflowRunId, decision })}
       savingKnowledgeKey={saveKnowledgeMutation.isPending ? saveKnowledgeMutation.variables?.key ?? null : null}
       todoStats={sessionTodoStats}
     />

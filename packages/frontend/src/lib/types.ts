@@ -908,6 +908,7 @@ export interface WorkflowControllerView {
   controller: 'planner' | 'worker' | 'reviewer' | 'verifier' | 'user' | null;
   blocker: string | null;
   next_action: string | null;
+  finishBranchDecision?: SuperpowersFinishBranchDecision | null;
 }
 
 export interface WorkflowAgentAssignmentView {
