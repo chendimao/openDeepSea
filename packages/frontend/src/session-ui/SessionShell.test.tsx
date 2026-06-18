@@ -499,7 +499,7 @@ test('SessionShell renders finish branch decision actions inside workflow chat m
   assert.doesNotMatch(workflowMessageArea, /data-workflow-mission-strip="true"/);
 });
 
-test('SessionShell merges workflow events into a compact preview inside the transcript message', () => {
+test('SessionShell keeps every workflow event visible inside the transcript message', () => {
   const payload = createPayload();
   payload.activeSession.workflowController = null;
   payload.activeSession.workflowArtifacts = [];
@@ -528,18 +528,21 @@ test('SessionShell merges workflow events into a compact preview inside the tran
 
   const html = renderSessionShell(payload);
 
-  assert.match(html, /data-workflow-merged-summary="true"/);
   assert.match(html, /6 条工作流事件/);
+  assert.match(html, /data-workflow-events-history="true"/);
+  assert.match(html, /workflow event 1:/);
+  assert.match(html, /workflow event 2:/);
+  assert.match(html, /workflow event 3:/);
+  assert.match(html, /workflow event 4:/);
+  assert.match(html, /workflow event 5:/);
   assert.match(html, /workflow event 6:/);
   assert.doesNotMatch(html, /data-workflow-state-stream="true"/);
-  assert.doesNotMatch(html, /Execution Log 合并事件/);
-  assert.doesNotMatch(html, /已合并前 5 条 workflow 事件/);
-  assert.doesNotMatch(html, /workflow event 5:/);
-  assert.doesNotMatch(html, /workflow event 1:/);
-  assert.doesNotMatch(html, /workflow event 1:.*workflow event 2:.*workflow event 3:.*workflow event 4:.*workflow event 5:.*workflow event 6:/s);
+  assert.doesNotMatch(html, /data-workflow-merged-summary="true"/);
+  assert.doesNotMatch(html, /旧事件/);
+  assert.doesNotMatch(html, /仅显示最新/);
 });
 
-test('SessionShell renders workflow events as a compact one-line summary in flow mode', () => {
+test('SessionShell renders all workflow event records instead of a compact one-line summary', () => {
   const payload = createPayload();
   payload.activeSession.workflowController = null;
   payload.activeSession.workflowArtifacts = [];
@@ -567,11 +570,14 @@ test('SessionShell renders workflow events as a compact one-line summary in flow
   ];
 
   const html = renderSessionShell(payload);
+  const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
+  const workflowMessageHtml = html.slice(workflowMessageIndex, html.indexOf('deepsea-composer-anchor'));
 
-  assert.match(html, /data-compact="true"/);
-  assert.match(html, /workflow event 3: compact/);
-  assert.doesNotMatch(html, /workflow event 1: compact/);
-  assert.doesNotMatch(html, /workflow event 2: compact/);
+  assert.match(workflowMessageHtml, /data-workflow-events-history="true"/);
+  assert.doesNotMatch(workflowMessageHtml, /data-compact="true"/);
+  assert.match(workflowMessageHtml, /workflow event 1: compact/);
+  assert.match(workflowMessageHtml, /workflow event 2: compact/);
+  assert.match(workflowMessageHtml, /workflow event 3: compact/);
 });
 
 test('SessionShell renders workflow as a transcript message instead of a top mission panel', () => {
@@ -669,11 +675,12 @@ test('SessionShell merges consecutive workflow transcript messages into one work
   const html = renderSessionShell(payload);
 
   assert.equal((html.match(/data-workflow-chat-message="true"/g) ?? []).length, 1);
-  assert.match(html, /已合并 3 条工作流事件/);
-  assert.match(html, /data-workflow-merged-summary="true"/);
+  assert.match(html, /2 条工作流事件/);
+  assert.match(html, /data-workflow-events-history="true"/);
   assert.doesNotMatch(html, /data-workflow-state-stream="true"/);
-  assert.doesNotMatch(html, /deepsea-workflow-events" data-expanded="false" data-compact="true"/);
-  assert.doesNotMatch(html, /implementation 阶段已完成/);
+  assert.doesNotMatch(html, /data-workflow-merged-summary="true"/);
+  assert.match(html, /继续处理这个任务。/);
+  assert.match(html, /implementation 阶段已完成/);
   assert.match(html, /TDD evidence gate requires records/);
   assert.doesNotMatch(html, /data-workflow-mission-strip="true"/);
 });
@@ -754,7 +761,9 @@ test('SessionShell keeps run capsules from splitting consecutive workflow transc
 
   assert.match(html, /data-run-flow-capsule="true"/);
   assert.equal((html.match(/data-workflow-chat-message="true"/g) ?? []).length, 1);
-  assert.match(html, /data-workflow-merged-summary="true"/);
+  assert.match(html, /data-workflow-events-history="true"/);
+  assert.doesNotMatch(html, /data-workflow-merged-summary="true"/);
+  assert.match(html, /analysis 阶段已完成/);
   assert.match(html, /已完成，进入 review/);
   assert.doesNotMatch(html, /data-workflow-mission-strip="true"/);
 });
@@ -843,13 +852,14 @@ test('SessionShell only attaches live workflow state to the latest workflow chat
     ? html.slice(transcriptScrollIndex, transcriptEndIndex)
     : html;
 
-  assert.equal((transcriptHtml.match(/data-workflow-chat-message="true"/g) ?? []).length, 1);
+  assert.equal((transcriptHtml.match(/data-workflow-chat-message="true"/g) ?? []).length, 2);
   assert.equal((transcriptHtml.match(/data-workflow-assignment-summary="true"/g) ?? []).length, 1);
-  assert.doesNotMatch(transcriptHtml, /工作流已启动/);
-  assert.doesNotMatch(transcriptHtml, /产品经理检测到子任务异常/);
-  const workflowIndex = transcriptHtml.indexOf('data-workflow-chat-message="true"');
-  assert.ok(workflowIndex >= 0);
-  const latestWorkflowHtml = transcriptHtml.slice(workflowIndex);
+  assert.match(transcriptHtml, /data-workflow-events-history="true"/);
+  assert.match(transcriptHtml, /工作流已启动/);
+  assert.match(transcriptHtml, /产品经理检测到子任务异常/);
+  const latestWorkflowIndex = transcriptHtml.lastIndexOf('data-workflow-chat-message="true"');
+  assert.ok(latestWorkflowIndex >= 0);
+  const latestWorkflowHtml = transcriptHtml.slice(latestWorkflowIndex);
   assert.match(latestWorkflowHtml, /data-workflow-assignment-summary="true"/);
   assert.doesNotMatch(latestWorkflowHtml, /data-workflow-state-stream="true"/);
   assert.doesNotMatch(latestWorkflowHtml, /data-workflow-flow-root="true"/);
@@ -908,11 +918,11 @@ test('SessionShell renders merged workflow events as a readable state stream wit
   const html = renderSessionShell(payload);
 
   assert.match(html, /data-workflow-chat-message="true"/);
-  assert.match(html, /data-workflow-merged-summary="true"/);
+  assert.match(html, /data-workflow-events-history="true"/);
   assert.match(html, /3 条工作流事件/);
-  assert.match(html, /验证 · 最新流转/);
+  assert.match(html, /产品经理检测到子任务异常/);
   assert.match(html, /任务「删除项目前停止 active runs」进入 verify 阶段。/);
-  assert.doesNotMatch(html, /"verdict": "pass"/);
+  assert.match(html, /审查员/);
   assert.doesNotMatch(html, /data-workflow-flow-root="true"/);
 });
 
@@ -985,9 +995,9 @@ test('SessionShell renders workflow planner analysis as assistant chat content',
   assert.equal((html.match(/data-workflow-chat-message="true"/g) ?? []).length, 1);
   assert.ok(workflowMessageIndex > transcriptScrollIndex);
   assert.ok(analysisIndex > transcriptScrollIndex);
-  assert.ok(analysisIndex < workflowMessageIndex);
+  assert.ok(analysisIndex > workflowMessageIndex);
   assert.match(html, /规划师/);
-  assert.doesNotMatch(workflowCardHtml, /我先只读定位删除项目与 active runs 的相关代码/);
+  assert.match(workflowCardHtml, /我先只读定位删除项目与 active runs 的相关代码/);
 });
 
 test('SessionShell keeps workflow planner analysis正文 inside the workflow chat bubble', () => {

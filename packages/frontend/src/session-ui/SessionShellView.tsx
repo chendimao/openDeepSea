@@ -1625,7 +1625,6 @@ type WorkflowViewMode = 'flow' | 'log';
 type WorkflowChatStatus = 'pending' | 'active' | 'waiting' | 'blocked' | 'done';
 
 const WORKFLOW_STAGE_ORDER = ['analysis', 'planning', 'assignment', 'implementation', 'code_review', 'acceptance'] as const;
-const WORKFLOW_EVENT_PREVIEW_LIMIT = 4;
 const WORKFLOW_PLANNER_ASSIGNMENT_LIMIT = 5;
 
 interface WorkflowChatGroup {
@@ -1654,14 +1653,14 @@ function WorkflowChatMessage({
   const summary = plannerSummary?.body ?? formatWorkflowChatSummary(group);
   const status = getWorkflowChatStatus(group);
   const hasLiveWorkflowState = hasWorkflowChatState(group);
-  const hasMergedEventState = !hasLiveWorkflowState && group.messages.length >= 2;
+  const hasWorkflowEventHistory = group.messages.length > 0;
 
   return (
     <article
       className={[
         'deepsea-message deepsea-message--workflow',
         `is-${status}`,
-        hasMergedEventState ? 'is-merged-events' : null,
+        hasWorkflowEventHistory ? 'is-merged-events' : null,
       ].filter(Boolean).join(' ')}
       data-role="assistant"
       data-workflow-chat-message="true"
@@ -1694,16 +1693,10 @@ function WorkflowChatMessage({
         ) : null}
         {hasLiveWorkflowState ? (
           plannerSummary?.assignments.length ? null : <WorkflowLiveAssignmentSummary assignments={group.assignments} />
-        ) : hasMergedEventState ? (
-          <WorkflowMergedEventStateStream
-            status={status}
-            messages={group.messages}
-          />
         ) : null}
-        {!hasMergedEventState && !hasLiveWorkflowState ? (
+        {hasWorkflowEventHistory ? (
           <WorkflowEventRows
             messages={group.messages}
-            expanded={false}
           />
         ) : null}
         {hasLiveWorkflowState ? (
@@ -1817,33 +1810,6 @@ function WorkflowFinishBranchDecision({
         ))}
       </div>
     </section>
-  );
-}
-
-function WorkflowMergedEventStateStream({
-  messages,
-  status,
-}: {
-  messages: SessionMessage[];
-  status: WorkflowChatStatus;
-}): JSX.Element {
-  const summary = buildWorkflowMergedEventSummary(messages, status);
-  return (
-    <div
-      className="deepsea-workflow-merged-summary"
-      data-workflow-merged-summary="true"
-      aria-label="合并后的 Workflow 流转"
-    >
-      <div className="deepsea-workflow-merged-summary__head">
-        <span aria-hidden="true" />
-        <strong>{summary.eventCount} 条工作流事件</strong>
-        <em>{formatWorkflowFlowStatus(status)}</em>
-      </div>
-      <div className="deepsea-workflow-merged-summary__body">
-        <span>{summary.phaseLabel}</span>
-        <p title={summary.latestText}>{summary.latestText}</p>
-      </div>
-    </div>
   );
 }
 
@@ -1998,56 +1964,36 @@ function WorkflowChatStateStep({
 
 function WorkflowEventRows({
   messages,
-  expanded = false,
 }: {
   messages: SessionMessage[];
-  expanded?: boolean;
 }): JSX.Element | null {
   if (messages.length === 0) return null;
-  if (!expanded) {
-    const latestMessage = messages[messages.length - 1]!;
-    const hiddenCount = Math.max(0, messages.length - 1);
-    return (
-      <div className="deepsea-workflow-events" data-expanded="false" data-compact="true" aria-label="连续工作流事件">
-        <div className="deepsea-workflow-events__header">
-          <span>Execution Log 合并事件</span>
-          <strong>{messages.length} events</strong>
-        </div>
-        <div className="deepsea-workflow-events__compact">
-          <strong>{formatWorkflowEventLabel(latestMessage)}</strong>
-          <time className="deepsea-mono">{formatClock(latestMessage.created_at)}</time>
-          <span title={latestMessage.content}>{formatWorkflowEventPreview(latestMessage.content)}</span>
-          <em title={`已合并前 ${hiddenCount} 条 workflow 事件`}>{hiddenCount > 0 ? `+${hiddenCount} 旧事件` : '最新事件'}</em>
-        </div>
-      </div>
-    );
-  }
-  const previewLimit = expanded ? messages.length : WORKFLOW_EVENT_PREVIEW_LIMIT;
-  const hiddenCount = Math.max(0, messages.length - previewLimit);
-  const visibleMessages = messages.slice(-previewLimit);
   return (
-    <div className="deepsea-workflow-events" data-expanded={expanded ? 'true' : 'false'} aria-label="连续工作流事件">
+    <div
+      className="deepsea-workflow-events"
+      data-expanded="true"
+      data-workflow-events-history="true"
+      aria-label="连续工作流事件"
+    >
       <div className="deepsea-workflow-events__header">
-        <span>Execution Log 合并事件</span>
-        <strong>{messages.length} events</strong>
+        <span>流转记录</span>
+        <strong>{formatWorkflowEventCount(messages)}</strong>
       </div>
-      {visibleMessages.map((message, index) => (
-        <article className="deepsea-workflow-event" key={message.id}>
-          <span className="deepsea-workflow-event__index">{String(hiddenCount + index + 1).padStart(2, '0')}</span>
-          <div className="deepsea-workflow-event__body">
-            <div className="deepsea-workflow-event__meta">
-              <strong>{formatWorkflowEventLabel(message)}</strong>
-              <time className="deepsea-mono">{formatClock(message.created_at)}</time>
+      {messages.map((message, index) => {
+        const preview = formatWorkflowEventPreview(message.content);
+        return (
+          <article className="deepsea-workflow-event" key={message.id}>
+            <span className="deepsea-workflow-event__index">{String(index + 1).padStart(2, '0')}</span>
+            <div className="deepsea-workflow-event__body">
+              <div className="deepsea-workflow-event__meta">
+                <strong>{formatWorkflowEventLabel(message)}</strong>
+                <time className="deepsea-mono">{formatClock(message.created_at)}</time>
+              </div>
+              <p title={preview}>{preview}</p>
             </div>
-            <p title={message.content}>{formatWorkflowEventPreview(message.content)}</p>
-          </div>
-        </article>
-      ))}
-      {hiddenCount > 0 ? (
-        <div className="deepsea-workflow-events__more">
-          已合并前 {hiddenCount} 条 workflow 事件，当前优先显示最近流转。
-        </div>
-      ) : null}
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -2389,46 +2335,9 @@ function buildWorkflowFlowCards(
   return [...distributionCards, ...executionCards];
 }
 
-function buildWorkflowMergedEventSummary(
-  messages: SessionMessage[],
-  status: WorkflowChatStatus,
-): {
-  phaseLabel: string;
-  latestText: string;
-  eventCount: number;
-} {
-  const latestMessage = messages[messages.length - 1] ?? null;
-  const latestWorkflowMessage = findLatestWorkflowMessage(messages) ?? latestMessage;
-  const stageLabel = inferWorkflowStageFromMessage(latestWorkflowMessage) ?? inferWorkflowStageFromMessage(latestMessage) ?? 'workflow';
-  const latestPreview = latestMessage ? formatWorkflowEventPreview(latestMessage.content) : '等待工作流事件';
-  return {
-    phaseLabel: `${stageLabel} · 最新流转`,
-    latestText: latestPreview,
-    eventCount: messages.length,
-  };
-}
-
-function findLatestWorkflowMessage(messages: SessionMessage[]): SessionMessage | null {
-  return [...messages].reverse().find((message) => {
-    const eventType = workflowMessageEventType(message);
-    return Boolean(eventType?.startsWith('workflow_') || eventType?.startsWith('workflow-') || message.sender_id === 'workflow');
-  }) ?? null;
-}
-
 function workflowMessageEventType(message: SessionMessage | null): string | null {
   if (!message) return null;
   return parseMessageMetadata(message.metadata).event_type ?? null;
-}
-
-function inferWorkflowStageFromMessage(message: SessionMessage | null): string | null {
-  if (!message) return null;
-  const stageMatch = message.content.match(/进入\s*([a-zA-Z0-9_-]+|[\u4e00-\u9fa5]+)\s*阶段/);
-  if (stageMatch?.[1]) return formatWorkflowStageLabel(stageMatch[1]);
-  const eventType = workflowMessageEventType(message);
-  if (eventType === 'workflow_started') return '计划';
-  if (eventType === 'workflow_recovery_decided') return '恢复';
-  if (eventType === 'workflow_stage_changed') return '阶段推进';
-  return null;
 }
 
 function formatWorkflowAssignmentCardTitle(
@@ -2706,7 +2615,7 @@ type SourceTranscriptTimelineItem =
 function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[] {
   const sourceTimeline: SourceTranscriptTimelineItem[] = [
     ...detail.messages
-      .filter((message) => !shouldSuppressWorkflowTranscriptMessage(message, detail))
+      .filter((message) => !shouldSuppressWorkflowTranscriptMessage(message))
       .map((message) => ({
         kind: 'message' as const,
         key: `message:${message.id}`,
@@ -2793,19 +2702,10 @@ function hasWorkflowState(detail: SessionDetail): boolean {
   );
 }
 
-function shouldSuppressWorkflowTranscriptMessage(message: SessionMessage, detail: SessionDetail): boolean {
+function shouldSuppressWorkflowTranscriptMessage(message: SessionMessage): boolean {
   const metadata = parseMessageMetadata(message.metadata);
   if (isWorkflowStructuredHelperMessage(message, metadata)) return true;
-  if (metadata.event_type !== 'workflow_started' && metadata.event_type !== 'task_created') return false;
-  const workflowRunId = metadata.workflow_run_id ?? detail.workflowController?.workflow_run_id ?? null;
-  if (!workflowRunId) return false;
-  return detail.messages.some((candidate) => {
-    if (candidate.id === message.id || candidate.created_at <= message.created_at) return false;
-    const candidateMetadata = parseMessageMetadata(candidate.metadata);
-    if (candidateMetadata.workflow_run_id && candidateMetadata.workflow_run_id !== workflowRunId) return false;
-    if (isWorkflowTranscriptMessage(candidate)) return true;
-    return candidate.role === 'assistant' && Boolean(candidateMetadata.workflow_run_id || candidateMetadata.workflow_step_id);
-  });
+  return false;
 }
 
 function shouldKeepWorkflowTranscriptGroupOpen(message: SessionMessage, workflowRunId: string | null): boolean {
@@ -2928,12 +2828,10 @@ function formatWorkflowChatSummary(group: WorkflowChatGroup): string {
     return group.controller.next_action;
   }
   if (hasWorkflowChatState(group) && group.messages.length > 0) {
-    return `已合并 ${group.messages.length} 条工作流事件，当前仅显示最新流转摘要。`;
+    return `${group.messages.length} 条工作流事件`;
   }
   if (group.messages.length > 0) {
-    const latestMessage = group.messages[group.messages.length - 1];
-    const preview = latestMessage ? formatWorkflowEventPreview(latestMessage.content) : '等待工作流事件';
-    return `已合并 ${group.messages.length} 条工作流事件，最新：${preview}`;
+    return `${group.messages.length} 条工作流事件`;
   }
   return group.controller?.next_action
     ?? formatWorkflowMissionMeta(group.controller)
