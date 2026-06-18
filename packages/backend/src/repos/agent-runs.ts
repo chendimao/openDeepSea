@@ -95,6 +95,16 @@ export const agentRunRepo = {
     return this.listByRoom(roomId, limit).map(compactAgentRunForClient);
   },
 
+  listByWorkflow(workflowRunId: string): AgentRun[] {
+    return db
+      .prepare(
+        `SELECT * FROM agent_runs
+         WHERE workflow_run_id = ?
+         ORDER BY started_at ASC, rowid ASC`,
+      )
+      .all(workflowRunId) as AgentRun[];
+  },
+
   listActiveByWorkflow(workflowRunId: string): AgentRun[] {
     return db
       .prepare(

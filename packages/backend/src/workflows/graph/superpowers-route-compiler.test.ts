@@ -37,4 +37,6 @@ test('buildSuperpowersRouteDefinition exposes all intent branches', () => {
   assert.equal(edgeIds.has('route_skills->debug_plan:debug'), true);
   assert.equal(edgeIds.has('route_skills->review_plan:review_only'), true);
   assert.equal(edgeIds.has('spec_compliance_review->verification:review_only'), true);
+  assert.equal(edgeIds.has('verification->acceptance:review_only'), true);
+  assert.equal(edgeIds.has('verification->finish_branch:'), true);
 });

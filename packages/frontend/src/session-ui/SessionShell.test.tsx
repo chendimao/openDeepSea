@@ -356,6 +356,110 @@ test('SessionShell renders workflow chat message with gate and agent summaries',
   assert.ok(workflowMessageIndex > transcriptScrollIndex);
 });
 
+test('SessionShell renders workflow agent run capsule inside transcript timeline', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  payload.activeSession.messages = [{
+    id: 'message-workflow-user',
+    session_id: 'session-1',
+    role: 'user',
+    sender_id: 'user',
+    sender_name: '大哥',
+    content: '实现 workflow agent run 胶囊',
+    message_type: 'text',
+    status: 'completed',
+    metadata: null,
+    created_at: now - 90_000,
+  }, {
+    id: 'message-workflow-status',
+    session_id: 'session-1',
+    role: 'assistant',
+    sender_id: 'planner',
+    sender_name: '规划师',
+    content: '已完成分析，进入执行。',
+    message_type: 'text',
+    status: 'completed',
+    metadata: JSON.stringify({
+      workflow_run_id: 'workflow-run-capsule',
+      workflow_step_id: 'step-1',
+      event_type: 'workflow_stage_changed',
+    }),
+    created_at: now - 70_000,
+  }];
+  payload.activeSession.workflowController = {
+    workflow_run_id: 'workflow-run-capsule',
+    status: 'completed',
+    selected_intent: 'standard_development',
+    active_stage: 'finish_branch',
+    controller: 'planner',
+    blocker: null,
+    next_action: null,
+  };
+  payload.activeSession.workflowAgentAssignments = [{
+    task_id: 'task-1',
+    task_title: '实现 workflow agent run 胶囊',
+    role: 'executor',
+    assigned_agent_id: 'agent-codex',
+    assigned_agent_name: 'Codex',
+    backend: 'codex',
+    fallback_reason: null,
+    execution_mode: 'serial',
+    scope_write: ['packages/frontend/src/session-ui/SessionShellView.tsx'],
+  }];
+  payload.activeSession.workflowArtifacts = [];
+  payload.activeSession.workflowGates = [];
+  payload.activeSession.runs = [{
+    ...payload.activeSession.runs[0]!,
+    id: 'workflow-agent-run-1',
+    agent_id: 'agent-codex',
+    status: 'completed',
+    phase: 'implementing',
+    prompt: '执行 workflow 子任务',
+    stdout: '子代理执行正文',
+    activity_log: '读取相关文件',
+    started_at: now - 55_000,
+    updated_at: now - 50_000,
+    completed_at: now - 50_000,
+  }];
+  payload.activeSession.agentEvents = [
+    createAgentEvent({
+      id: 'workflow-agent-event-started',
+      run_id: 'workflow-agent-run-1',
+      agent_id: 'agent-codex',
+      seq: 1,
+      channel: 'activity',
+      event_type: 'workflow_agent_started',
+      content: '子代理开始执行',
+      created_at: now - 55_000,
+    }),
+    createAgentEvent({
+      id: 'workflow-agent-event-completed',
+      run_id: 'workflow-agent-run-1',
+      agent_id: 'agent-codex',
+      seq: 2,
+      channel: 'event',
+      event_type: 'workflow_agent_completed',
+      content: '子代理完成执行',
+      created_at: now - 50_000,
+    }),
+  ];
+
+  const html = renderSessionShell(payload);
+  const transcriptScrollIndex = html.indexOf('data-transcript-scroll="true"');
+  const workflowMessageIndex = html.indexOf('data-workflow-chat-message="true"');
+  const runCapsuleIndex = html.indexOf('data-run-flow-capsule="true"');
+
+  assert.ok(transcriptScrollIndex >= 0);
+  assert.ok(workflowMessageIndex > transcriptScrollIndex);
+  assert.ok(runCapsuleIndex > transcriptScrollIndex);
+  assert.match(html, /data-run-flow-capsule="true"/);
+  assert.match(html, /data-compact="true"/);
+  assert.match(html, /Codex/);
+  assert.match(html, /子代理执行正文/);
+  assert.match(html, /子代理完成执行/);
+  assert.doesNotMatch(html, /data-workflow-mission-strip="true"/);
+});
+
 test('SessionShell renders finish branch decision actions inside workflow chat message', () => {
   const payload = createPayload();
   payload.activeSession.workflowController = {
@@ -568,6 +672,87 @@ test('SessionShell merges consecutive workflow transcript messages into one work
   assert.doesNotMatch(html, /deepsea-workflow-events" data-expanded="false" data-compact="true"/);
   assert.doesNotMatch(html, /implementation 阶段已完成/);
   assert.match(html, /TDD evidence gate requires records/);
+  assert.doesNotMatch(html, /data-workflow-mission-strip="true"/);
+});
+
+test('SessionShell keeps run capsules from splitting consecutive workflow transcript groups', () => {
+  const payload = createPayload();
+  const now = Date.now();
+  payload.activeSession.workflowController = null;
+  payload.activeSession.workflowArtifacts = [];
+  payload.activeSession.workflowGates = [];
+  payload.activeSession.workflowAgentAssignments = [];
+  payload.activeSession.messages = [
+    {
+      id: 'msg-user-workflow-run-merge',
+      session_id: payload.activeSession.session.id,
+      role: 'user',
+      sender_id: 'user',
+      sender_name: 'User',
+      content: '继续处理这个任务。',
+      message_type: 'text',
+      status: 'completed',
+      metadata: null,
+      created_at: now,
+    },
+    {
+      id: 'msg-workflow-before-run',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'workflow',
+      sender_name: '工作流',
+      content: '子任务「实现前端界面和状态刷新」的 analysis 阶段已完成，进入 implementation。',
+      message_type: 'text',
+      status: 'completed',
+      metadata: JSON.stringify({ workflow_run_id: 'workflow-run-merge' }),
+      created_at: now + 1_000,
+    },
+    {
+      id: 'msg-workflow-after-run',
+      session_id: payload.activeSession.session.id,
+      role: 'assistant',
+      sender_id: 'workflow',
+      sender_name: '工作流',
+      content: '产品经理检测到子任务「实现前端界面和状态刷新」已完成，进入 review。',
+      message_type: 'text',
+      status: 'completed',
+      metadata: JSON.stringify({ workflow_run_id: 'workflow-run-merge' }),
+      created_at: now + 3_000,
+    },
+  ];
+  payload.activeSession.runs = [{
+    ...payload.activeSession.runs[0]!,
+    id: 'run-between-workflow-messages',
+    agent_id: 'planner',
+    status: 'completed',
+    phase: 'implementing',
+    prompt: '执行 workflow 子任务',
+    stdout: '子代理执行正文',
+    stderr: '',
+    activity_log: '',
+    started_at: now + 2_000,
+    updated_at: now + 2_500,
+    completed_at: now + 2_500,
+  }];
+  payload.activeSession.agentEvents = [
+    createAgentEvent({
+      id: 'event-between-workflow-messages',
+      run_id: 'run-between-workflow-messages',
+      agent_id: 'planner',
+      seq: 1,
+      channel: 'answer',
+      event_type: 'agent_message_chunk',
+      content: '子代理执行正文',
+      created_at: now + 2_400,
+    }),
+  ];
+
+  const html = renderSessionShell(payload);
+
+  assert.match(html, /data-run-flow-capsule="true"/);
+  assert.equal((html.match(/data-workflow-chat-message="true"/g) ?? []).length, 1);
+  assert.match(html, /data-workflow-merged-summary="true"/);
+  assert.match(html, /已完成，进入 review/);
   assert.doesNotMatch(html, /data-workflow-mission-strip="true"/);
 });
 

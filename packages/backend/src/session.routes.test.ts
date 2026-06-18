@@ -9,6 +9,7 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-se
 const { projectRepo } = await import('./repos/projects.js');
 const { roomAgentRepo, roomRepo } = await import('./repos/rooms.js');
 const { taskRepo } = await import('./repos/tasks.js');
+const { agentRunRepo } = await import('./repos/agent-runs.js');
 const { workflowArtifactVersionRepo, workflowRepo } = await import('./repos/workflows.js');
 const { fileRepo } = await import('./repos/files.js');
 const { sessionRepo, sessionMessageRepo, sessionRunRepo } = await import('./repos/sessions.js');
@@ -578,6 +579,119 @@ test('session workspace payload exposes workflow controller and agent assignment
     execution_mode: 'parallel',
     scope_write: ['packages/backend/src/session.routes.ts'],
   }]);
+});
+
+test('session workspace payload exposes workflow agent runs as transcript run capsules', () => {
+  const project = projectRepo.create({
+    name: 'workflow agent run payload project',
+    path: mkdtempSync(join(tmpdir(), 'session-workflow-agent-run-payload-project-')),
+  });
+  const room = roomRepo.create({ project_id: project.id, name: 'Workflow Agent Run Room' });
+  const fullstack = roomAgentRepo.ensureBuiltInAgent(room.id, 'fullstack-engineer');
+  const session = sessionRepo.create({
+    project_id: project.id,
+    title: 'Workflow Agent Run Session',
+    mode: 'code',
+    provider: 'codex',
+    workspace_path: project.path,
+  });
+  const sourceMessage = sessionMessageRepo.create({
+    session_id: session.id,
+    role: 'user',
+    sender_id: 'user',
+    sender_name: null,
+    content: '实现 workflow agent run 胶囊',
+    metadata: {},
+  });
+  const task = taskRepo.create({
+    room_id: room.id,
+    project_id: project.id,
+    title: 'Workflow agent run workflow',
+    source_message_id: sourceMessage.id,
+    created_from: 'chat_plan',
+  });
+  const state = emptyAgentWorkflowState({
+    workflowRunId: 'pending',
+    projectId: project.id,
+    roomId: room.id,
+    taskId: task.id,
+    userGoal: sourceMessage.content,
+    projectPath: project.path,
+  });
+  const workflow = workflowRepo.createRun({
+    room_id: room.id,
+    project_id: project.id,
+    task_id: task.id,
+    status: 'completed',
+    current_stage: 'implementation',
+    approval_required: false,
+    graph_version: 'superpowers-v2',
+    graph_state: serializeGraphState(state),
+  });
+  const agentRun = agentRunRepo.create({
+    room_id: room.id,
+    room_agent_id: fullstack.id,
+    agent_id: fullstack.agent_id,
+    backend: 'codex',
+    status: 'running',
+    task_id: task.id,
+    workflow_run_id: workflow.id,
+    workflow_stage: 'implementation',
+    prompt: '执行 workflow 子任务',
+  });
+  const completedAgentRun = agentRunRepo.updateStatus(agentRun.id, 'completed', {
+    stdout: '子代理执行正文',
+    activity_log: '读取相关文件',
+    acp_session_id: 'workflow-agent-acp-session',
+  }) ?? agentRun;
+  workflowRepo.updateGraphState(workflow.id, serializeGraphState({
+    ...state,
+    workflowRunId: workflow.id,
+    currentNode: 'acceptance',
+    selectedIntent: 'standard_development',
+    activeSuperpowersStage: 'implementation',
+    activeAgentRunId: null,
+    status: 'completed',
+    agentEvents: [{
+      workflowRunId: workflow.id,
+      stepId: 'step-1',
+      agentRunId: completedAgentRun.id,
+      type: 'started',
+      summary: '子代理开始执行',
+      detail: '读取相关文件',
+      progress: 10,
+      createdAt: completedAgentRun.started_at,
+    }, {
+      workflowRunId: workflow.id,
+      stepId: 'step-1',
+      agentRunId: completedAgentRun.id,
+      type: 'completed',
+      summary: '子代理完成执行',
+      progress: 100,
+      createdAt: completedAgentRun.completed_at ?? completedAgentRun.updated_at,
+    }],
+  }));
+
+  const payload = buildWorkspacePayload(project, session);
+
+  assert.equal(payload.activeSession.runs.some((run) => run.id === completedAgentRun.id), true);
+  const run = payload.activeSession.runs.find((item) => item.id === completedAgentRun.id);
+  assert.equal(run?.session_id, session.id);
+  assert.equal(run?.agent_id, fullstack.agent_id);
+  assert.equal(run?.provider, 'codex');
+  assert.equal(run?.phase, 'implementing');
+  assert.equal(run?.stdout, '子代理执行正文');
+  assert.equal(run?.activity_log, '读取相关文件');
+  assert.equal(run?.acp_session_id, 'workflow-agent-acp-session');
+  assert.deepEqual(
+    payload.activeSession.agentEvents
+      .filter((event) => event.run_id === completedAgentRun.id)
+      .map((event) => [event.channel, event.event_type, event.content]),
+    [
+      ['activity', 'workflow_agent_started', '子代理开始执行'],
+      ['event', 'workflow_agent_completed', '子代理完成执行'],
+    ],
+  );
 });
 
 test('session workspace payload exposes completed workflow status', () => {

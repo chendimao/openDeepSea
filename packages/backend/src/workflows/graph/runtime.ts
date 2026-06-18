@@ -2312,7 +2312,7 @@ function routeRuntimeNode(
     const route = routeAfterRepairDecision(state);
     return route === END ? null : route;
   }
-  if (node === 'verify') return 'finish_branch';
+  if (node === 'verify') return state.selectedIntent === 'review_only' ? 'acceptance' : 'finish_branch';
   if (node === 'acceptance') return state.status === 'completed' ? 'memory' : null;
   return null;
 }

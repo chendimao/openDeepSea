@@ -145,6 +145,32 @@ test('invokeProtocolSession can drive workflow stages with structured fake ACP o
   };
   assert.equal(acceptance.verdict, 'pass');
   assert.match(acceptance.notes ?? '', /fake ACP/);
+
+  const lightweightPlanOutput = await runPrompt([
+    '当前 Superpowers 路由阶段：lightweight_plan',
+    '用户目标：',
+    '轻量修改 README 文档，追加一行项目说明。',
+    '',
+    '当前 workflow state 摘要：',
+    '{}',
+  ].join('\n'));
+  const lightweightPlan = JSON.parse(lightweightPlanOutput.match(/```json\n([\s\S]*?)\n```/)?.[1] ?? '{}') as {
+    plan?: { verificationCommands?: Array<{ command?: string }> };
+  };
+  assert.equal(lightweightPlan.plan?.verificationCommands?.[0]?.command, 'git diff --check');
+
+  const standardPlanOutput = await runPrompt([
+    'writing_plans 阶段智能体',
+    '',
+    '任务：',
+    '实现一个设置页功能，创建前端界面和必要测试。',
+    '',
+  ].join('\n'));
+  const standardPlanBlocks = [...standardPlanOutput.matchAll(/```json\n([\s\S]*?)\n```/g)];
+  const standardPlan = JSON.parse(standardPlanBlocks[0]?.[1] ?? '{}') as {
+    verification?: Array<{ command?: string }>;
+  };
+  assert.equal(standardPlan.verification?.[0]?.command, 'git diff --check');
 });
 
 test('invokeProtocolSession returns fallback-safe result when agent cannot resume saved session id', async () => {

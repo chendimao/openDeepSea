@@ -1491,7 +1491,7 @@ test('Superpowers debug retry resumes systematic debugging before verification w
   assert.ok(steps.findIndex((step) => step.node_name === 'systematic_debugging') < steps.findIndex((step) => step.node_name === 'verify'));
 });
 
-test('Superpowers review-only path skips TDD execution and proceeds to finish branch decision', async () => {
+test('Superpowers review-only path skips TDD execution and completes without finish branch decision', async () => {
   const projectPath = join(tmpdir(), `graph-runtime-review-only-${Date.now()}`);
   mkdirSync(projectPath, { recursive: true });
   const project = projectRepo.create({ name: 'Graph Runtime Review Only', path: projectPath });
@@ -1550,15 +1550,16 @@ test('Superpowers review-only path skips TDD execution and proceeds to finish br
   const steps = workflowRepo.listSteps(run.id);
   const stepNames = steps.map((step) => step.node_name);
 
-  assert.equal(latest.status, 'awaiting_decision');
+  assert.equal(latest.status, 'completed');
   assert.equal(state?.selectedIntent, 'review_only');
-  assert.equal(state?.currentNode, 'acceptance');
+  assert.equal(state?.currentNode, 'memory');
   assert.equal(state?.verificationEvidence?.length, 0);
   assert.equal(stepNames.includes('spec_compliance_review'), true);
   assert.equal(stepNames.includes('code_quality_review'), false);
   assert.equal(stepNames.includes('tdd_execute'), false);
   assert.equal(stepNames.includes('verify'), true);
-  assert.equal(stepNames.includes('finish_branch'), true);
+  assert.equal(stepNames.includes('finish_branch'), false);
+  assert.equal(stepNames.includes('acceptance'), true);
 });
 
 test('Superpowers review-only findings do not reroute into TDD repair', async () => {
@@ -1617,15 +1618,16 @@ test('Superpowers review-only findings do not reroute into TDD repair', async ()
   const state = parseGraphState(latest.graph_state);
   const stepNames = workflowRepo.listSteps(run.id).map((step) => step.node_name);
 
-  assert.equal(latest.status, 'awaiting_decision');
+  assert.equal(latest.status, 'completed');
   assert.equal(state?.selectedIntent, 'review_only');
   assert.equal(state?.reviewVerdict, 'changes_requested');
-  assert.equal(state?.currentNode, 'acceptance');
+  assert.equal(state?.currentNode, 'memory');
   assert.equal(stepNames.includes('spec_compliance_review'), true);
   assert.equal(stepNames.includes('code_quality_review'), false);
   assert.equal(stepNames.includes('tdd_execute'), false);
   assert.equal(stepNames.includes('verify'), true);
-  assert.equal(stepNames.includes('finish_branch'), true);
+  assert.equal(stepNames.includes('finish_branch'), false);
+  assert.equal(stepNames.includes('acceptance'), true);
 });
 
 test('Superpowers review failure synchronizes workflow run as blocked', async () => {

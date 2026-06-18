@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { fileRepo } from './repos/files.js';
 import { projectRepo } from './repos/projects.js';
 import { roomAgentRepo } from './repos/rooms.js';
+import { agentRunRepo } from './repos/agent-runs.js';
 import { taskRepo } from './repos/tasks.js';
 import { workflowArtifactVersionRepo, workflowRepo } from './repos/workflows.js';
 import {
@@ -36,16 +37,22 @@ import {
 import { wsHub } from './ws-hub.js';
 import type {
   HistoryRecord,
+  AgentRun,
+  AcpBackend,
   Project,
   ProjectFile,
   Session,
+  SessionAgentEvent,
   SessionCompaction,
   SessionContextManifest,
   SessionContract,
   SessionDetail,
   SessionMessage,
   SessionMode,
+  SessionPhase,
   SessionPlanItem,
+  SessionRun,
+  SessionRunStatus,
   SessionTodoStats,
   SessionWorkspacePayload,
   StatusSnapshot,
@@ -414,8 +421,11 @@ function firstNonEmptyText(values: unknown[]): string | null {
 }
 
 function buildSessionDetail(session: Session): SessionDetail {
-  const runs = sessionRunRepo.listBySession(session.id);
   const workflowRuns = listSessionWorkflowRuns(session);
+  const sessionRuns = sessionRunRepo.listBySession(session.id);
+  const workflowAgentRuns = buildWorkflowSessionRuns(session, workflowRuns);
+  const runs = [...sessionRuns, ...workflowAgentRuns]
+    .sort((left, right) => left.started_at - right.started_at || left.id.localeCompare(right.id));
   const workflowArtifacts = workflowRuns.flatMap((run) =>
     workflowArtifactVersionRepo.listByRun(run.id).map(toWorkflowArtifactVersionView)
   );
@@ -425,7 +435,10 @@ function buildSessionDetail(session: Session): SessionDetail {
       backfillSessionMessageAttachments(session.project_id, message)
     ),
     runs,
-    agentEvents: runs.flatMap((run) => sessionAgentEventRepo.listByRun(run.id)),
+    agentEvents: [
+      ...sessionRuns.flatMap((run) => sessionAgentEventRepo.listByRun(run.id)),
+      ...buildWorkflowSessionAgentEvents(session, workflowRuns),
+    ].sort((left, right) => left.created_at - right.created_at || left.seq - right.seq || left.id.localeCompare(right.id)),
     planItems: sessionPlanItemRepo.listBySession(session.id),
     compactions: sessionCompactionRepo.listBySession(session.id),
     checkpoints: sessionCheckpointRepo.listBySession(session.id),
@@ -455,6 +468,88 @@ function listSessionWorkflowRuns(session: Session): WorkflowRun[] {
     .listByProject(session.project_id)
     .filter((task) => task.source_message_id !== null && messageIds.has(task.source_message_id));
   return tasks.flatMap((task) => workflowRepo.listByTask(task.id));
+}
+
+function buildWorkflowSessionRuns(session: Session, workflowRuns: WorkflowRun[]): SessionRun[] {
+  return workflowRuns.flatMap((workflowRun) =>
+    agentRunRepo.listByWorkflow(workflowRun.id)
+      .filter((agentRun) => agentRun.backend !== 'openclaw' || session.provider !== null)
+      .map((agentRun) => mapWorkflowAgentRunToSessionRun(session, agentRun))
+  );
+}
+
+function mapWorkflowAgentRunToSessionRun(session: Session, run: AgentRun): SessionRun {
+  return {
+    id: run.id,
+    session_id: session.id,
+    agent_id: run.agent_id,
+    provider: normalizeWorkflowAgentRunProvider(session, run),
+    model: null,
+    status: normalizeWorkflowAgentRunStatus(run.status),
+    mode: session.mode,
+    phase: normalizeWorkflowAgentRunPhase(run.workflow_stage),
+    prompt: run.prompt,
+    stdout: run.stdout,
+    stderr: run.stderr,
+    activity_log: run.activity_log,
+    error: run.error,
+    acp_session_id: run.acp_session_id,
+    runtime_profile_snapshot: null,
+    started_at: run.started_at,
+    updated_at: run.updated_at,
+    completed_at: run.completed_at,
+  };
+}
+
+function normalizeWorkflowAgentRunProvider(session: Session, run: AgentRun): AcpBackend {
+  if (run.backend === 'claudecode' || run.backend === 'opencode' || run.backend === 'codex') return run.backend;
+  return session.provider ?? 'codex';
+}
+
+function normalizeWorkflowAgentRunStatus(status: AgentRun['status']): SessionRunStatus {
+  if (status === 'queued' || status === 'running' || status === 'retrying') return status;
+  if (status === 'completed' || status === 'failed' || status === 'cancelled' || status === 'interrupted') return status;
+  return 'failed';
+}
+
+function normalizeWorkflowAgentRunPhase(stage: AgentRun['workflow_stage']): SessionPhase | null {
+  if (stage === 'analysis') return 'brainstorming';
+  if (stage === 'planning' || stage === 'assignment') return 'planning';
+  if (stage === 'implementation') return 'implementing';
+  if (stage === 'code_review') return 'reviewing';
+  if (stage === 'acceptance') return 'verifying';
+  return null;
+}
+
+function buildWorkflowSessionAgentEvents(session: Session, workflowRuns: WorkflowRun[]): SessionAgentEvent[] {
+  return workflowRuns.flatMap((workflowRun) => {
+    const state = parseGraphState(workflowRun.graph_state);
+    const events = state?.agentEvents ?? [];
+    return events
+      .filter((event) => agentRunRepo.get(event.agentRunId)?.workflow_run_id === workflowRun.id)
+      .map((event, index) => ({
+        id: `workflow:${workflowRun.id}:${event.stepId}:${event.agentRunId}:${event.createdAt}:${index}`,
+        session_id: session.id,
+        agent_id: agentRunRepo.get(event.agentRunId)?.agent_id ?? 'workflow-agent',
+        run_id: event.agentRunId,
+        seq: index + 1,
+        channel: normalizeWorkflowAgentEventChannel(event.type),
+        event_type: `workflow_agent_${event.type}`,
+        content: event.summary,
+        payload_json: JSON.stringify(event),
+        created_at: event.createdAt,
+      }));
+  });
+}
+
+function normalizeWorkflowAgentEventChannel(
+  type: NonNullable<AgentWorkflowState['agentEvents']>[number]['type'],
+): SessionAgentEvent['channel'] {
+  if (type === 'completed') return 'event';
+  if (type === 'failed' || type === 'blocked') return 'event';
+  if (type === 'artifact') return 'tool';
+  if (type === 'decision_request' || type === 'scope_change_request' || type === 'plan_change_request') return 'thinking';
+  return 'activity';
 }
 
 function findSessionWorkflowRunForArtifact(

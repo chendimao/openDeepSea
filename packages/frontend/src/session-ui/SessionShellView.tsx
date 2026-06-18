@@ -2753,6 +2753,10 @@ function buildTranscriptTimeline(detail: SessionDetail): TranscriptTimelineItem[
       pendingWorkflowRunId = workflowRunId ?? pendingWorkflowRunId;
       continue;
     }
+    if (item.kind === 'run') {
+      timeline.push(item);
+      continue;
+    }
     if (item.kind === 'message' && shouldKeepWorkflowTranscriptGroupOpen(item.message, pendingWorkflowRunId)) {
       pendingWorkflowFlushTimestamp = Math.max(pendingWorkflowFlushTimestamp ?? 0, item.timestamp + 0.1);
       pendingWorkflowMessages.push(item.message);
