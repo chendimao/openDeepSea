@@ -260,6 +260,7 @@ function submitSessionFinishBranchDecision(
     },
   };
   const graphStateUpdated = workflowRepo.updateGraphState(run.id, serializeGraphState(nextState));
+  completeFinishBranchDecisionStep(run.id);
   const updated = workflowRepo.updateRun(run.id, {
     status: 'running',
     error: null,
@@ -271,6 +272,16 @@ function submitSessionFinishBranchDecision(
   workflowOrchestrator.enqueueExistingGraphRun(updated.id);
   broadcastSessionWorkspaceSnapshot(session);
   res.json(updated);
+}
+
+function completeFinishBranchDecisionStep(workflowRunId: string): void {
+  const finishBranchStep = [...workflowRepo.listSteps(workflowRunId)]
+    .reverse()
+    .find((step) => step.node_name === 'finish_branch' && step.status === 'awaiting_approval');
+  if (!finishBranchStep) return;
+  workflowRepo.updateStep(finishBranchStep.id, {
+    status: 'completed',
+  });
 }
 
 function getHistoryRecord(req: { params: { historyRecordId: string } }, res: Response): void {

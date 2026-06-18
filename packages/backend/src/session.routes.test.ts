@@ -1113,6 +1113,14 @@ test('session finish branch decision endpoint records decision and resumes workf
       decidedAt: null,
     },
   }));
+  const finishBranchStep = workflowRepo.createStep({
+    workflow_run_id: workflow.id,
+    task_id: task.id,
+    stage: 'acceptance',
+    node_name: 'finish_branch',
+    status: 'awaiting_approval',
+    sort_order: 1,
+  });
 
   const pendingPayload = buildWorkspacePayload(project, session);
   const pendingController = pendingPayload.activeSession.workflowController as unknown as {
@@ -1144,6 +1152,9 @@ test('session finish branch decision endpoint records decision and resumes workf
     assert.equal(graphState?.status, 'running');
     assert.equal(graphState?.finishBranchDecision?.decision, 'keep_branch');
     assert.equal(graphState?.finishBranchDecision?.decidedAt !== null, true);
+    const updatedStep = workflowRepo.getStep(finishBranchStep.id);
+    assert.equal(updatedStep?.status, 'completed');
+    assert.equal(typeof updatedStep?.completed_at, 'number');
   } finally {
     workflowOrchestrator.enqueueExistingGraphRun = originalEnqueue;
     setWorkflowOrchestratorGraphDeps({});
