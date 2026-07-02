@@ -1,0 +1,24 @@
+{
+  "sessionId": "yhxW8obT1AjQQY0Q",
+  "workflowController": {
+    "workflow_run_id": "UKjqb6yRjmBrNf",
+    "status": "blocked",
+    "selected_intent": "standard_development",
+    "active_stage": "brainstorming",
+    "controller": "planner",
+    "blocker": "ACP resumeSession unavailable",
+    "next_action": "ACP resumeSession unavailable"
+  },
+  "artifactTypes": [
+    "intent_routing:draft"
+  ],
+  "gateCount": 0,
+  "messageCount": 5,
+  "runCount": 0,
+  "ui": {
+    "hasWorkflowMission": false,
+    "hasExecutionLog": false,
+    "hasMetadata": false,
+    "sample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow Standard Verify 7347\nStandard route verify\n刚刚\n已进入 Superpowers workflow intake：实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nStandard route ve...\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n13:23:11\n复制\n实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。\n规划师 (PLANNER)\n13:23:11\nblocked\n\nACP resumeSession unavailable\n\n$\n粘贴文件会上传到项目文件库\n对话记录\n文件浏览器\n项目终端\n状态\n契约\n运行\n工具\n计划\nWORKFLOW 状态\n已阻塞\n状态\n\nACP resumeSession unavailable\n\n阶段\n\nbrainstorming · planner\n\n目标契约 (CONTRACT)\n编辑\n目标 (OBJECTIVE)\n\nStandard route verify\n\n原因 (REASON)\n\nfake ACP planner routing evidence\n\n边界 (SCOPE)\n\n未设置范围\n\n风险 (RISKS)\n\n 暂无风险记录\n\n验收 (ACCEPTANCE)\n\n暂无验收标准\n\n会话计划 (SESSION PLAN)\n暂无会话计划\n代理运行 (ACTIVE RUN)\n0 条记录\n暂无代理运行\n工具调用 (TOOLS)\n0 条记录\n暂无工具调用\n本次会话变更 (SESSION CHANGES)\n本会话暂无文件变更\n0\nno session changes\n0\n查看预览\n立即应用\nStandard route verify\n·\ndetached\nclean\n响应耗时\n--\n错误率\n0.0%\n网络延迟\n--\n压缩\n⌘P\n分叉\n⌘B\n上下文压力\n28%\n规\nTOKEN 消耗\n--\n导出"
+  }
+}

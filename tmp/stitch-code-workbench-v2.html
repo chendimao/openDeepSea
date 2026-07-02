@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>深海指挥中心 - 专业代码编辑器</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed": "#002113",
+                        "inverse-on-surface": "#eff1f3",
+                        "on-error": "#ffffff",
+                        "background": "#f7f9fb",
+                        "secondary-fixed-dim": "#81d8ad",
+                        "secondary": "#006c49",
+                        "on-primary-fixed": "#00174b",
+                        "secondary-fixed": "#9df4c8",
+                        "tertiary-fixed": "#ffdbd0",
+                        "tertiary": "#751f00",
+                        "surface-variant": "#e0e3e5",
+                        "surface-container-highest": "#e0e3e5",
+                        "secondary-container": "#9af2c5",
+                        "on-primary-fixed-variant": "#003ea8",
+                        "error-rose": "#E11D48",
+                        "on-primary": "#ffffff",
+                        "surface-container-low": "#f2f4f6",
+                        "surface-bright": "#f7f9fb",
+                        "status-active": "#006c49",
+                        "on-surface-variant": "#434654",
+                        "border-subtle": "#E2E8F0",
+                        "on-secondary-container": "#0c714d",
+                        "outline-variant": "#c3c6d6",
+                        "surface-tint": "#1b55d0",
+                        "primary-container": "#004ac6",
+                        "on-tertiary-container": "#ffb9a4",
+                        "on-secondary-fixed-variant": "#005236",
+                        "on-primary-container": "#b8c8ff",
+                        "error-container": "#ffdad6",
+                        "warning-amber": "#F59E0B",
+                        "inverse-primary": "#b4c5ff",
+                        "outline": "#737685",
+                        "tertiary-container": "#9c2e02",
+                        "status-pending": "#0053db",
+                        "primary-fixed": "#dbe1ff",
+                        "surface": "#f7f9fb",
+                        "tertiary-fixed-dim": "#ffb59e",
+                        "on-error-container": "#93000a",
+                        "on-tertiary-fixed": "#3a0b00",
+                        "surface-container-lowest": "#ffffff",
+                        "on-surface": "#191c1e",
+                        "error": "#ba1a1a",
+                        "primary-fixed-dim": "#b4c5ff",
+                        "on-tertiary": "#ffffff",
+                        "on-background": "#191c1e",
+                        "inverse-surface": "#2d3133",
+                        "primary": "#003594",
+                        "surface-container": "#eceef0",
+                        "text-primary": "#0F172A",
+                        "surface-dim": "#d8dadc",
+                        "surface-container-high": "#e6e8ea",
+                        "on-tertiary-fixed-variant": "#842500",
+                        "on-secondary": "#ffffff",
+                        "text-secondary": "#64748B"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "gutter-columns": "16px",
+                        "panel-right-width": "420px",
+                        "stack-sm": "4px",
+                        "panel-left-width": "240px",
+                        "margin-page": "24px",
+                        "component-gap": "8px"
+                    },
+                    "fontFamily": {
+                        "body-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "body-md": ["Inter"],
+                        "mono-label": ["JetBrains Mono"],
+                        "mono-pill": ["JetBrains Mono"],
+                        "mono-micro": ["JetBrains Mono"],
+                        "headline-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "body-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                        "headline-md": ["18px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "body-md": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                        "mono-label": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                        "mono-pill": ["11px", {"lineHeight": "12px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                        "mono-micro": ["10px", {"lineHeight": "12px", "fontWeight": "400"}],
+                        "headline-lg": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background: radial-gradient(circle at 0% 0%, #f7f9fb 0%, #e8edf4 50%, #d8e5f5 100%);
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            color: #191c1e;
+        }
+        .liquid-glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(32px);
+            -webkit-backdrop-filter: blur(32px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.05);
+        }
+        .glass-edge {
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4);
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+        }
+        .tab-active {
+            background: rgba(255, 255, 255, 0.5);
+            border-bottom: 2px solid #004ac6;
+            color: #191c1e;
+        }
+        .editor-gutter {
+            background: rgba(0, 0, 0, 0.02);
+            border-right: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        .cursor-blink {
+            animation: blink 1s step-end infinite;
+        }
+        @keyframes blink {
+            from, to { opacity: 1; }
+            50% { opacity: 0; }
+        }
+        .syntax-keyword { color: #003594; font-weight: 600; }
+        .syntax-string { color: #006c49; }
+        .syntax-comment { color: #64748B; font-style: italic; }
+        .syntax-variable { color: #751f00; }
+        .syntax-number { color: #1b55d0; }
+        .directory-item:hover {
+            background: rgba(0, 74, 198, 0.05);
+        }
+        .directory-active {
+            background: rgba(0, 74, 198, 0.1);
+            border-right: 2px solid #004ac6;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen">
+<!-- Top Command Bar (Preserved Header) -->
+<header class="h-12 flex items-center justify-between px-6 liquid-glass backdrop-blur-3xl z-50 fixed top-0 w-full glass-edge border-t border-b border-white/20">
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 flex items-center justify-center bg-primary-container rounded-lg shadow-sm">
+<span class="material-symbols-outlined text-white text-[20px]">waves</span>
+</div>
+<span class="text-[14px] font-bold text-on-surface">蟹老板 AI</span>
+</div>
+<nav class="flex items-center gap-1 ml-4">
+<button class="px-3 py-1 text-[11px] font-bold text-on-surface-variant hover:text-primary-container hover:bg-white/10 rounded-full transition-all flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">history</span>会话</button>
+<button class="px-3 py-1 text-[11px] font-bold text-on-surface-variant hover:text-primary-container hover:bg-white/10 rounded-full transition-all flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">chat</span>聊天</button>
+<button class="px-3 py-1 text-[11px] font-bold text-primary-container bg-white/20 rounded-full transition-all flex items-center gap-1.5 border border-white/20 shadow-sm"><span class="material-symbols-outlined text-[16px]">code</span>编辑器</button>
+<button class="px-3 py-1 text-[11px] font-bold text-on-surface-variant hover:text-primary-container hover:bg-white/10 rounded-full transition-all flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">psychology</span>技能</button>
+<button class="px-3 py-1 text-[11px] font-bold text-on-surface-variant hover:text-primary-container hover:bg-white/10 rounded-full transition-all flex items-center gap-1.5"><span class="material-symbols-outlined text-[16px]">folder</span>资源</button>
+</nav>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex gap-1.5">
+<span class="material-symbols-outlined text-on-surface-variant hover:text-primary-container cursor-pointer p-2 rounded-full hover:bg-white/60 transition-all text-[20px]">settings</span>
+<div class="relative">
+<span class="material-symbols-outlined text-on-surface-variant hover:text-primary-container cursor-pointer p-2 rounded-full hover:bg-white/60 transition-all text-[20px]">notifications</span>
+<span class="absolute top-2 right-2 w-1.5 h-1.5 bg-error-rose rounded-full ring-2 ring-white"></span>
+</div>
+</div>
+<img alt="Profile" class="w-8 h-8 rounded-full border border-white shadow-sm" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBueb8xqppksTDKaWCX4QMAg2TJEZP1m_LDGcdhicWB-yKcHcaJxmad5y01kou1Sw2S6c4k8Ah6MAZ7wuaA31YzuIY8OMGpCdyR_4bEkoROoicRWR1E5VJqLRYOc0e33NL4U7K3rbWYicC3PQPyNnG9CAPYLIeludA5zt_zBA2D8lMSIhsZWNOaFBXsoKg69dWCY3vUBL0ceoeloH3Nr7AL-g2gYfRstEdaXb0y63cChUfKPtE-LBS6YfgERtnm-YMgoEYtOGQNUvY"/>
+</div>
+</header>
+<main class="flex flex-1 mt-12 overflow-hidden mb-7">
+<!-- Left Sidebar: High-density file directory tree -->
+<aside class="w-[240px] flex flex-col bg-white/30 backdrop-blur-3xl border-r border-white/40 shrink-0">
+<div class="p-3 border-b border-white/20 flex items-center justify-between">
+<span class="text-[11px] font-bold text-on-surface-variant/60 uppercase tracking-wider">资源管理器</span>
+<div class="flex gap-1">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant/60 hover:text-primary-container cursor-pointer">create_new_folder</span>
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant/60 hover:text-primary-container cursor-pointer">note_add</span>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto py-1 scrollbar-hide">
+<!-- Project Root -->
+<div class="directory-item flex items-center gap-2 px-3 py-1 cursor-pointer">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant/40">expand_more</span>
+<span class="material-symbols-outlined text-[18px] text-primary-container">folder_open</span>
+<span class="text-[12px] font-medium text-on-surface">openDeepSea</span>
+</div>
+<!-- Subfolders -->
+<div class="ml-4">
+<div class="directory-item flex items-center gap-2 px-3 py-1 cursor-pointer">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant/40">chevron_right</span>
+<span class="material-symbols-outlined text-[18px] text-primary-container">folder</span>
+<span class="text-[12px] text-on-surface-variant">packages</span>
+</div>
+<div class="directory-item flex items-center gap-2 px-3 py-1 cursor-pointer">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant/40">chevron_right</span>
+<span class="material-symbols-outlined text-[18px] text-primary-container">folder</span>
+<span class="text-[12px] text-on-surface-variant">docs</span>
+</div>
+<div class="directory-item flex items-center gap-2 px-3 py-1 cursor-pointer">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant/40">expand_more</span>
+<span class="material-symbols-outlined text-[18px] text-primary-container">folder_open</span>
+<span class="text-[12px] text-on-surface-variant">src</span>
+</div>
+<div class="ml-4">
+<div class="directory-item flex items-center gap-2 px-3 py-1 cursor-pointer">
+<span class="w-4"></span>
+<span class="material-symbols-outlined text-[18px] text-[#42a5f5]">javascript</span>
+<span class="text-[12px] text-on-surface-variant">app.js</span>
+</div>
+<div class="directory-item directory-active flex items-center gap-2 px-3 py-1 cursor-pointer">
+<span class="w-4"></span>
+<span class="material-symbols-outlined text-[18px] text-[#ffca28]">description</span>
+<span class="text-[12px] font-semibold text-on-surface">README.md</span>
+</div>
+<div class="directory-item flex items-center gap-2 px-3 py-1 cursor-pointer">
+<span class="w-4"></span>
+<span class="material-symbols-outlined text-[18px] text-[#3d5afe]">settings</span>
+<span class="text-[12px] text-on-surface-variant">config.json</span>
+</div>
+</div>
+<div class="directory-item flex items-center gap-2 px-3 py-1 cursor-pointer">
+<span class="w-4"></span>
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant/40">draft</span>
+<span class="text-[12px] text-on-surface-variant">.gitignore</span>
+</div>
+<div class="directory-item flex items-center gap-2 px-3 py-1 cursor-pointer">
+<span class="w-4"></span>
+<span class="material-symbols-outlined text-[18px] text-primary-container">package</span>
+<span class="text-[12px] text-on-surface-variant">package.json</span>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Editor Area -->
+<section class="flex-1 flex flex-col bg-white/10 backdrop-blur-md relative overflow-hidden">
+<!-- Editor Tab Bar -->
+<div class="h-9 bg-white/30 border-b border-white/20 flex items-center overflow-x-auto shrink-0">
+<div class="tab-active flex items-center h-full px-4 gap-2 border-r border-white/10 cursor-pointer min-w-[140px]">
+<span class="material-symbols-outlined text-[16px] text-primary-container">description</span>
+<span class="text-[11px] font-bold">README.md</span>
+<span class="material-symbols-outlined text-[14px] ml-auto opacity-40 hover:opacity-100">close</span>
+</div>
+<div class="flex items-center h-full px-4 gap-2 border-r border-white/10 hover:bg-white/20 cursor-pointer min-w-[140px] group transition-colors">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">javascript</span>
+<span class="text-[11px] text-on-surface-variant group-hover:text-on-surface">app.js</span>
+<span class="material-symbols-outlined text-[14px] ml-auto opacity-0 group-hover:opacity-40">close</span>
+</div>
+<div class="flex items-center h-full px-4 gap-2 border-r border-white/10 hover:bg-white/20 cursor-pointer min-w-[140px] group transition-colors">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">settings</span>
+<span class="text-[11px] text-on-surface-variant group-hover:text-on-surface">config.json</span>
+<span class="material-symbols-outlined text-[14px] ml-auto opacity-0 group-hover:opacity-40">close</span>
+</div>
+<button class="p-2 hover:text-primary-container transition-colors"><span class="material-symbols-outlined text-[18px]">add</span></button>
+</div>
+<!-- Editor Content Area -->
+<div class="flex-1 flex overflow-hidden relative">
+<!-- Line Number Gutter -->
+<div class="editor-gutter w-12 flex flex-col items-center py-4 text-[11px] text-on-surface-variant/30 mono select-none">
+<div>59</div><div>60</div><div class="text-on-surface-variant/60 font-bold">61</div><div>62</div><div>63</div><div>64</div><div>65</div><div>66</div><div>67</div><div>68</div><div>69</div><div>70</div><div>71</div><div>72</div><div>73</div>
+</div>
+<!-- Code Area -->
+<div class="flex-1 overflow-auto p-4 mono text-[13px] leading-relaxed relative bg-transparent">
+<div class="whitespace-pre"><span class="syntax-comment"># 深海指挥中心 - README</span></div>
+<div class="whitespace-pre"></div>
+<div class="whitespace-pre font-bold text-on-surface">## 快速开始</div>
+<div class="whitespace-pre"></div>
+<div class="whitespace-pre"><span class="syntax-keyword">const</span> <span class="syntax-variable">app</span> = <span class="syntax-keyword">require</span>(<span class="syntax-string">'deepsea-core'</span>);</div>
+<div class="whitespace-pre"><span class="syntax-keyword">const</span> <span class="syntax-variable">config</span> = {</div>
+<div class="whitespace-pre"> <span class="syntax-variable">id</span>: <span class="syntax-number">1024</span>,</div>
+<div class="whitespace-pre"> <span class="syntax-variable">name</span>: <span class="syntax-string">"Project OpenDeepSea"</span>,</div>
+<div class="whitespace-pre"> <span class="syntax-variable">status</span>: <span class="syntax-string">"active"</span>,</div>
+<div class="whitespace-pre"> <span class="syntax-variable">metrics</span>: [<span class="syntax-number">0.2</span>, <span class="syntax-number">0.5</span>, <span class="syntax-number">1.2</span>]</div>
+<div class="whitespace-pre">};</div>
+<div class="whitespace-pre"></div>
+<div class="whitespace-pre"><span class="syntax-comment">// 启动工作流引擎</span></div>
+<div class="whitespace-pre"><span class="syntax-variable">app</span>.<span class="syntax-keyword">initialize</span>(<span class="syntax-variable">config</span>).<span class="syntax-keyword">then</span>(() =&gt; {</div>
+<div class="whitespace-pre"> <span class="text-on-surface">console.log(</span><span class="syntax-string">"指挥中心就绪"</span><span class="text-on-surface">);</span><span class="w-[2px] h-4 bg-primary-container inline-block align-middle cursor-blink"></span></div>
+<div class="whitespace-pre">});</div>
+</div>
+<!-- Search Widget (Floating) -->
+<div class="absolute top-4 right-4 w-72 liquid-glass border border-white/40 rounded-xl shadow-2xl p-2 z-30 animate-in fade-in slide-in-from-top-2 duration-200">
+<div class="flex items-center gap-2 bg-black/5 rounded-lg px-2 py-1.5 focus-within:ring-2 ring-primary-container/20">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant/40">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-[12px] p-0 w-full placeholder:text-on-surface-variant/30" placeholder="查找 (⌘F)..." type="text" value="watch"/>
+<div class="flex items-center gap-1 opacity-40">
+<span class="text-[10px] mono">Aa</span>
+<span class="text-[10px] mono">ab</span>
+<span class="text-[10px] mono">*</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-2 px-1">
+<span class="text-[10px] text-on-surface-variant/60 font-medium uppercase tracking-tighter">1 of 1</span>
+<div class="flex gap-2">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant/40 hover:text-on-surface cursor-pointer">keyboard_arrow_up</span>
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant/40 hover:text-on-surface cursor-pointer">keyboard_arrow_down</span>
+<span class="w-px h-3 bg-white/20 mx-0.5"></span>
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant/40 hover:text-on-surface cursor-pointer">close</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Status Bar (Preserved Footer) -->
+<footer class="h-7 flex items-center justify-between px-4 bg-surface-dim/80 backdrop-blur-md border-t border-white/10 fixed bottom-0 w-full z-50">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 mr-4">
+<span class="material-symbols-outlined text-[14px] text-primary-container">folder_open</span>
+<span class="mono text-[10px] font-bold text-on-surface">~/workspace/deepsea-command-center</span>
+<div class="h-3 w-px bg-white/10 ml-2"></div>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">timer</span>
+<span class="text-[9px] font-bold text-on-surface-variant/60 uppercase tracking-wider">响应耗时</span>
+<span class="mono text-[10px] font-medium text-on-surface">1.2s</span>
+</div>
+<div class="h-3 w-px bg-white/10"></div>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">verified_user</span>
+<span class="text-[9px] font-bold text-on-surface-variant/60 uppercase tracking-wider">错误率</span>
+<span class="mono text-[10px] font-medium text-on-surface">0.0%</span>
+</div>
+<div class="h-3 w-px bg-white/10"></div>
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">speed</span>
+<span class="text-[9px] font-bold text-on-surface-variant/60 uppercase tracking-wider">网络延迟</span>
+<span class="mono text-[10px] font-medium text-on-surface">45ms</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 text-on-surface-variant/60">
+<span class="material-symbols-outlined text-[14px]">database</span>
+<span class="text-[9px] font-bold uppercase tracking-wider">API 消耗</span>
+<span class="mono text-[10px] text-on-surface">1,242 tokens</span>
+</div>
+<div class="h-3 w-px bg-white/10"></div>
+<button class="flex items-center gap-1 hover:text-primary-container transition-colors">
+<span class="material-symbols-outlined text-[14px]">ios_share</span>
+<span class="text-[9px] font-bold uppercase tracking-wider">导出</span>
+</button>
+</div>
+</footer>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // Simple directory tree toggle simulation
+        const dirItems = document.querySelectorAll('.directory-item');
+        dirItems.forEach(item => {
+            item.addEventListener('click', () => {
+                dirItems.forEach(i => i.classList.remove('directory-active'));
+                item.classList.add('directory-active');
+            });
+        });
+
+        // Tab switching simulation
+        const tabs = document.querySelectorAll('.h-9 .flex.items-center');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('tab-active'));
+                tab.classList.add('tab-active');
+            });
+        });
+    });
+</script>
+</body></html>

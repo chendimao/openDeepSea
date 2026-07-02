@@ -1,0 +1,379 @@
+{
+  "case": {
+    "name": "debug",
+    "message": "排查为什么删除项目会报 project has active runs。",
+    "expectedIntent": "debug"
+  },
+  "sessionId": "zsQlmK_TOFUP6Z4Q",
+  "url": "http://127.0.0.1:5192/projects/gZwB76YO-EzS/sessions/zsQlmK_TOFUP6Z4Q",
+  "workflowCount": 1,
+  "artifactApproveCount": 2,
+  "bodyFlags": {
+    "hasWorkflowMission": false,
+    "hasExecutionLog": false,
+    "hasRawSuperpowers": false,
+    "hasFakeWorkflowControl": false
+  },
+  "workflowBoundingBoxes": [
+    {
+      "x": 297,
+      "y": 241,
+      "width": 552,
+      "height": 117.9375
+    }
+  ],
+  "bodyTextSample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow Browser Full 7352\nmatrix4-debug\n刚刚\n已进入 Superpowers workflow intake：排查为什么删除项目会报 project has active runs。\nmatrix3-debug\n4 分钟前\n已进入 Superpowers workflow intake：排查为什么删除项目会报 project has active runs。\nmatrix3-lightweight\n4 分钟前\n已进入 Superpowers workflow intake：轻量修改 README 文案，先给出简短执行计划。\nmatrix3-analysis\n4 分钟前\n已进入 Superpowers workflow intake：分析一下项目删除 active runs 报错原因，不要改代码。\nmatrix2-analysis\n9 分钟前\n已进入 Superpowers workflow intake：分析一下项目删除 active runs 报错原因，不要改代码。\nmatrix2-answer\n9 分钟前\n已进入 Superpowers workflow intake：为什么这个系统要使用 workflow-first？请用一句话回答。\nmatrix-answer\n13 分钟前\n已进入 Superpowers workflow intake：为什么这个系统要使用 workflow-first？请用一句话回答。\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nmatrix4-debug\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n14:08:49\n复制\n排查为什么删除项目会报 project has active runs。\n规划师 (PLANNER)\n14:08:51\nwaiting\n\n已生成 workflow 任务结构。\n\nPlan v1\nDebug Plan\n等待用户确认 planner 生成的执行计划。\n请求修改\n确认\n$\n粘贴文件会上传到项目文件库\n对话记录\n文件浏览器\n项目终端\n状态\n契约\n运行\n工具\n计划\nWORKFLOW 状态\n等待确认\n状态\n\n等待用户确认 workflow artifact，确认后任务会继续执行。\n\n阶段\n\ndebug_plan · user\n\n等待用户确认 PLANNER 生成的执行计划。\n确认 plan\n目标契约 (CONTRACT)\n编辑\n目标 (OBJECTIVE)\n\nmatrix4-debug\n\n原因 (REASON)\n\nfake ACP planner routing evidence\n\n边界 (SCOPE)\n\n未设置范围\n\n风险 (RISKS)\n\n 暂无风险记录\n\n验收 (ACCEPTANCE)\n\n暂无验收标准\n\n会话计划 (SESSION PLAN)\n暂无会话计划\n代理运行 (ACTIVE RUN)\n0 条记录\n暂无代理运行\n工具调用 (TOOLS)\n0 条记录\n暂无工具调用\n本次会话变更 (SESSION CHANGES)\n本会话暂无文件变更\n0\nno session changes\n0\n查看预览\n立即应用\nmatrix4-debug\n·\nmaster\n315 changed\n响应耗时\n--\n错误率\n0.0%\n网络延迟\n--\n压缩\n⌘P\n分叉\n⌘B\n上下文压力\n28%\n规\n规\nTOKEN 消耗\n--\n导出\nProvider Superpowers 已就绪\nClaude Code、Codex CLI、OpenCode",
+  "summary": {
+    "session": {
+      "id": "zsQlmK_TOFUP6Z4Q",
+      "project_id": "gZwB76YO-EzS",
+      "title": "matrix4-debug",
+      "current_goal": null,
+      "mode": "code",
+      "phase": "idle",
+      "status": "active",
+      "provider": "codex",
+      "model": null,
+      "workspace_path": "/Users/chendimao/WWW/openDeepSea",
+      "worktree_path": null,
+      "branch_name": null,
+      "forked_from_session_id": null,
+      "forked_from_history_record_id": null,
+      "latest_compaction_id": null,
+      "latest_context_manifest_id": null,
+      "closed_at": null,
+      "pinned_at": null,
+      "last_viewed_at": 1781762931474,
+      "created_at": 1781762927517,
+      "updated_at": 1781762927517,
+      "archived_at": null
+    },
+    "messages": [
+      {
+        "id": "SMHKFzK_Y_qPxuFF",
+        "role": "user",
+        "sender_id": "user",
+        "sender_name": null,
+        "type": "text",
+        "status": "completed",
+        "content": "排查为什么删除项目会报 project has active runs。",
+        "metadata": {
+          "target_agent_id": "planner",
+          "risk_assessment": {
+            "taskKind": "unknown",
+            "riskLevel": "high",
+            "requiresApproval": true,
+            "approvalReason": "security/permissions/deletion/credential/sandbox changes require approval",
+            "confidence": 0.35,
+            "reasons": [
+              "security/permissions/deletion/credential/sandbox changes require approval",
+              "low-confidence task profile"
+            ],
+            "scopeRead": [],
+            "scopeWrite": [],
+            "verificationCommands": []
+          },
+          "session_execution": {
+            "executionPath": "workflow_graph",
+            "trigger": "workflow_intake",
+            "riskAssessment": {
+              "taskKind": "unknown",
+              "riskLevel": "high",
+              "requiresApproval": true,
+              "approvalReason": "security/permissions/deletion/credential/sandbox changes require approval",
+              "confidence": 0.35,
+              "reasons": [
+                "security/permissions/deletion/credential/sandbox changes require approval",
+                "low-confidence task profile"
+              ],
+              "scopeRead": [],
+              "scopeWrite": [],
+              "verificationCommands": []
+            },
+            "workflowRoomId": "kwu74BvHGVuK",
+            "workflowTaskId": "_TuxQw99_aMH",
+            "workflowRunId": "CcMaSMQ12gU3co",
+            "graphVersion": "superpowers-v2",
+            "activeSuperpowersStage": "intake"
+          }
+        }
+      },
+      {
+        "id": "PjIZSgDD33dRoStU",
+        "role": "system",
+        "sender_id": "workflow",
+        "sender_name": "工作流",
+        "type": "system",
+        "status": "completed",
+        "content": "SessionOS 已创建 Superpowers intake 任务「排查为什么删除项目会报 project has active runs。」。",
+        "metadata": {
+          "session_workflow_bridge": {
+            "sourceRoomId": "kwu74BvHGVuK",
+            "sourceRoomMessageId": "I2aHjuUvkIzmfFzB",
+            "sourceMessageId": "SMHKFzK_Y_qPxuFF",
+            "taskId": "_TuxQw99_aMH",
+            "rootTaskId": "_TuxQw99_aMH",
+            "eventType": "task_created",
+            "createdAt": 1781762929583
+          },
+          "source_room_message_id": "I2aHjuUvkIzmfFzB",
+          "source_message_id": "SMHKFzK_Y_qPxuFF",
+          "task_id": "_TuxQw99_aMH",
+          "root_task_id": "_TuxQw99_aMH",
+          "event_type": "task_created"
+        }
+      },
+      {
+        "id": "5QT-As0vyFenPjxT",
+        "role": "system",
+        "sender_id": "workflow",
+        "sender_name": "工作流",
+        "type": "system",
+        "status": "completed",
+        "content": "已进入 Superpowers 工作流：排查为什么删除项目会报 project has active runs。\n当前阶段：analysis\n执行方式：workflow_graph",
+        "metadata": {
+          "risk_assessment": {
+            "taskKind": "unknown",
+            "riskLevel": "high",
+            "requiresApproval": true,
+            "approvalReason": "security/permissions/deletion/credential/sandbox changes require approval",
+            "confidence": 0.35,
+            "reasons": [
+              "security/permissions/deletion/credential/sandbox changes require approval",
+              "low-confidence task profile"
+            ],
+            "scopeRead": [],
+            "scopeWrite": [],
+            "verificationCommands": []
+          },
+          "session_workflow": {
+            "executionPath": "workflow_graph",
+            "trigger": "workflow_intake",
+            "riskAssessment": {
+              "taskKind": "unknown",
+              "riskLevel": "high",
+              "requiresApproval": true,
+              "approvalReason": "security/permissions/deletion/credential/sandbox changes require approval",
+              "confidence": 0.35,
+              "reasons": [
+                "security/permissions/deletion/credential/sandbox changes require approval",
+                "low-confidence task profile"
+              ],
+              "scopeRead": [],
+              "scopeWrite": [],
+              "verificationCommands": []
+            },
+            "workflowRoomId": "kwu74BvHGVuK",
+            "workflowTaskId": "_TuxQw99_aMH",
+            "workflowRunId": "CcMaSMQ12gU3co",
+            "workflowStatus": "running",
+            "workflowStage": "analysis",
+            "graphVersion": "superpowers-v2",
+            "activeSuperpowersStage": "intake",
+            "sourceMessageId": "SMHKFzK_Y_qPxuFF",
+            "createdAt": 1781762929586
+          },
+          "source_message_id": "SMHKFzK_Y_qPxuFF"
+        }
+      },
+      {
+        "id": "YkCpO8Jsy0wLziCG",
+        "role": "system",
+        "sender_id": "workflow",
+        "sender_name": "工作流",
+        "type": "system",
+        "status": "completed",
+        "content": "工作流已启动，进入 analysis 阶段。",
+        "metadata": {
+          "session_workflow_bridge": {
+            "sourceRoomId": "kwu74BvHGVuK",
+            "sourceRoomMessageId": "TFWf2f0oJc-xPFEL",
+            "sourceMessageId": "SMHKFzK_Y_qPxuFF",
+            "taskId": "_TuxQw99_aMH",
+            "rootTaskId": "_TuxQw99_aMH",
+            "workflowRunId": "CcMaSMQ12gU3co",
+            "eventType": "workflow_started",
+            "createdAt": 1781762929588
+          },
+          "source_room_message_id": "TFWf2f0oJc-xPFEL",
+          "source_message_id": "SMHKFzK_Y_qPxuFF",
+          "task_id": "_TuxQw99_aMH",
+          "root_task_id": "_TuxQw99_aMH",
+          "workflow_run_id": "CcMaSMQ12gU3co",
+          "event_type": "workflow_started"
+        }
+      },
+      {
+        "id": "mxjunoo1JR_RD8_x",
+        "role": "assistant",
+        "sender_id": "planner",
+        "sender_name": "规划师",
+        "type": "agent_stream",
+        "status": "completed",
+        "content": "```json\n{\"intent\":\"answer\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n```",
+        "metadata": {
+          "session_workflow_bridge": {
+            "sourceRoomId": "kwu74BvHGVuK",
+            "sourceRoomMessageId": "xk8LN0Pq6Po4RoA8",
+            "sourceMessageId": "SMHKFzK_Y_qPxuFF",
+            "taskId": "_TuxQw99_aMH",
+            "rootTaskId": "_TuxQw99_aMH",
+            "workflowRunId": "CcMaSMQ12gU3co",
+            "workflowStepId": "N1ONohsAWsF4Nn",
+            "agentRunId": "-Uo0f3Bj3AY5ADd-",
+            "eventType": null,
+            "createdAt": 1781762930140
+          },
+          "source_room_message_id": "xk8LN0Pq6Po4RoA8",
+          "source_message_id": "SMHKFzK_Y_qPxuFF",
+          "task_id": "_TuxQw99_aMH",
+          "root_task_id": "_TuxQw99_aMH",
+          "workflow_run_id": "CcMaSMQ12gU3co",
+          "workflow_step_id": "N1ONohsAWsF4Nn",
+          "agent_run_id": "-Uo0f3Bj3AY5ADd-",
+          "event_type": null
+        }
+      },
+      {
+        "id": "N690NYg7fVs-DQ-P",
+        "role": "assistant",
+        "sender_id": "planner",
+        "sender_name": "规划师",
+        "type": "agent_stream",
+        "status": "completed",
+        "content": "```json\n{\"plan\":{\"goal\":\"排查为什么删除项目会报 project has active runs。\",\"summary\":\"fake ACP debug plan\",\"assumptions\":[\"fake ACP deterministic browser validation\"],\"tasks\":[{\"title\":\"fake ACP debug plan\",\"description\":\"排查为什么删除项目会报 project has active runs。\",\"suggestedRole\":\"debug-executor\",\"priority\":\"normal\",\"acceptance\":[\"workflow artifact can be approved from the browser\"],\"scopeRead\":[\".\"],\"scopeWrite\":[],\"dependsOn\":[]}],\"reviewFocus\":[\"routing evidence\"],\"verification\":[\"npm run build -w @openclaw-r",
+        "metadata": {
+          "session_workflow_bridge": {
+            "sourceRoomId": "kwu74BvHGVuK",
+            "sourceRoomMessageId": "ZBCSiKqa0xwfRwz7",
+            "sourceMessageId": "SMHKFzK_Y_qPxuFF",
+            "taskId": "_TuxQw99_aMH",
+            "rootTaskId": "_TuxQw99_aMH",
+            "workflowRunId": "CcMaSMQ12gU3co",
+            "workflowStepId": "maKEj8N-Cp1Blu",
+            "agentRunId": "7nonkBBV42W952vg",
+            "eventType": null,
+            "createdAt": 1781762931164
+          },
+          "source_room_message_id": "ZBCSiKqa0xwfRwz7",
+          "source_message_id": "SMHKFzK_Y_qPxuFF",
+          "task_id": "_TuxQw99_aMH",
+          "root_task_id": "_TuxQw99_aMH",
+          "workflow_run_id": "CcMaSMQ12gU3co",
+          "workflow_step_id": "maKEj8N-Cp1Blu",
+          "agent_run_id": "7nonkBBV42W952vg",
+          "event_type": null
+        }
+      }
+    ],
+    "runs": [],
+    "workflowArtifacts": [
+      {
+        "id": "jY-WnBagv4n68t",
+        "workflow_run_id": "CcMaSMQ12gU3co",
+        "artifact_type": "intent_routing",
+        "version": 1,
+        "status": "draft",
+        "title": "Intent Routing",
+        "content": "```json\n{\n  \"intent\": \"debug\",\n  \"confidence\": 0.97,\n  \"reason\": \"fake ACP planner routing evidence\"\n}\n```",
+        "structured_data": {
+          "intent": "debug",
+          "confidence": 0.97,
+          "reason": "fake ACP planner routing evidence"
+        },
+        "created_by_agent_id": "planner",
+        "change_request_message_id": null,
+        "approved_by": null,
+        "approved_at": null,
+        "created_at": 1781762930142
+      },
+      {
+        "id": "B69eqWOAkWFfu3",
+        "workflow_run_id": "CcMaSMQ12gU3co",
+        "artifact_type": "plan",
+        "version": 1,
+        "status": "draft",
+        "title": "Debug Plan",
+        "content": "```json\n{\n  \"goal\": \"排查为什么删除项目会报 project has active runs。\",\n  \"summary\": \"fake ACP debug plan\",\n  \"assumptions\": [\n    \"fake ACP deterministic browser validation\"\n  ],\n  \"tasks\": [\n    {\n      \"title\": \"fake ACP debug plan\",\n      \"description\": \"排查为什么删除项目会报 project has active runs。\",\n      \"suggestedRole\": \"executor\",\n      \"priority\": \"normal\",\n      \"acceptance\": [\n        \"workflow artifact can be approved from the browser\"\n      ],\n      \"scopeRead\": [\n        \".\"\n      ],\n      \"scopeWrite\": [],\n      \"dependsOn\": []\n    }\n  ],\n  \"reviewFocus\": [\n    \"routing evidence\"\n  ],\n  \"verification\": [\n    \"npm run build -w @openclaw-room/backend\"\n  ],\n  \"verificationCommands\": [\n    {\n      \"command\": \"npm run build -w @openclaw-room/backend\",\n      \"reason\": \"backend compilation\",\n      \"required\": true\n    }\n  ],\n  \"risks\": [],\n  \"needsApproval\": false,\n  \"mode\": \"debug\",\n  \"reproduction\": []\n}\n```",
+        "structured_data": {
+          "goal": "排查为什么删除项目会报 project has active runs。",
+          "summary": "fake ACP debug plan",
+          "assumptions": [
+            "fake ACP deterministic browser validation"
+          ],
+          "tasks": [
+            {
+              "title": "fake ACP debug plan",
+              "description": "排查为什么删除项目会报 project has active runs。",
+              "suggestedRole": "executor",
+              "priority": "normal",
+              "acceptance": [
+                "workflow artifact can be approved from the browser"
+              ],
+              "scopeRead": [
+                "."
+              ],
+              "scopeWrite": [],
+              "dependsOn": []
+            }
+          ],
+          "reviewFocus": [
+            "routing evidence"
+          ],
+          "verification": [
+            "npm run build -w @openclaw-room/backend"
+          ],
+          "verificationCommands": [
+            {
+              "command": "npm run build -w @openclaw-room/backend",
+              "reason": "backend compilation",
+              "required": true
+            }
+          ],
+          "risks": [],
+          "needsApproval": false,
+          "mode": "debug",
+          "reproduction": []
+        },
+        "created_by_agent_id": "planner",
+        "change_request_message_id": null,
+        "approved_by": null,
+        "approved_at": null,
+        "created_at": 1781762931166
+      }
+    ],
+    "workflowGates": [
+      {
+        "kind": "plan_confirm",
+        "workflow_run_id": "CcMaSMQ12gU3co",
+        "artifact_version_id": "B69eqWOAkWFfu3",
+        "status": "pending",
+        "reason": "等待用户确认 planner 生成的执行计划。"
+      }
+    ],
+    "workflowController": {
+      "workflow_run_id": "CcMaSMQ12gU3co",
+      "status": "awaiting_approval",
+      "selected_intent": "debug",
+      "active_stage": "debug_plan",
+      "controller": "user",
+      "blocker": "Waiting for user confirmation of debug plan artifact",
+      "next_action": "等待用户确认当前 workflow artifact。"
+    },
+    "evidence": [
+      {
+        "id": "pVTLgE-Q_ZsX8fTt",
+        "summary": null,
+        "payload": null
+      },
+      {
+        "id": "Mhw5XojVvojuVbPf",
+        "summary": "已进入 Superpowers workflow intake：排查为什么删除项目会报 project has active runs。",
+        "payload": null
+      }
+    ],
+    "intents": [
+      "debug"
+    ]
+  }
+}

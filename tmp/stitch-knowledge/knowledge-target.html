@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>深海指挥中心 - 知识库</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
+<style data-purpose="custom-layout">
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #F8FAFC;
+      color: #1E293B;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #CBD5E1;
+      border-radius: 2px;
+    }
+    .sidebar-active {
+      background-color: #F1F5F9;
+      color: #004AC6;
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
+    .no-wrap-ellipsis {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tab-active {
+      border-bottom: 2px solid #004AC6;
+      color: #004AC6;
+      font-weight: 600;
+    }
+    .primary-blue { color: #004AC6; }
+    .bg-primary-blue { background-color: #004AC6; }
+  </style>
+</head>
+<body class="flex flex-col" style="aspect-ratio: 16/9; height: auto; max-height: 100vh; overflow: hidden;">
+<!-- BEGIN: TopHeader -->
+<header class="h-12 bg-white border-b flex items-center justify-between px-4 z-20 w-full shrink-0">
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 bg-primary-blue rounded flex items-center justify-center text-white font-bold text-sm">AI</div>
+<span class="text-base font-bold tracking-tight">深海指挥中心</span>
+</div>
+<nav class="flex items-center gap-5 text-[13px] font-medium">
+<div class="flex items-center gap-1 cursor-pointer text-gray-600">项目：Ocean Platform <i class="fa-solid fa-chevron-down text-[9px]"></i></div>
+<div class="cursor-pointer text-gray-600 hover:text-blue-600">工作台</div>
+<div class="cursor-pointer text-gray-600 hover:text-blue-600">会话</div>
+<div class="cursor-pointer text-gray-600 hover:text-blue-600">任务</div>
+<div class="primary-blue border-b-2 border-[#004AC6] h-12 flex items-center">知识库</div>
+<div class="cursor-pointer text-gray-600 hover:text-blue-600">智能体</div>
+<div class="cursor-pointer text-gray-600 hover:text-blue-600">设置</div>
+</nav>
+</div>
+<div class="flex items-center gap-3">
+<div class="relative">
+<i class="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+<input class="pl-8 pr-10 py-1 bg-gray-100 border-none rounded-md text-[12px] w-56 focus:ring-1 focus:ring-blue-500" placeholder="全局搜索" type="text"/>
+<span class="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] bg-white border px-1 rounded text-gray-400">⌘K</span>
+</div>
+<i class="fa-regular fa-bell text-gray-500 cursor-pointer text-sm"></i>
+<i class="fa-regular fa-circle-question text-gray-500 cursor-pointer text-sm"></i>
+<div class="flex items-center gap-2 cursor-pointer border-l pl-3">
+<div class="w-7 h-7 rounded-full bg-blue-100 overflow-hidden">
+<img alt="User Avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB9NOvbvX6mCl4DPW6_HB_jEvsdpzGwSBGLthPmlcXc-Z3XCHuUpw-68MD9WyysDEn_lIFd_cH_k51lTGQyvy0Mxgy2E8EqFCJStcWM58H--3q9a24QF062hzdRwWxTmI8RF0egXTWOgme26c9-Pj-et3WzclbeUfl7jJgSqDnVSD7PCoQC3o9M5HP8wb_1AAaBk87ef0bJDrurxRfG59PyI88pNCI0TR67WwkSpLjFB-MKzHfnE3uC8XAKfgNVZ0S5C7NaRbg6Xgo"/>
+</div>
+<div class="hidden xl:block">
+<div class="text-[11px] font-bold leading-none">深海用户</div>
+<div class="text-[9px] text-gray-500">管理员</div>
+</div>
+<i class="fa-solid fa-chevron-down text-[9px] text-gray-400"></i>
+</div>
+</div>
+</header>
+<!-- END: TopHeader -->
+<div class="flex flex-1 overflow-hidden">
+<!-- BEGIN: LeftSidebar -->
+<aside class="w-52 bg-white border-r flex flex-col overflow-y-auto custom-scrollbar shrink-0">
+<div class="p-3">
+<h2 class="text-base font-bold mb-3">知识库</h2>
+<button class="w-full bg-primary-blue text-white py-1.5 rounded text-[13px] flex items-center justify-center gap-2 hover:bg-blue-700 transition">
+<i class="fa-solid fa-plus text-xs"></i> 上传资源
+      </button>
+</div>
+<div class="px-2 space-y-0.5">
+<div class="flex items-center justify-between px-3 py-1.5 rounded text-[13px] sidebar-active cursor-pointer">
+<div class="flex items-center gap-2.5 font-medium"><i class="fa-regular fa-folder-open text-xs"></i> 全部资源</div>
+<span class="text-[10px] opacity-60">1,248</span>
+</div>
+<div class="flex items-center justify-between px-3 py-1.5 rounded text-[13px] text-gray-600 hover:bg-gray-50 cursor-pointer">
+<div class="flex items-center gap-2.5"><i class="fa-regular fa-star text-xs"></i> 我的收藏</div>
+<span class="text-[10px] text-gray-400">56</span>
+</div>
+<div class="flex items-center justify-between px-3 py-1.5 rounded text-[13px] text-gray-600 hover:bg-gray-50 cursor-pointer">
+<div class="flex items-center gap-2.5"><i class="fa-regular fa-clock text-xs"></i> 最近使用</div>
+<span class="text-[10px] text-gray-400">128</span>
+</div>
+<div class="flex items-center justify-between px-3 py-1.5 rounded text-[13px] text-gray-600 hover:bg-gray-50 cursor-pointer">
+<div class="flex items-center gap-2.5"><i class="fa-regular fa-trash-can text-xs"></i> 回收站</div>
+<span class="text-[10px] text-gray-400">8</span>
+</div>
+</div>
+<div class="mt-4">
+<div class="px-5 py-1.5 text-[11px] font-bold text-gray-400 flex items-center justify-between cursor-pointer uppercase tracking-wider">
+        资源类型 <i class="fa-solid fa-chevron-up text-[9px]"></i>
+</div>
+<div class="px-2 space-y-0.5">
+<div class="flex items-center justify-between px-3 py-1 rounded text-[12px] text-gray-600 hover:bg-gray-50 cursor-pointer">
+<div class="flex items-center gap-2.5"><i class="fa-regular fa-file-lines w-3 text-center"></i> 文档</div>
+<span class="text-[10px] text-gray-400">528</span>
+</div>
+<div class="flex items-center justify-between px-3 py-1 rounded text-[12px] text-gray-600 hover:bg-gray-50 cursor-pointer">
+<div class="flex items-center gap-2.5"><i class="fa-regular fa-image w-3 text-center"></i> 图片</div>
+<span class="text-[10px] text-gray-400">312</span>
+</div>
+<div class="flex items-center justify-between px-3 py-1 rounded text-[12px] text-gray-600 hover:bg-gray-50 cursor-pointer">
+<div class="flex items-center gap-2.5"><i class="fa-regular fa-file-pdf w-3 text-center"></i> PDF</div>
+<span class="text-[10px] text-gray-400">186</span>
+</div>
+<div class="flex items-center justify-between px-3 py-1 rounded text-[12px] text-gray-600 hover:bg-gray-50 cursor-pointer">
+<div class="flex items-center gap-2.5"><i class="fa-regular fa-file-excel w-3 text-center"></i> 表格</div>
+<span class="text-[10px] text-gray-400">94</span>
+</div>
+<div class="flex items-center justify-between px-3 py-1 rounded text-[12px] text-gray-600 hover:bg-gray-50 cursor-pointer">
+<div class="flex items-center gap-2.5"><i class="fa-regular fa-file-powerpoint w-3 text-center"></i> 演示</div>
+<span class="text-[10px] text-gray-400">64</span>
+</div>
+<div class="flex items-center justify-between px-3 py-1 rounded text-[12px] text-gray-600 hover:bg-gray-50 cursor-pointer">
+<div class="flex items-center gap-2.5"><i class="fa-solid fa-code w-3 text-center"></i> 代码</div>
+<span class="text-[10px] text-gray-400">34</span>
+</div>
+</div>
+</div>
+<div class="mt-4">
+<div class="px-5 py-1.5 text-[11px] font-bold text-gray-400 flex items-center justify-between cursor-pointer uppercase tracking-wider">
+        处理状态 <i class="fa-solid fa-chevron-up text-[9px]"></i>
+</div>
+<div class="px-2 space-y-0.5">
+<div class="flex items-center justify-between px-3 py-1 rounded text-[12px] text-gray-600 hover:bg-gray-50 cursor-pointer">
+<div class="flex items-center"><span class="status-dot bg-gray-300"></span>全部</div>
+<span class="text-[10px] text-gray-400">1,248</span>
+</div>
+<div class="flex items-center justify-between px-3 py-1 rounded text-[12px] text-gray-600 hover:bg-gray-50 cursor-pointer">
+<div class="flex items-center"><span class="status-dot bg-green-500"></span>已完成</div>
+<span class="text-[10px] text-gray-400">1,028</span>
+</div>
+<div class="flex items-center justify-between px-3 py-1 rounded text-[12px] text-gray-600 hover:bg-gray-50 cursor-pointer">
+<div class="flex items-center"><span class="status-dot bg-blue-500"></span>处理中</div>
+<span class="text-[10px] text-gray-400">128</span>
+</div>
+</div>
+</div>
+<div class="mt-auto p-4 bg-gray-50 border-t shrink-0">
+<div class="flex items-center justify-between text-[10px] font-bold text-gray-500 mb-1.5 uppercase">
+<span>存储空间</span>
+<i class="fa-solid fa-database text-gray-300"></i>
+</div>
+<div class="text-[11px] mb-1.5 flex justify-between">
+<span class="font-medium text-gray-700">128.6 GB <span class="text-gray-400">/ 500 GB</span></span>
+</div>
+<div class="w-full h-1 bg-gray-200 rounded-full overflow-hidden">
+<div class="bg-primary-blue h-full" style="width: 25%"></div>
+</div>
+<div class="text-right text-[9px] text-gray-400 mt-1">已使用 25%</div>
+</div>
+</aside>
+<!-- END: LeftSidebar -->
+<!-- BEGIN: MainContent -->
+<main class="flex-1 overflow-y-auto custom-scrollbar bg-white flex flex-col">
+<div class="p-4 flex-1">
+<!-- Title and Action Bar -->
+<div class="flex items-center justify-between mb-4">
+<div>
+<h1 class="text-lg font-bold text-gray-900 leading-tight">全部资源</h1>
+<p class="text-[11px] text-gray-400">管理和检索项目中的所有知识资源</p>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex rounded border bg-white overflow-hidden shadow-sm">
+<button class="px-2.5 py-1 text-[11px] font-medium border-r hover:bg-gray-50">批量操作 <i class="fa-solid fa-chevron-down ml-1 text-[8px]"></i></button>
+<button class="px-2.5 py-1 text-[11px] font-medium border-r hover:bg-gray-50"><i class="fa-solid fa-rotate-right mr-1.5 text-gray-400"></i>重处理</button>
+<button class="px-2.5 py-1 text-[11px] font-medium hover:bg-gray-50"><i class="fa-solid fa-file-export mr-1.5 text-gray-400"></i>导出清单</button>
+</div>
+<div class="flex items-center border rounded shadow-sm">
+<button class="p-1 bg-gray-50 text-primary-blue"><i class="fa-solid fa-list-ul text-xs"></i></button>
+<button class="p-1 text-gray-400 hover:text-gray-600 border-l"><i class="fa-solid fa-table-cells-large text-xs"></i></button>
+</div>
+</div>
+</div>
+<!-- Stats Cards -->
+<div class="grid grid-cols-5 gap-3 mb-5">
+<!-- Card 1 -->
+<div class="border border-gray-100 rounded-lg p-3 bg-white shadow-sm flex items-center justify-between">
+<div>
+<div class="text-[10px] text-gray-500 font-bold mb-0.5">资源总数</div>
+<div class="text-xl font-black text-gray-800 leading-none">1,248</div>
+<div class="text-[9px] text-green-500 mt-1 font-bold">较上周 +128</div>
+</div>
+<div class="w-8 h-8 flex items-center justify-center text-primary-blue bg-blue-50 rounded">
+<i class="fa-regular fa-file-lines text-lg"></i>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="border border-gray-100 rounded-lg p-3 bg-white shadow-sm flex items-center justify-between">
+<div>
+<div class="text-[10px] text-gray-500 font-bold mb-0.5">已完成处理</div>
+<div class="text-xl font-black text-gray-800 leading-none">1,028</div>
+<div class="text-[9px] text-green-500 mt-1 font-bold">82.4%</div>
+</div>
+<div class="relative w-8 h-8 flex items-center justify-center">
+<svg class="absolute inset-0 w-full h-full -rotate-90">
+<circle cx="16" cy="16" fill="none" r="14" stroke="#f0fdf4" stroke-width="3"></circle>
+<circle cx="16" cy="16" fill="none" r="14" stroke="#22c55e" stroke-dasharray="88 100" stroke-width="3"></circle>
+</svg>
+<i class="fa-solid fa-check text-green-500 text-xs"></i>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="border border-gray-100 rounded-lg p-3 bg-white shadow-sm flex items-center justify-between">
+<div>
+<div class="text-[10px] text-gray-500 font-bold mb-0.5">处理中</div>
+<div class="text-xl font-black text-gray-800 leading-none">128</div>
+<div class="text-[9px] text-blue-500 mt-1 font-bold">10.3%</div>
+</div>
+<div class="relative w-8 h-8 flex items-center justify-center">
+<svg class="absolute inset-0 w-full h-full animate-spin">
+<circle cx="16" cy="16" fill="none" r="14" stroke="#eff6ff" stroke-width="3"></circle>
+<circle cx="16" cy="16" fill="none" r="14" stroke="#3b82f6" stroke-dasharray="25 100" stroke-width="3"></circle>
+</svg>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="border border-gray-100 rounded-lg p-3 bg-white shadow-sm flex items-center justify-between">
+<div>
+<div class="text-[10px] text-gray-500 font-bold mb-0.5">待处理</div>
+<div class="text-xl font-black text-gray-800 leading-none">64</div>
+<div class="text-[9px] text-orange-500 mt-1 font-bold">5.1%</div>
+</div>
+<div class="w-8 h-8 border-2 border-orange-200 rounded flex items-center justify-center bg-orange-50">
+<i class="fa-solid fa-hourglass-half text-orange-400 text-xs"></i>
+</div>
+</div>
+<!-- Card 5 -->
+<div class="border border-gray-100 rounded-lg p-3 bg-white shadow-sm flex items-center justify-between">
+<div>
+<div class="text-[10px] text-gray-500 font-bold mb-0.5">处理失败</div>
+<div class="text-xl font-black text-gray-800 leading-none">28</div>
+<div class="text-[9px] text-red-500 mt-1 font-bold">2.2%</div>
+</div>
+<div class="w-8 h-8 border-2 border-red-100 rounded-full flex items-center justify-center bg-red-50">
+<i class="fa-solid fa-exclamation text-red-500 text-xs"></i>
+</div>
+</div>
+</div>
+<!-- Filter Bar -->
+<div class="mb-3 space-y-2">
+<div class="relative w-full">
+<i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+<input class="w-full pl-9 pr-10 py-1.5 border border-gray-200 rounded text-[12px] focus:ring-1 focus:ring-blue-500" placeholder="搜索文件名、内容、标签、摘要..." type="text"/>
+<i class="fa-solid fa-sliders absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs cursor-pointer"></i>
+</div>
+<div class="flex items-center justify-between">
+<div class="flex gap-2 items-center text-[11px]">
+<div class="flex items-center gap-1.5">
+<span class="text-gray-400">项目:</span>
+<div class="px-2 py-0.5 bg-white border border-gray-200 rounded flex items-center gap-1 cursor-pointer hover:bg-gray-50">全部 <i class="fa-solid fa-chevron-down text-[8px] text-gray-400"></i></div>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="text-gray-400">房间:</span>
+<div class="px-2 py-0.5 bg-white border border-gray-200 rounded flex items-center gap-1 cursor-pointer hover:bg-gray-50">全部 <i class="fa-solid fa-chevron-down text-[8px] text-gray-400"></i></div>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="text-gray-400">类型:</span>
+<div class="px-2 py-0.5 bg-white border border-gray-200 rounded flex items-center gap-1 cursor-pointer hover:bg-gray-50">全部 <i class="fa-solid fa-chevron-down text-[8px] text-gray-400"></i></div>
+</div>
+<div class="flex items-center gap-1.5">
+<span class="text-gray-400">状态:</span>
+<div class="px-2 py-0.5 bg-white border border-gray-200 rounded flex items-center gap-1 cursor-pointer hover:bg-gray-50">全部 <i class="fa-solid fa-chevron-down text-[8px] text-gray-400"></i></div>
+</div>
+</div>
+<div class="px-2 py-0.5 bg-white border border-gray-200 rounded text-[11px] flex items-center gap-1 cursor-pointer hover:bg-gray-50 font-medium">最新上传 <i class="fa-solid fa-chevron-down text-[8px] text-gray-400"></i></div>
+</div>
+</div>
+<!-- Data Table -->
+<div class="border rounded-t-lg overflow-hidden border-gray-100">
+<table class="w-full text-left text-[12px]">
+<thead class="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
+<tr>
+<th class="w-10 px-4 py-2.5"><input class="rounded border-gray-300 w-3.5 h-3.5 text-primary-blue" type="checkbox"/></th>
+<th class="py-2.5 no-wrap-ellipsis">资源信息</th>
+<th class="py-2.5 px-3 w-16 no-wrap-ellipsis">类型</th>
+<th class="py-2.5 px-3 w-20 no-wrap-ellipsis">状态</th>
+<th class="py-2.5 px-3 w-20 no-wrap-ellipsis">大小 <i class="fa-solid fa-caret-up text-[8px] opacity-40"></i></th>
+<th class="py-2.5 px-3 w-32 no-wrap-ellipsis">更新时间 <i class="fa-solid fa-caret-down text-[8px] opacity-40"></i></th>
+<th class="py-2.5 px-3 w-32 no-wrap-ellipsis">标签</th>
+<th class="w-10 px-4"></th>
+</tr>
+</thead>
+<tbody class="divide-y divide-gray-50">
+<!-- Row 1: Selected -->
+<tr class="hover:bg-blue-50/40 bg-blue-50/20 transition-colors">
+<td class="px-4 py-2.5"><input checked="" class="rounded border-gray-300 w-3.5 h-3.5 text-primary-blue focus:ring-blue-500" type="checkbox"/></td>
+<td class="py-2.5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 flex items-center justify-center bg-red-50 rounded border border-red-100 text-red-500 text-base shadow-sm"><i class="fa-solid fa-file-pdf"></i></div>
+<div class="min-w-0">
+<div class="font-bold text-gray-800 no-wrap-ellipsis">Ocean Platform 产品需求文档 v2.3</div>
+<div class="text-[10px] text-gray-400 no-wrap-ellipsis">项目：Ocean Platform | 房间：产品组</div>
+</div>
+</div>
+</td>
+<td class="px-3 py-2.5"><span class="px-1.5 py-0.5 bg-red-50 text-red-500 border border-red-100 rounded text-[10px] font-bold">PDF</span></td>
+<td class="px-3 py-2.5"><span class="px-1.5 py-0.5 bg-green-50 text-green-600 border border-green-100 rounded text-[10px] font-bold">已完成</span></td>
+<td class="px-3 text-gray-500 py-2.5">4.2 MB</td>
+<td class="px-3 text-gray-500 py-2.5">2025-06-07 14:30</td>
+<td class="px-3 py-2.5">
+<div class="flex gap-1">
+<span class="px-1 py-0.5 bg-gray-100 rounded text-[9px] text-gray-500">产品</span>
+<span class="px-1 py-0.5 bg-gray-100 rounded text-[9px] text-gray-500">PRD</span>
+</div>
+</td>
+<td class="px-4 text-gray-400 text-sm py-2.5">
+<div class="flex items-center gap-2">
+<i class="fa-solid fa-star text-orange-400 cursor-pointer text-xs"></i>
+<i class="fa-solid fa-ellipsis-vertical cursor-pointer text-xs"></i>
+</div>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="hover:bg-gray-50 transition-colors">
+<td class="px-4 py-2.5"><input class="rounded border-gray-300 w-3.5 h-3.5 text-primary-blue" type="checkbox"/></td>
+<td class="py-2.5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 flex items-center justify-center bg-blue-50 rounded border border-blue-100 text-blue-500 text-base shadow-sm"><i class="fa-regular fa-file-lines"></i></div>
+<div class="min-w-0">
+<div class="font-bold text-gray-800 no-wrap-ellipsis">用户增长策略分析报告</div>
+<div class="text-[10px] text-gray-400 no-wrap-ellipsis">项目：Ocean Platform | 房间：增长组</div>
+</div>
+</div>
+</td>
+<td class="px-3 py-2.5"><span class="px-1.5 py-0.5 bg-blue-50 text-blue-500 border border-blue-100 rounded text-[10px] font-bold">文档</span></td>
+<td class="px-3 py-2.5"><span class="px-1.5 py-0.5 bg-green-50 text-green-600 border border-green-100 rounded text-[10px] font-bold">已完成</span></td>
+<td class="px-3 text-gray-500 py-2.5">2.8 MB</td>
+<td class="px-3 text-gray-500 py-2.5">2025-06-07 11:20</td>
+<td class="px-3 py-2.5">
+<div class="flex gap-1">
+<span class="px-1 py-0.5 bg-gray-100 rounded text-[9px] text-gray-500">分析</span>
+<span class="px-1 py-0.5 bg-gray-100 rounded text-[9px] text-gray-500">增长</span>
+</div>
+</td>
+<td class="px-4 text-gray-400 text-sm py-2.5">
+<i class="fa-solid fa-ellipsis-vertical cursor-pointer text-xs"></i>
+</td>
+</tr>
+<!-- Row 4: Processing -->
+<tr class="hover:bg-gray-50 transition-colors">
+<td class="px-4 py-2.5"><input class="rounded border-gray-300 w-3.5 h-3.5 text-primary-blue" type="checkbox"/></td>
+<td class="py-2.5">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 flex items-center justify-center bg-green-50 rounded border border-green-100 text-green-500 text-base shadow-sm"><i class="fa-regular fa-file-excel"></i></div>
+<div class="min-w-0">
+<div class="font-bold text-gray-800 no-wrap-ellipsis">竞品功能对比表.xlsx</div>
+<div class="text-[10px] text-gray-400 no-wrap-ellipsis">项目：Ocean Platform | 房间：产品组</div>
+</div>
+</div>
+</td>
+<td class="px-3 py-2.5"><span class="px-1.5 py-0.5 bg-green-50 text-green-500 border border-green-100 rounded text-[10px] font-bold">表格</span></td>
+<td class="px-3 py-2.5">
+<div class="flex flex-col gap-1 w-16">
+<span class="px-1 py-0.5 bg-blue-50 text-blue-500 border border-blue-100 rounded text-[9px] text-center font-bold">处理中</span>
+<div class="w-full h-0.5 bg-gray-100 rounded-full overflow-hidden">
+<div class="bg-blue-500 h-full w-[60%]"></div>
+</div>
+</div>
+</td>
+<td class="px-3 text-gray-500 py-2.5">856 KB</td>
+<td class="px-3 text-gray-500 py-2.5">2025-06-06 15:30</td>
+<td class="px-3 py-2.5">
+<div class="flex gap-1">
+<span class="px-1 py-0.5 bg-gray-100 rounded text-[9px] text-gray-500">对比</span>
+</div>
+</td>
+<td class="px-4 text-gray-400 text-sm py-2.5">
+<i class="fa-solid fa-ellipsis-vertical cursor-pointer text-xs"></i>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Pagination -->
+<div class="flex items-center justify-between border-t px-4 py-3 shrink-0">
+<div class="text-[11px] text-gray-400 font-medium">共 1,248 项</div>
+<div class="flex items-center gap-3">
+<div class="flex border rounded overflow-hidden text-[11px] font-medium shadow-sm">
+<button class="px-2 py-1 bg-gray-50 text-gray-300"><i class="fa-solid fa-chevron-left text-[8px]"></i></button>
+<button class="px-2.5 py-1 bg-primary-blue text-white font-bold">1</button>
+<button class="px-2.5 py-1 hover:bg-gray-50 border-l">2</button>
+<button class="px-2.5 py-1 hover:bg-gray-50 border-l">3</button>
+<button class="px-2.5 py-1 hover:bg-gray-50 border-l">4</button>
+<span class="px-2 py-1 border-l text-gray-400 bg-gray-50">...</span>
+<button class="px-2.5 py-1 hover:bg-gray-50 border-l">125</button>
+<button class="px-2 py-1 hover:bg-gray-50 border-l"><i class="fa-solid fa-chevron-right text-[8px]"></i></button>
+</div>
+<select class="text-[11px] border-gray-200 rounded py-0.5 pl-2 pr-6 focus:ring-blue-500">
+<option>10 条/页</option>
+<option>20 条/页</option>
+</select>
+</div>
+</div>
+</main>
+<!-- END: MainContent -->
+<!-- BEGIN: RightSidebar (Details) -->
+<aside class="w-80 bg-white border-l flex flex-col overflow-hidden shrink-0">
+<div class="p-3 border-b flex items-center justify-between shrink-0">
+<h2 class="text-sm font-bold text-gray-800">资源详情</h2>
+<i class="fa-solid fa-xmark text-gray-400 cursor-pointer hover:text-gray-600 text-sm"></i>
+</div>
+<div class="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-5">
+<!-- File Header -->
+<div class="flex items-start gap-3">
+<div class="w-10 h-14 bg-red-50 rounded border border-red-100 flex items-center justify-center text-xl text-red-500 shadow-sm shrink-0">
+<i class="fa-solid fa-file-pdf"></i>
+</div>
+<div class="min-w-0">
+<div class="flex items-center gap-1.5 mb-0.5">
+<h3 class="font-bold text-[13px] leading-tight text-gray-900 truncate">Ocean Platform 产品需求文档 v2.3</h3>
+<i class="fa-solid fa-star text-orange-400 text-[10px] shrink-0"></i>
+</div>
+<div class="text-[10px] text-gray-400 leading-relaxed">
+<div>PDF · 4.2 MB · 2025-06-07</div>
+<div class="truncate">项目：Ocean Platform | 房间：产品组</div>
+</div>
+</div>
+</div>
+<!-- Tabs -->
+<div class="flex border-b text-[11px] font-medium tracking-tight">
+<button class="flex-1 py-1.5 tab-active">概览</button>
+<button class="flex-1 py-1.5 text-gray-400 hover:text-gray-700">预览</button>
+<button class="flex-1 py-1.5 text-gray-400 hover:text-gray-700">解析</button>
+<button class="flex-1 py-1.5 text-gray-400 hover:text-gray-700">摘要</button>
+<button class="flex-1 py-1.5 text-gray-400 hover:text-gray-700">引用</button>
+</div>
+<!-- Processing Tracker (Vertical Alignment based on visual) -->
+<div class="bg-gray-50 rounded-lg p-3">
+<div class="flex items-center justify-between mb-3">
+<span class="text-[11px] font-bold text-gray-700 uppercase tracking-tighter">处理状态</span>
+<span class="px-1.5 py-0.5 bg-green-100 text-green-700 text-[9px] font-bold rounded">已完成</span>
+</div>
+<div class="relative flex justify-between items-center px-2">
+<div class="absolute left-4 right-4 h-0.5 bg-green-200 z-0 top-1/2 -translate-y-1/2"></div>
+<div class="relative z-10 flex flex-col items-center gap-1">
+<div class="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-white text-[10px]"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+<div class="text-[8px] font-bold text-gray-500">上传</div>
+</div>
+<div class="relative z-10 flex flex-col items-center gap-1">
+<div class="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-white text-[10px]"><i class="fa-solid fa-bolt"></i></div>
+<div class="text-[8px] font-bold text-gray-500">解析</div>
+</div>
+<div class="relative z-10 flex flex-col items-center gap-1">
+<div class="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-white text-[10px]"><i class="fa-solid fa-sparkles"></i></div>
+<div class="text-[8px] font-bold text-gray-500">摘要</div>
+</div>
+<div class="relative z-10 flex flex-col items-center gap-1">
+<div class="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center text-white text-[10px]"><i class="fa-solid fa-check"></i></div>
+<div class="text-[8px] font-bold text-gray-500">索引</div>
+</div>
+</div>
+</div>
+<!-- Metadata Grid -->
+<div class="space-y-2">
+<h4 class="text-[11px] font-bold text-gray-700 uppercase tracking-tight">资源信息</h4>
+<div class="space-y-1.5 text-[11px]">
+<div class="flex"><span class="w-16 text-gray-400 shrink-0">文件名</span> <span class="flex-1 text-gray-800 truncate">PRD_v2.3.pdf</span></div>
+<div class="flex"><span class="w-16 text-gray-400 shrink-0">大小</span> <span class="flex-1 text-gray-800">4.2 MB</span></div>
+<div class="flex"><span class="w-16 text-gray-400 shrink-0">页数</span> <span class="flex-1 text-gray-800">45 页</span></div>
+<div class="flex"><span class="w-16 text-gray-400 shrink-0">更新时间</span> <span class="flex-1 text-gray-800 font-mono">06-07 14:30</span></div>
+</div>
+</div>
+<!-- Tags -->
+<div>
+<h4 class="text-[11px] font-bold text-gray-700 uppercase tracking-tight mb-2">标签</h4>
+<div class="flex flex-wrap gap-1">
+<span class="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[9px] font-medium border border-gray-200">产品</span>
+<span class="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[9px] font-medium border border-gray-200">需求</span>
+<span class="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[9px] font-medium border border-gray-200">PRD</span>
+<span class="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[9px] font-medium border border-gray-200">+3</span>
+</div>
+</div>
+<!-- Stats -->
+<div class="grid grid-cols-4 gap-1 pt-2 border-t text-center">
+<div>
+<div class="text-gray-400 text-[8px] uppercase font-bold">引用</div>
+<div class="text-sm font-black text-gray-800">23</div>
+</div>
+<div>
+<div class="text-gray-400 text-[8px] uppercase font-bold">会话</div>
+<div class="text-sm font-black text-gray-800">12</div>
+</div>
+<div>
+<div class="text-gray-400 text-[8px] uppercase font-bold">任务</div>
+<div class="text-sm font-black text-gray-800">8</div>
+</div>
+<div>
+<div class="text-gray-400 text-[8px] uppercase font-bold">智体</div>
+<div class="text-sm font-black text-gray-800">5</div>
+</div>
+</div>
+</div>
+<!-- Right Footer Actions -->
+<div class="mt-auto border-t bg-white p-2.5 flex flex-wrap gap-2 shrink-0">
+<button class="flex-1 bg-primary-blue text-white py-1.5 rounded text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-blue-700 shadow-sm transition">
+<i class="fa-solid fa-eye text-[10px]"></i> 预览
+      </button>
+<button class="flex-1 border border-gray-200 text-gray-600 py-1.5 rounded text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-gray-50 shadow-sm transition">
+<i class="fa-solid fa-download text-[10px]"></i> 下载
+      </button>
+<div class="w-full flex gap-2">
+<button class="flex-1 border border-gray-200 text-gray-600 py-1.5 rounded text-[11px] font-bold flex items-center justify-center gap-1.5 hover:bg-gray-50 transition">
+<i class="fa-solid fa-link text-[10px]"></i> 引用
+        </button>
+<button class="px-2 border border-gray-200 text-gray-600 py-1.5 rounded text-[11px] font-bold hover:bg-gray-50 transition">
+<i class="fa-solid fa-ellipsis text-[10px]"></i>
+</button>
+</div>
+</div>
+</aside>
+<!-- END: RightSidebar -->
+</div>
+</body></html>

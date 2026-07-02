@@ -1,0 +1,120 @@
+{
+  "id": "review",
+  "sessionId": "zvr9jKMMsE8FaSp1",
+  "expectedIntent": "review_only",
+  "detail": {
+    "workflowController": {
+      "workflow_run_id": "fURpc76UD2koHg",
+      "status": "completed",
+      "selected_intent": "review_only",
+      "active_stage": "reviewer_assignment",
+      "controller": "planner",
+      "blocker": null,
+      "next_action": null,
+      "finishBranchDecision": null
+    },
+    "artifactTypes": [
+      "intent_routing:draft",
+      "plan:draft"
+    ],
+    "gateCount": 1,
+    "assignmentCount": 0,
+    "runCount": 4,
+    "messageCount": 14
+  },
+  "artifactTypes": [
+    "intent_routing:draft:Intent Routing",
+    "plan:draft:Review Plan"
+  ],
+  "gateStatuses": [
+    "plan_confirm:pending"
+  ],
+  "assignmentCount": 0,
+  "messages": [
+    {
+      "role": "user",
+      "content": "只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在排版风险。"
+    },
+    {
+      "role": "system",
+      "content": "SessionOS 已创建 Superpowers intake 任务「只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在...」。"
+    },
+    {
+      "role": "system",
+      "content": "已进入 Superpowers 工作流：只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在...\n当前阶段：analysis\n执行方式：workflow_graph"
+    },
+    {
+      "role": "system",
+      "content": "工作流已启动，进入 analysis 阶段。"
+    },
+    {
+      "role": "assistant",
+      "content": "```json\n{\"intent\":\"review_only\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n```"
+    },
+    {
+      "role": "assistant",
+      "content": "```json\n{\"goal\":\"只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在排版风险。\",\"mode\":\"review_only\",\"reviewScope\":[\"fake ACP review scope\"],\"verificationRequired\":false}\n```"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"verdict\":\"pass\",\"findings\":[],\"requiredFixes\":[],\"riskLevel\":\"low\"}"
+    },
+    {
+      "role": "system",
+      "content": "任务「只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在...」进入 verify 阶段。"
+    },
+    {
+      "role": "system",
+      "content": "任务「只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在...」验证已完成。"
+    },
+    {
+      "role": "system",
+      "content": "任务「只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在...」进入 acceptance 阶段。"
+    },
+    {
+      "role": "assistant",
+      "content": "{\"verdict\":\"pass\",\"acceptedCriteria\":[\"fake ACP workflow stage completed\"],\"failedCriteria\":[],\"notes\":\"Accepted by fake ACP workflow stage output.\"}"
+    },
+    {
+      "role": "system",
+      "content": "任务「只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在...」状态变更为 done"
+    },
+    {
+      "role": "system",
+      "content": "任务「只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在...」已通过验收。"
+    },
+    {
+      "role": "system",
+      "content": "任务「只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在...」的完成摘要已写入记忆。"
+    }
+  ],
+  "dom": {
+    "bodyLength": 2775,
+    "hasWorkflowMission": false,
+    "hasWorkflowChatMessage": true,
+    "workflowChatMessageCount": 1,
+    "hasRunFlowCapsule": true,
+    "runFlowCapsuleCount": 4,
+    "hasFinishBranchDecision": false,
+    "finishDecisionButtonCount": 0,
+    "hasRawMetadataLabel": false,
+    "hasRawExecutionLogLabel": false,
+    "hasWorkflowStatusLabel": true,
+    "workflowRects": [
+      {
+        "width": 552,
+        "height": 122.09375,
+        "left": 297,
+        "right": 849,
+        "top": 699.484375,
+        "bottom": 821.578125,
+        "scrollWidth": 549,
+        "clientWidth": 549,
+        "scrollHeight": 120,
+        "clientHeight": 120
+      }
+    ],
+    "overflowNodes": [],
+    "sample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow E2E 7374 1781771470603\nE2E review route\n刚刚\n已进入 Superpowers workflow intake：只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在...\nE2E debug route\n刚刚\n已进入 Superpowers workflow intake：debug：排查为什么发送消息后马上进入 planning，应该先进入分析阶段，...\nE2E lightweight route\n刚刚\n已进入 Superpowers workflow intake：轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\nE2E analysis route\n刚刚\n已进入 Superpowers workflow intake：只分析不改代码：为什么移除项目时会提示 project has active r...\nE2E answer route\n刚刚\n已进入 Superpowers workflow intake：一句话回答：TypeScript 是什么？只需要直接回答。\nWorkflow E2E 7374 1781770801329\nWorkflow E2E 7374 1781770479960\nWorkflow E2E 7374 1781769364643\nWorkflow E2E 7374 1781769206267\nWorkflow E2E 7374 1781769016850\nWorkflow E2E 7374 1781768752055\nWorkflow E2E 7374 1781768443188\nWorkflow E2E 7374 1781768185217\nWorkflow E2E 7374 1781766944259\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nE2E review route\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n16:31:54\n复制\n只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在排版风险。\n规\n规划师\nbrainstorming · codex\n16:31:54\n思考 1s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n\njson {\"intent\":\"review_only\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n16:31:55\n思考 1s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n\njson {\"goal\":\"只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在排版风险。\",\"mode\":\"review_only\",\"reviewScope\":[\"fake ACP review scope\"],\"verificationRequired\":false}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n审\n审查员\nreviewing · codex\n16:31:56\n思考 2s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"verdict\":\"pass\",\"findings\":[],\"requiredFixes\":[],\"riskLevel\":\"low\"}\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n验\n验收员\nverifying · codex\n16:31:58\n思考 1s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"verdict\":\"pass\",\"acceptedCriteria\":[\"fake ACP workflow stage completed\"],\"failedCriteria\":[],\"notes\":\"Accepted by fake ACP workflow stage output.\"}\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规划师 (PLANNER)\n16:31:59\ndone\n\n只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在排版风险。\n\nPlan v1\nReview Plan\n等待用户确认 planner 生成的执行计划。\n请求修改\n确认\n$\n粘贴文件会上传到项目文件库\n对话记录\n文件浏览器\n项目终端\n状态\n契约\n运行\n工具\n计划\nWORKFLOW 状态\n等待确认\n状态\n\n等待用户确认 workflow artifact，确认后任务会继续执行。\n\n阶段\n\nreviewer_assignment · planner\n\n等待用户确认 PLANNER 生成的执行计划。\n确认 plan\n目标契约 (CONTRACT)\n编辑\n目标 (OBJECTIVE)\n\nE2E review route\n\n原因 (REASON)"
+  }
+}

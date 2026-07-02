@@ -1,0 +1,341 @@
+{
+  "case": {
+    "name": "standard",
+    "message": "实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。",
+    "expectedIntent": "standard_development"
+  },
+  "sessionId": "p9nuIi5BUIO4PTQr",
+  "url": "http://127.0.0.1:5192/projects/gZwB76YO-EzS/sessions/p9nuIi5BUIO4PTQr",
+  "workflowCount": 1,
+  "artifactApproveCount": 2,
+  "bodyFlags": {
+    "hasWorkflowMission": false,
+    "hasExecutionLog": false,
+    "hasRawSuperpowers": false,
+    "hasFakeWorkflowControl": false
+  },
+  "workflowBoundingBoxes": [
+    {
+      "x": 297,
+      "y": 241,
+      "width": 552,
+      "height": 117.9375
+    }
+  ],
+  "bodyTextSample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow Browser Full 7352\nmatrix5-standard\n刚刚\n已进入 Superpowers workflow intake：实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。\nmatrix5-review\n刚刚\n已进入 Superpowers workflow intake：只审查当前 workflow 相关改动，不要修改代码。\nmatrix4-review\n4 分钟前\n已进入 Superpowers workflow intake：只审查当前 workflow 相关改动，不要修改代码。\nmatrix4-debug\n4 分钟前\n已进入 Superpowers workflow intake：排查为什么删除项目会报 project has active runs。\nmatrix3-debug\n9 分钟前\n已进入 Superpowers workflow intake：排查为什么删除项目会报 project has active runs。\nmatrix3-lightweight\n9 分钟前\n已进入 Superpowers workflow intake：轻量修改 README 文案，先给出简短执行计划。\nmatrix3-analysis\n9 分钟前\n已进入 Superpowers workflow intake：分析一下项目删除 active runs 报错原因，不要改代码。\nmatrix2-analysis\n14 分钟前\n已进入 Superpowers workflow intake：分析一下项目删除 active runs 报错原因，不要改代码。\nmatrix2-answer\n14 分钟前\n已进入 Superpowers workflow intake：为什么这个系统要使用 workflow-first？请用一句话回答。\nmatrix-answer\n18 分钟前\n已进入 Superpowers workflow intake：为什么这个系统要使用 workflow-first？请用一句话回答。\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nmatrix5-standard\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n14:13:23\n复制\n实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。\n规划师 (PLANNER)\n14:13:26\nwaiting\n\n等待用户确认当前 workflow artifact。\n\nSpec v1\nSuperpowers Brainstorming Evidence\n等待用户确认 planner 生成的需求/设计规格。\n请求修改\n确认\n$\n粘贴文件会上传到项目文件库\n对话记录\n文件浏览器\n项目终端\n状态\n契约\n运行\n工具\n计划\nWORKFLOW 状态\n等待确认\n状态\n\n等待用户确认 workflow artifact，确认后任务会继续执行。\n\n阶段\n\nbrainstorming · user\n\n等待用户确认 PLANNER 生成的需求/设计规格。\n确认 spec\n目标契约 (CONTRACT)\n编辑\n目标 (OBJECTIVE)\n\nmatrix5-standard\n\n原因 (REASON)\n\nfake ACP planner routing evidence\n\n边界 (SCOPE)\n\n未设置范围\n\n风险 (RISKS)\n\n 暂无风险记录\n\n验收 (ACCEPTANCE)\n\n暂无验收标准\n\n会话计划 (SESSION PLAN)\n暂无会话计划\n代理运行 (ACTIVE RUN)\n0 条记录\n暂无代理运行\n工具调用 (TOOLS)\n0 条记录\n暂无工具调用\n本次会话变更 (SESSION CHANGES)\n本会话暂无文件变更\n0\nno session changes\n0\n查看预览\n立即应用\nmatrix5-standard\n·\nmaster\n319 changed\n响应耗时\n--\n错误率\n0.0%\n网络延迟\n--\n压缩\n⌘P\n分叉\n⌘B\n上下文压力\n28%\n规\n规\n审\nTOKEN 消耗\n--\n导出\nProvider Superpowers 已就绪\nClaude Code、Codex CLI、OpenCode",
+  "summary": {
+    "session": {
+      "id": "p9nuIi5BUIO4PTQr",
+      "project_id": "gZwB76YO-EzS",
+      "title": "matrix5-standard",
+      "current_goal": null,
+      "mode": "code",
+      "phase": "idle",
+      "status": "active",
+      "provider": "codex",
+      "model": null,
+      "workspace_path": "/Users/chendimao/WWW/openDeepSea",
+      "worktree_path": null,
+      "branch_name": null,
+      "forked_from_session_id": null,
+      "forked_from_history_record_id": null,
+      "latest_compaction_id": null,
+      "latest_context_manifest_id": null,
+      "closed_at": null,
+      "pinned_at": null,
+      "last_viewed_at": 1781763206305,
+      "created_at": 1781763202204,
+      "updated_at": 1781763202204,
+      "archived_at": null
+    },
+    "messages": [
+      {
+        "id": "yLHiIOgA5eKmKM1s",
+        "role": "user",
+        "sender_id": "user",
+        "sender_name": null,
+        "type": "text",
+        "status": "completed",
+        "content": "实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。",
+        "metadata": {
+          "target_agent_id": "planner",
+          "risk_assessment": {
+            "taskKind": "code_review",
+            "riskLevel": "low",
+            "requiresApproval": false,
+            "approvalReason": "",
+            "confidence": 0.7100000000000001,
+            "reasons": [
+              "frontend or UI signals matched"
+            ],
+            "scopeRead": [],
+            "scopeWrite": [],
+            "verificationCommands": []
+          },
+          "session_execution": {
+            "executionPath": "workflow_graph",
+            "trigger": "workflow_intake",
+            "riskAssessment": {
+              "taskKind": "code_review",
+              "riskLevel": "low",
+              "requiresApproval": false,
+              "approvalReason": "",
+              "confidence": 0.7100000000000001,
+              "reasons": [
+                "frontend or UI signals matched"
+              ],
+              "scopeRead": [],
+              "scopeWrite": [],
+              "verificationCommands": []
+            },
+            "workflowRoomId": "Bqh2k6DcVOkb",
+            "workflowTaskId": "3a9DPKE1mMb9",
+            "workflowRunId": "qr1jeEKgLtja1H",
+            "graphVersion": "superpowers-v2",
+            "activeSuperpowersStage": "intake"
+          }
+        }
+      },
+      {
+        "id": "UZx8t3sXQgjpD5RP",
+        "role": "system",
+        "sender_id": "workflow",
+        "sender_name": "工作流",
+        "type": "system",
+        "status": "completed",
+        "content": "SessionOS 已创建 Superpowers intake 任务「实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。」。",
+        "metadata": {
+          "session_workflow_bridge": {
+            "sourceRoomId": "Bqh2k6DcVOkb",
+            "sourceRoomMessageId": "yJeChqx--E0WeP_X",
+            "sourceMessageId": "yLHiIOgA5eKmKM1s",
+            "taskId": "3a9DPKE1mMb9",
+            "rootTaskId": "3a9DPKE1mMb9",
+            "eventType": "task_created",
+            "createdAt": 1781763203984
+          },
+          "source_room_message_id": "yJeChqx--E0WeP_X",
+          "source_message_id": "yLHiIOgA5eKmKM1s",
+          "task_id": "3a9DPKE1mMb9",
+          "root_task_id": "3a9DPKE1mMb9",
+          "event_type": "task_created"
+        }
+      },
+      {
+        "id": "554IjTnHumR0F830",
+        "role": "system",
+        "sender_id": "workflow",
+        "sender_name": "工作流",
+        "type": "system",
+        "status": "completed",
+        "content": "已进入 Superpowers 工作流：实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。\n当前阶段：analysis\n执行方式：workflow_graph",
+        "metadata": {
+          "risk_assessment": {
+            "taskKind": "code_review",
+            "riskLevel": "low",
+            "requiresApproval": false,
+            "approvalReason": "",
+            "confidence": 0.7100000000000001,
+            "reasons": [
+              "frontend or UI signals matched"
+            ],
+            "scopeRead": [],
+            "scopeWrite": [],
+            "verificationCommands": []
+          },
+          "session_workflow": {
+            "executionPath": "workflow_graph",
+            "trigger": "workflow_intake",
+            "riskAssessment": {
+              "taskKind": "code_review",
+              "riskLevel": "low",
+              "requiresApproval": false,
+              "approvalReason": "",
+              "confidence": 0.7100000000000001,
+              "reasons": [
+                "frontend or UI signals matched"
+              ],
+              "scopeRead": [],
+              "scopeWrite": [],
+              "verificationCommands": []
+            },
+            "workflowRoomId": "Bqh2k6DcVOkb",
+            "workflowTaskId": "3a9DPKE1mMb9",
+            "workflowRunId": "qr1jeEKgLtja1H",
+            "workflowStatus": "running",
+            "workflowStage": "analysis",
+            "graphVersion": "superpowers-v2",
+            "activeSuperpowersStage": "intake",
+            "sourceMessageId": "yLHiIOgA5eKmKM1s",
+            "createdAt": 1781763203987
+          },
+          "source_message_id": "yLHiIOgA5eKmKM1s"
+        }
+      },
+      {
+        "id": "P8ugmoZiV5hWud59",
+        "role": "system",
+        "sender_id": "workflow",
+        "sender_name": "工作流",
+        "type": "system",
+        "status": "completed",
+        "content": "工作流已启动，进入 analysis 阶段。",
+        "metadata": {
+          "session_workflow_bridge": {
+            "sourceRoomId": "Bqh2k6DcVOkb",
+            "sourceRoomMessageId": "x-VDiWzaHAZqsXlS",
+            "sourceMessageId": "yLHiIOgA5eKmKM1s",
+            "taskId": "3a9DPKE1mMb9",
+            "rootTaskId": "3a9DPKE1mMb9",
+            "workflowRunId": "qr1jeEKgLtja1H",
+            "eventType": "workflow_started",
+            "createdAt": 1781763203990
+          },
+          "source_room_message_id": "x-VDiWzaHAZqsXlS",
+          "source_message_id": "yLHiIOgA5eKmKM1s",
+          "task_id": "3a9DPKE1mMb9",
+          "root_task_id": "3a9DPKE1mMb9",
+          "workflow_run_id": "qr1jeEKgLtja1H",
+          "event_type": "workflow_started"
+        }
+      },
+      {
+        "id": "ezUc0xgcpQH_zgVO",
+        "role": "assistant",
+        "sender_id": "planner",
+        "sender_name": "规划师",
+        "type": "agent_stream",
+        "status": "completed",
+        "content": "```json\n{\"intent\":\"review_only\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n```",
+        "metadata": {
+          "session_workflow_bridge": {
+            "sourceRoomId": "Bqh2k6DcVOkb",
+            "sourceRoomMessageId": "0pYCsVfg15UI0jui",
+            "sourceMessageId": "yLHiIOgA5eKmKM1s",
+            "taskId": "3a9DPKE1mMb9",
+            "rootTaskId": "3a9DPKE1mMb9",
+            "workflowRunId": "qr1jeEKgLtja1H",
+            "workflowStepId": "S4n6hUpEaystSa",
+            "agentRunId": "zc-Fsya5jQo8xp3F",
+            "eventType": null,
+            "createdAt": 1781763204878
+          },
+          "source_room_message_id": "0pYCsVfg15UI0jui",
+          "source_message_id": "yLHiIOgA5eKmKM1s",
+          "task_id": "3a9DPKE1mMb9",
+          "root_task_id": "3a9DPKE1mMb9",
+          "workflow_run_id": "qr1jeEKgLtja1H",
+          "workflow_step_id": "S4n6hUpEaystSa",
+          "agent_run_id": "zc-Fsya5jQo8xp3F",
+          "event_type": null
+        }
+      },
+      {
+        "id": "-004C5itmJhkje9p",
+        "role": "assistant",
+        "sender_id": "planner",
+        "sender_name": "规划师",
+        "type": "agent_stream",
+        "status": "completed",
+        "content": "{\"superpowers\":{\"designDocPath\":\"docs/superpowers/specs/fake-workflow-design.md\",\"designReviewVerdict\":\"approved\"}}",
+        "metadata": {
+          "session_workflow_bridge": {
+            "sourceRoomId": "Bqh2k6DcVOkb",
+            "sourceRoomMessageId": "T2BPN81H_ZVZOuQ4",
+            "sourceMessageId": "yLHiIOgA5eKmKM1s",
+            "taskId": "3a9DPKE1mMb9",
+            "rootTaskId": "3a9DPKE1mMb9",
+            "workflowRunId": "qr1jeEKgLtja1H",
+            "workflowStepId": "dx2DH3NMvVkZil",
+            "agentRunId": "m4BZwqiw24Ojjzcu",
+            "eventType": null,
+            "createdAt": 1781763206297
+          },
+          "source_room_message_id": "T2BPN81H_ZVZOuQ4",
+          "source_message_id": "yLHiIOgA5eKmKM1s",
+          "task_id": "3a9DPKE1mMb9",
+          "root_task_id": "3a9DPKE1mMb9",
+          "workflow_run_id": "qr1jeEKgLtja1H",
+          "workflow_step_id": "dx2DH3NMvVkZil",
+          "agent_run_id": "m4BZwqiw24Ojjzcu",
+          "event_type": null
+        }
+      }
+    ],
+    "runs": [],
+    "workflowArtifacts": [
+      {
+        "id": "GKm4iKSqtVW67Z",
+        "workflow_run_id": "qr1jeEKgLtja1H",
+        "artifact_type": "intent_routing",
+        "version": 1,
+        "status": "draft",
+        "title": "Intent Routing",
+        "content": "```json\n{\n  \"intent\": \"standard_development\",\n  \"confidence\": 0.97,\n  \"reason\": \"fake ACP planner routing evidence\"\n}\n```",
+        "structured_data": {
+          "intent": "standard_development",
+          "confidence": 0.97,
+          "reason": "fake ACP planner routing evidence"
+        },
+        "created_by_agent_id": "planner",
+        "change_request_message_id": null,
+        "approved_by": null,
+        "approved_at": null,
+        "created_at": 1781763204881
+      },
+      {
+        "id": "U4O-u5mVOWP86F",
+        "workflow_run_id": "qr1jeEKgLtja1H",
+        "artifact_type": "spec",
+        "version": 1,
+        "status": "draft",
+        "title": "Superpowers Brainstorming Evidence",
+        "content": "{\"superpowers\":{\"designDocPath\":\"docs/superpowers/specs/fake-workflow-design.md\",\"designReviewVerdict\":\"approved\"}}",
+        "structured_data": {
+          "designDocPath": "docs/superpowers/specs/fake-workflow-design.md",
+          "designReviewVerdict": "approved",
+          "tddEvidence": [],
+          "verificationEvidence": []
+        },
+        "created_by_agent_id": "planner",
+        "change_request_message_id": null,
+        "approved_by": null,
+        "approved_at": null,
+        "created_at": 1781763206300
+      }
+    ],
+    "workflowGates": [
+      {
+        "kind": "spec_confirm",
+        "workflow_run_id": "qr1jeEKgLtja1H",
+        "artifact_version_id": "U4O-u5mVOWP86F",
+        "status": "pending",
+        "reason": "等待用户确认 planner 生成的需求/设计规格。"
+      }
+    ],
+    "workflowController": {
+      "workflow_run_id": "qr1jeEKgLtja1H",
+      "status": "awaiting_approval",
+      "selected_intent": "standard_development",
+      "active_stage": "brainstorming",
+      "controller": "user",
+      "blocker": "Waiting for approved spec artifact version",
+      "next_action": "等待用户确认当前 workflow artifact。"
+    },
+    "evidence": [
+      {
+        "id": "KN9hVa-dCwhCJeUx",
+        "summary": null,
+        "payload": null
+      },
+      {
+        "id": "-mHKcdVtzvy8_vCs",
+        "summary": "已进入 Superpowers workflow intake：实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。",
+        "payload": null
+      }
+    ],
+    "intents": [
+      "standard_development"
+    ]
+  }
+}

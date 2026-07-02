@@ -1,0 +1,29 @@
+{
+  "id": "debug",
+  "sessionId": "1Wk1YqtXMLRh42_n",
+  "expectedIntent": "debug",
+  "workflowController": {
+    "workflow_run_id": "K_P9xK4MiUjinA",
+    "status": "awaiting_approval",
+    "selected_intent": "debug",
+    "active_stage": "debug_plan",
+    "controller": "user",
+    "blocker": "Waiting for user confirmation of debug plan artifact",
+    "next_action": "等待用户确认当前 workflow artifact。"
+  },
+  "artifactTypes": [
+    "intent_routing:draft",
+    "plan:draft"
+  ],
+  "gateCount": 1,
+  "messageCount": 5,
+  "runCount": 0,
+  "ui": {
+    "hasWorkflowMission": false,
+    "hasExecutionLog": false,
+    "hasMetadata": false,
+    "hasMergedEvents": false,
+    "hasWorkflowStatus": true,
+    "sample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow Browser Matrix 7346\nMatrix debug route\n刚刚\n已进入 Superpowers workflow intake：debug：分析为什么删除项目时可能提示 project has active ...\nMatrix lightweight route\n刚刚\n已进入 Superpowers workflow intake：轻量修改 README 文档，追加一行项目说明。\nMatrix analysis route\n刚刚\n已进入 Superpowers workflow intake：分析一下为什么删除项目会报 project has active runs，只需...\nWorkflow Browser Verify 7346\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nMatrix debug rout...\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n13:20:45\n复制\ndebug：分析为什么删除项目时可能提示 project has active runs，先给 debug_plan，不要直接修改文件。\n规划师 (PLANNER)\n13:20:45\nwaiting\n\n等待用户确认当前 workflow artifact。\n\nPlan v1\nDebug Plan\n等待用户确认 planner 生成的执行计划。\n请求修改\n确认\n$\n粘贴文件会上传到项目文件库\n对话记录\n文件浏览器\n项目终端\n状态\n契约\n运行\n工具\n计划\nWORKFLOW 状态\n等待确认\n状态\n\n等待用户确认 workflow artifact，确认后任务会继续执行。\n\n阶段\n\ndebug_plan · user\n\n等待用户确认 PLANNER 生成的执行计划。\n确认 plan\n目标契约 (CONTRACT)\n编辑\n目标 (OBJECTIVE)\n\nMatrix debug route\n\n原因 (REASON)\n\nfake ACP planner routing evidence\n\n边界 (SCOPE)\n\n未设置范围\n\n风险 (RISKS)\n\n 暂无风险记录\n\n验收 (ACCEPTANCE)\n\n暂无验收标准\n\n会话计划 (SESSION PLAN)\n暂无会话计划\n代理运行 (ACTIVE RUN)\n0 条记录\n暂无代理运行\n工具调用 (TOOLS)\n0 条记录\n暂无工具调用\n本次会话变更 (SESSION CHANGES)\n本会话暂无文件变更\n0\nno session changes\n0\n查看预览\n立即应用\nMatrix debug route\n·\ndetached\nclean\n响应耗时\n--\n错误率\n0.0%\n网络延迟\n--\n压缩\n⌘P\n分叉\n⌘B\n上下文压力\n28%\n规\n规\nTOKEN 消耗\n--\n导出"
+  }
+}

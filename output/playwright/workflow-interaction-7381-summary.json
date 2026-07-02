@@ -1,0 +1,1166 @@
+{
+  "projectId": "MD8L7f9ix07l",
+  "projectPath": "/tmp/opendeepsea-workflow-interaction-audit-7381/browser-project-1781773438507",
+  "generatedAt": "2026-06-18T09:04:45.089Z",
+  "requestChange": {
+    "sessionId": "ombRmGRPYZ1VKieg",
+    "beforeDom": {
+      "hasWorkflowMission": false,
+      "workflowChatMessageCount": 1,
+      "runFlowCapsuleCount": 2,
+      "approveButtonCount": 1,
+      "requestChangeButtonCount": 1,
+      "finishDecisionVisible": false,
+      "finishDecisionButtonCount": 0,
+      "hasRawMetadataOrExecutionLog": false,
+      "overflowNodes": [],
+      "sample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow Interaction Audit 7381 1781773438507\nInteraction request change\n刚刚\n已进入 Superpowers workflow intake：实现一个设置页功能，先产出 spec，让我可以请求修改。\nWorkflow Audit 7381 1781773438484\nWorkflow Interaction Audit 7381 1781772523663\nWorkflow Audit 7381 1781772087567\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nInteraction reque...\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n17:04:03\n复制\n实现一个设置页功能，先产出 spec，让我可以请求修改。\n规\n规划师\nbrainstorming · codex\n17:04:03\n思考 2s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n\njson {\"intent\":\"standard_development\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n17:04:05\n思考 2s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"superpowers\":{\"designDocPath\":\"docs/superpowers/specs/fake-workflow-design.md\",\"designReviewVerdict\":\"approved\"}}\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规划师 (PLANNER)\n17:04:06\nwaiting\n\n等待用户确认当前 workflow artifact。\n\nSpec v1\nSuperpowers Brainstorming Evidence\n等待用户确认 planner 生成的需求/设计规格。\n请求修改\n确认\n$\n粘贴文件会上传到项目文件库\n对话记录\n文件浏览器\n项目终端\n状态\n契约\n运行\n工具\n计划\nWORKFLOW 状态\n等待确认\n状态\n\n等待用户确认 workflow artifact，确认后任务会继续执行。\n\n阶段\n\nbrainstorming · user\n\n等待用户确认 PLANNER 生成的需求/设计规格。\n确认 spec\n目标契约 (CONTRACT)\n编辑\n目标 (OBJECTIVE)\n\nInteraction request change\n\n原因 (REASON)\n\nfake ACP planner routing evidence\n\n边界 (SCOPE)\n\n未设置范围\n\n风险 (RISKS)\n\n 暂无风险记录\n\n验收 (ACCEPTANCE)\n\n暂无验收标准\n\n会话计划 (SESSION PLAN)\n暂无会话计划\n代理运行 (ACTIVE RUN)\n1 条记录\n完成\n\ncodex\n\n00:00:01\n刚刚\n工具调用 (TOOLS)\n0 条记录\n暂无工具调用\n本次会话变更 (SESSION CHANGES)\n本会话暂无文件变更\n0\nno session changes\n0\n查看预览\n立即应用\nInteraction request change\n·\nmain\nclean\n响应耗时\n1.5s\n错误率\n0.0%\n网络延迟\n--\n压缩\n⌘P\n分叉\n⌘B\n上下文压力\n28%\n规\n规\nTOKEN 消耗\n--\n导出"
+    },
+    "afterDom": {
+      "hasWorkflowMission": false,
+      "workflowChatMessageCount": 1,
+      "runFlowCapsuleCount": 4,
+      "approveButtonCount": 1,
+      "requestChangeButtonCount": 1,
+      "finishDecisionVisible": false,
+      "finishDecisionButtonCount": 0,
+      "hasRawMetadataOrExecutionLog": false,
+      "overflowNodes": [],
+      "sample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow Interaction Audit 7381 1781773438507\nInteraction request change\n刚刚\n已请求 planner 修改 spec v1。\nWorkflow Audit 7381 1781773438484\nWorkflow Interaction Audit 7381 1781772523663\nWorkflow Audit 7381 1781772087567\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nInteraction reque...\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n17:04:03\n复制\n实现一个设置页功能，先产出 spec，让我可以请求修改。\n规\n规划师\nbrainstorming · codex\n17:04:03\n思考 2s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n\njson {\"intent\":\"standard_development\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n17:04:05\n思考 2s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"superpowers\":{\"designDocPath\":\"docs/superpowers/specs/fake-workflow-design.md\",\"designReviewVerdict\":\"approved\"}}\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规划师 (PLANNER)\n17:04:06\nwaiting\n\n已合并 2 条工作流事件，当前仅显示最新流转摘要。\n\nSpec v1\nSuperpowers Brainstorming Evidence\n等待用户确认 planner 生成的需求/设计规格。\n请求修改\n确认\nuser\n17:04:08\n复制\n请修改 spec v1：\n规\n规划师\nbrainstorming · codex\n17:04:08\n思考 1s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n\njson {\"intent\":\"standard_development\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n17:04:08\n思考中 1s\n运行中\n复制\n保存为知识\n执行中\nAgent 正在执行任务流。\nstdout\nCODING\nevents\n0 EVENTS\nchecks\nPASS\n等待智能体输出...\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规划师\n17:04:10\n复制\n保存为知识\n{\"superpowers\":{\"designDocPath\":\"docs/superpowers/specs/fake-workflow-design.md\",\"designReviewVerdict\":\"approved\"}}\n$\n粘贴文件会上传到项目文件库\n对话记录\n文件浏览器\n项目终端\n状态\n契约\n运行\n工具\n计划\nWORKFLOW 状态\n等待确认\n状态\n\n等待用户确认 workflow artifact，确认后任务会继续执行。\n\n阶段\n\nbrainstorming · planner\n\n等待用户确认 PLANNER 生成的需求/设计规格。\n确认 spec\n目标契约 (CONTRACT)\n编辑\n目标 (OBJECTIVE)\n\nInteraction request change\n\n原因 (REASON)\n\nfake ACP planner routing evidence\n\n边界 (SCOPE)\n\n未设置范围\n\n风险 (RISKS)\n\n 暂无风险记录\n\n验收 (ACCEPTANCE)\n\n暂无验收标准\n\n会话计划 (SESSION PLAN)\n暂无会话计划\n代理运行 (ACTIVE RUN)\n1 条记录\n运行中\n\ncodex\n\n00:00:01\n刚刚\n工具调用 (TOOLS)\n0 条记录\n暂无工具调用\n本次会话变更 (SESSION CHANGES)\n本会话暂无文件变更\n0\nno session changes\n0\n查看预览\n立即应用\nInteraction request change\n·\nmain\nclean\n响应耗时\n0.5s\n错误率\n0.0%\n网络延迟\n--\n压缩\n⌘P\n分叉\n⌘B\n上下文压力\n28%\n规\n规\nTOKEN 消耗\n--\n导出"
+    },
+    "after": {
+      "workflowController": {
+        "workflow_run_id": "2xz8wgtvyixoBx",
+        "status": "running",
+        "selected_intent": "standard_development",
+        "active_stage": "brainstorming",
+        "controller": "planner",
+        "blocker": null,
+        "next_action": null,
+        "finishBranchDecision": null
+      },
+      "artifacts": [
+        {
+          "id": "LOf_Fu03opWfcf",
+          "type": "intent_routing",
+          "status": "draft",
+          "title": "Intent Routing",
+          "version": 1
+        },
+        {
+          "id": "l03Rp4aNw7xLY5",
+          "type": "spec",
+          "status": "draft",
+          "title": "Superpowers Brainstorming Evidence",
+          "version": 1
+        }
+      ],
+      "gates": [
+        {
+          "kind": "spec_confirm",
+          "status": "pending",
+          "artifactVersionId": "l03Rp4aNw7xLY5"
+        }
+      ],
+      "messages": [
+        {
+          "id": "EB6x-Smy1Zy3yQi7",
+          "role": "user",
+          "senderName": null,
+          "content": "实现一个设置页功能，先产出 spec，让我可以请求修改。",
+          "metadata": {
+            "target_agent_id": "planner",
+            "risk_assessment": {
+              "taskKind": "unknown",
+              "riskLevel": "medium",
+              "requiresApproval": true,
+              "approvalReason": "low-confidence task profile requires approval",
+              "confidence": 0.35,
+              "reasons": [
+                "low-confidence task profile"
+              ],
+              "scopeRead": [],
+              "scopeWrite": [],
+              "verificationCommands": []
+            },
+            "session_execution": {
+              "executionPath": "workflow_graph",
+              "trigger": "workflow_intake",
+              "riskAssessment": {
+                "taskKind": "unknown",
+                "riskLevel": "medium",
+                "requiresApproval": true,
+                "approvalReason": "low-confidence task profile requires approval",
+                "confidence": 0.35,
+                "reasons": [
+                  "low-confidence task profile"
+                ],
+                "scopeRead": [],
+                "scopeWrite": [],
+                "verificationCommands": []
+              },
+              "workflowRoomId": "n2FOjSO7WMS8",
+              "workflowTaskId": "ME-g8SYbaQFt",
+              "workflowRunId": "2xz8wgtvyixoBx",
+              "graphVersion": "superpowers-v2",
+              "activeSuperpowersStage": "intake"
+            }
+          }
+        },
+        {
+          "id": "SeeiD72BjOnPl_A7",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "SessionOS 已创建 Superpowers intake 任务「实现一个设置页功能，先产出 spec，让我可以请求修改。」。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "n2FOjSO7WMS8",
+              "sourceRoomMessageId": "qrp-M-56eTVS6GMk",
+              "sourceMessageId": "EB6x-Smy1Zy3yQi7",
+              "taskId": "ME-g8SYbaQFt",
+              "rootTaskId": "ME-g8SYbaQFt",
+              "eventType": "task_created",
+              "createdAt": 1781773443337
+            },
+            "source_room_message_id": "qrp-M-56eTVS6GMk",
+            "source_message_id": "EB6x-Smy1Zy3yQi7",
+            "task_id": "ME-g8SYbaQFt",
+            "root_task_id": "ME-g8SYbaQFt",
+            "event_type": "task_created"
+          }
+        },
+        {
+          "id": "Gwk5RvYnme6wyq5I",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "已进入 Superpowers 工作流：实现一个设置页功能，先产出 spec，让我可以请求修改。\n当前阶段：analysis\n执行方式：workflow_graph",
+          "metadata": {
+            "risk_assessment": {
+              "taskKind": "unknown",
+              "riskLevel": "medium",
+              "requiresApproval": true,
+              "approvalReason": "low-confidence task profile requires approval",
+              "confidence": 0.35,
+              "reasons": [
+                "low-confidence task profile"
+              ],
+              "scopeRead": [],
+              "scopeWrite": [],
+              "verificationCommands": []
+            },
+            "session_workflow": {
+              "executionPath": "workflow_graph",
+              "trigger": "workflow_intake",
+              "riskAssessment": {
+                "taskKind": "unknown",
+                "riskLevel": "medium",
+                "requiresApproval": true,
+                "approvalReason": "low-confidence task profile requires approval",
+                "confidence": 0.35,
+                "reasons": [
+                  "low-confidence task profile"
+                ],
+                "scopeRead": [],
+                "scopeWrite": [],
+                "verificationCommands": []
+              },
+              "workflowRoomId": "n2FOjSO7WMS8",
+              "workflowTaskId": "ME-g8SYbaQFt",
+              "workflowRunId": "2xz8wgtvyixoBx",
+              "workflowStatus": "running",
+              "workflowStage": "analysis",
+              "graphVersion": "superpowers-v2",
+              "activeSuperpowersStage": "intake",
+              "sourceMessageId": "EB6x-Smy1Zy3yQi7",
+              "createdAt": 1781773443340
+            },
+            "source_message_id": "EB6x-Smy1Zy3yQi7"
+          }
+        },
+        {
+          "id": "b3wdRdorcwEdBorj",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "工作流已启动，进入 analysis 阶段。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "n2FOjSO7WMS8",
+              "sourceRoomMessageId": "lGPTXOlfoxYG9n_6",
+              "sourceMessageId": "EB6x-Smy1Zy3yQi7",
+              "taskId": "ME-g8SYbaQFt",
+              "rootTaskId": "ME-g8SYbaQFt",
+              "workflowRunId": "2xz8wgtvyixoBx",
+              "eventType": "workflow_started",
+              "createdAt": 1781773443341
+            },
+            "source_room_message_id": "lGPTXOlfoxYG9n_6",
+            "source_message_id": "EB6x-Smy1Zy3yQi7",
+            "task_id": "ME-g8SYbaQFt",
+            "root_task_id": "ME-g8SYbaQFt",
+            "workflow_run_id": "2xz8wgtvyixoBx",
+            "event_type": "workflow_started"
+          }
+        },
+        {
+          "id": "y2zk6TTaCxH6JPeZ",
+          "role": "assistant",
+          "senderName": "规划师",
+          "content": "```json\n{\"intent\":\"standard_development\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n```",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "n2FOjSO7WMS8",
+              "sourceRoomMessageId": "zLzMN6C5DS_-3wGn",
+              "sourceMessageId": "EB6x-Smy1Zy3yQi7",
+              "taskId": "ME-g8SYbaQFt",
+              "rootTaskId": "ME-g8SYbaQFt",
+              "workflowRunId": "2xz8wgtvyixoBx",
+              "workflowStepId": "sf-Cm0RnwiNebD",
+              "agentRunId": "XFOL9JoYbXDBndTC",
+              "eventType": null,
+              "createdAt": 1781773445236
+            },
+            "source_room_message_id": "zLzMN6C5DS_-3wGn",
+            "source_message_id": "EB6x-Smy1Zy3yQi7",
+            "task_id": "ME-g8SYbaQFt",
+            "root_task_id": "ME-g8SYbaQFt",
+            "workflow_run_id": "2xz8wgtvyixoBx",
+            "workflow_step_id": "sf-Cm0RnwiNebD",
+            "agent_run_id": "XFOL9JoYbXDBndTC",
+            "event_type": null
+          }
+        },
+        {
+          "id": "YKAflR9Pxeo3gb3C",
+          "role": "assistant",
+          "senderName": "规划师",
+          "content": "{\"superpowers\":{\"designDocPath\":\"docs/superpowers/specs/fake-workflow-design.md\",\"designReviewVerdict\":\"approved\"}}",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "n2FOjSO7WMS8",
+              "sourceRoomMessageId": "yRmcLC_rvZMSO0f5",
+              "sourceMessageId": "EB6x-Smy1Zy3yQi7",
+              "taskId": "ME-g8SYbaQFt",
+              "rootTaskId": "ME-g8SYbaQFt",
+              "workflowRunId": "2xz8wgtvyixoBx",
+              "workflowStepId": "5NRgFFBWvR08ca",
+              "agentRunId": "mrLReVx-L2ltMQnf",
+              "eventType": null,
+              "createdAt": 1781773446837
+            },
+            "source_room_message_id": "yRmcLC_rvZMSO0f5",
+            "source_message_id": "EB6x-Smy1Zy3yQi7",
+            "task_id": "ME-g8SYbaQFt",
+            "root_task_id": "ME-g8SYbaQFt",
+            "workflow_run_id": "2xz8wgtvyixoBx",
+            "workflow_step_id": "5NRgFFBWvR08ca",
+            "agent_run_id": "mrLReVx-L2ltMQnf",
+            "event_type": null
+          }
+        },
+        {
+          "id": "YKyCb0kMego88hJL",
+          "role": "user",
+          "senderName": null,
+          "content": "请修改 spec v1：",
+          "metadata": {
+            "target_agent_id": "planner",
+            "workflow_artifact_change_request": {
+              "workflowRunId": "2xz8wgtvyixoBx",
+              "artifactVersionId": "l03Rp4aNw7xLY5",
+              "artifactType": "spec"
+            }
+          }
+        },
+        {
+          "id": "uIdN2Uu4p6Shx2v1",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "工作流已启动，进入 planning 阶段。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "n2FOjSO7WMS8",
+              "sourceRoomMessageId": "dfhtmvMoW_tME1kR",
+              "sourceMessageId": "EB6x-Smy1Zy3yQi7",
+              "taskId": "ME-g8SYbaQFt",
+              "rootTaskId": "ME-g8SYbaQFt",
+              "workflowRunId": "2xz8wgtvyixoBx",
+              "eventType": "workflow_started",
+              "createdAt": 1781773448339
+            },
+            "source_room_message_id": "dfhtmvMoW_tME1kR",
+            "source_message_id": "EB6x-Smy1Zy3yQi7",
+            "task_id": "ME-g8SYbaQFt",
+            "root_task_id": "ME-g8SYbaQFt",
+            "workflow_run_id": "2xz8wgtvyixoBx",
+            "event_type": "workflow_started"
+          }
+        }
+      ]
+    },
+    "requestMessage": {
+      "id": "YKyCb0kMego88hJL",
+      "content": "请修改 spec v1：",
+      "metadata": {
+        "target_agent_id": "planner",
+        "workflow_artifact_change_request": {
+          "workflowRunId": "2xz8wgtvyixoBx",
+          "artifactVersionId": "l03Rp4aNw7xLY5",
+          "artifactType": "spec"
+        }
+      }
+    }
+  },
+  "approve": {
+    "sessionId": "uzmzcvsTlhdpPKtE",
+    "beforeDom": {
+      "hasWorkflowMission": false,
+      "workflowChatMessageCount": 1,
+      "runFlowCapsuleCount": 2,
+      "approveButtonCount": 1,
+      "requestChangeButtonCount": 1,
+      "finishDecisionVisible": false,
+      "finishDecisionButtonCount": 0,
+      "hasRawMetadataOrExecutionLog": false,
+      "overflowNodes": [],
+      "sample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow Interaction Audit 7381 1781773438507\nInteraction approve artifact\n刚刚\n已进入 Superpowers workflow intake：轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\nInteraction request change\n刚刚\n已请求 planner 修改 spec v1。\nWorkflow Audit 7381 1781773438484\nWorkflow Interaction Audit 7381 1781772523663\nWorkflow Audit 7381 1781772087567\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nInteraction appro...\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n17:04:12\n复制\n轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\n规\n规划师\nbrainstorming · codex\n17:04:12\n思考 1s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n\njson {\"intent\":\"lightweight_task\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n17:04:14\n思考 2s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n```json {\"plan\":{\"goal\":\"轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\",\"summary\":\"fake ACP lightweight plan\",\"assumptions\":[\"fake ACP deterministic browser validation\"],\"tasks\":[{\"title\":\"fake ACP lightweight plan\",\"description\":\"轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\",\"suggest...\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规划师 (PLANNER)\n17:04:16\nwaiting\n\n已生成 workflow 任务结构。\n\nLightweight Plan v1\nLightweight Plan\n等待用户确认 planner 生成的轻量执行计划。\n请求修改\n确认\n$\n粘贴文件会上传到项目文件库\n对话记录\n文件浏览器\n项目终端\n状态\n契约\n运行\n工具\n计划\nWORKFLOW 状态\n等待确认\n状态\n\n等待用户确认 workflow artifact，确认后任务会继续执行。\n\n阶段\n\nlightweight_plan · user\n\n等待用户确认 PLANNER 生成的轻量执行计划。\n确认 lightweight plan\n目标契约 (CONTRACT)\n编辑\n目标 (OBJECTIVE)\n\nInteraction approve artifact\n\n原因 (REASON)\n\nfake ACP planner routing evidence\n\n边界 (SCOPE)\n\n未设置范围\n\n风险 (RISKS)\n\n 暂无风险记录\n\n验收 (ACCEPTANCE)\n\n暂无验收标准\n\n会话计划 (SESSION PLAN)\n暂无会话计划\n代理运行 (ACTIVE RUN)\n1 条记录\n完成\n\ncodex\n\n00:00:02\n刚刚\n工具调用 (TOOLS)\n0 条记录\n暂无工具调用\n本次会话变更 (SESSION CHANGES)\n本会话暂无文件变更\n0\nno session changes\n0\n查看预览\n立即应用\nInteraction approve artifact\n·\nmain\nclean\n响应耗时\n2.2s\n错误率\n0.0%\n网络延迟\n--\n压缩\n⌘P\n分叉\n⌘B\n上下文压力\n28%\n规\n规\nTOKEN 消耗\n--\n导出"
+    },
+    "afterDom": {
+      "hasWorkflowMission": false,
+      "workflowChatMessageCount": 1,
+      "runFlowCapsuleCount": 3,
+      "approveButtonCount": 0,
+      "requestChangeButtonCount": 0,
+      "finishDecisionVisible": false,
+      "finishDecisionButtonCount": 0,
+      "hasRawMetadataOrExecutionLog": false,
+      "overflowNodes": [],
+      "sample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow Interaction Audit 7381 1781773438507\nInteraction approve artifact\n刚刚\n已进入 Superpowers workflow intake：轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\nInteraction request change\n刚刚\n已请求 planner 修改 spec v1。\nWorkflow Audit 7381 1781773438484\nWorkflow Interaction Audit 7381 1781772523663\nWorkflow Audit 7381 1781772087567\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nInteraction appro...\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n17:04:12\n复制\n轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\n规\n规划师\nbrainstorming · codex\n17:04:12\n思考 1s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n\njson {\"intent\":\"lightweight_task\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n17:04:14\n思考 2s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n```json {\"plan\":{\"goal\":\"轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\",\"summary\":\"fake ACP lightweight plan\",\"assumptions\":[\"fake ACP deterministic browser validation\"],\"tasks\":[{\"title\":\"fake ACP lightweight plan\",\"description\":\"轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\",\"suggest...\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规划师 (PLANNER)\n17:04:20\ndone\n\nimplementation completed\n\n任务分配\n1 agents\n01\nfake ACP lightweight plan\n技术写作者 · executor · codex\n技\n技术写作者\nimplementing · codex\n17:04:18\n思考中 4s\n运行中\n复制\n保存为知识\n执行中\nAgent 正在执行任务流。\nstdout\nCODING\nevents\n1 EVENTS\nchecks\nPASS\n等待智能体输出...\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n$\n粘贴文件会上传到项目文件库\n对话记录\n文件浏览器\n项目终端\n状态\n契约\n运行\n工具\n计划\nWORKFLOW 状态\n运行中\n状态\n\nWorkflow 正在执行，等待下一条运行事件或阶段更新。\n\n阶段\n\nagent_assignment · worker\n\n目标契约 (CONTRACT)\n编辑\n目标 (OBJECTIVE)\n\nInteraction approve artifact\n\n原因 (REASON)\n\nfake ACP planner routing evidence\n\n边界 (SCOPE)\n\n未设置范围\n\n风险 (RISKS)\n\n 暂无风险记录\n\n验收 (ACCEPTANCE)\n\n暂无验收标准\n\n会话计划 (SESSION PLAN)\n暂无会话计划\n代理运行 (ACTIVE RUN)\n1 条记录\n运行中\n\ncodex\n\n00:00:02\n刚刚\n工具调用 (TOOLS)\n0 条记录\n暂无工具调用\n本次会话变更 (SESSION CHANGES)\n本会话暂无文件变更\n0\nno session changes\n0\n查看预览\n立即应用\nInteraction approve artifact\n·\nmain\nclean\n响应耗时\n2.2s\n错误率\n0.0%\n网络延迟\n--\n压缩\n⌘P\n分叉\n⌘B\n上下文压力\n28%\n规\n规\nTOKEN 消耗\n--\n导出\n工作流产物已确认"
+    },
+    "after": {
+      "workflowController": {
+        "workflow_run_id": "Ma7RZ3H7qFZhJU",
+        "status": "running",
+        "selected_intent": "lightweight_task",
+        "active_stage": "agent_assignment",
+        "controller": "worker",
+        "blocker": null,
+        "next_action": null,
+        "finishBranchDecision": null
+      },
+      "artifacts": [
+        {
+          "id": "YQrRr3ynQoK6uP",
+          "type": "agent_assignment",
+          "status": "draft",
+          "title": "Agent Assignment",
+          "version": 1
+        },
+        {
+          "id": "GDljuhf0SOZFY3",
+          "type": "intent_routing",
+          "status": "draft",
+          "title": "Intent Routing",
+          "version": 1
+        },
+        {
+          "id": "uCtrqAvOooleer",
+          "type": "lightweight_plan",
+          "status": "approved",
+          "title": "Lightweight Plan",
+          "version": 1
+        }
+      ],
+      "gates": [
+        {
+          "kind": "plan_confirm",
+          "status": "approved",
+          "artifactVersionId": "uCtrqAvOooleer"
+        }
+      ],
+      "messages": [
+        {
+          "id": "BZYOyMbcpyDblCIF",
+          "role": "assistant",
+          "senderName": "规划师",
+          "content": "```json\n{\"plan\":{\"goal\":\"轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\",\"summary\":\"fake ACP lightweight plan\",\"assumptions\":[\"fake ACP deterministic browser validation\"],\"tasks\":[{\"title\":\"fake",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "DU84M9qJsmZX",
+              "sourceRoomMessageId": "Lnsj7tdctNGMqLyN",
+              "sourceMessageId": "0loKYo4qy1NwWatw",
+              "taskId": "7CAChCR6Y1Pi",
+              "rootTaskId": "7CAChCR6Y1Pi",
+              "workflowRunId": "Ma7RZ3H7qFZhJU",
+              "workflowStepId": "SR-YFT8BYlTKTw",
+              "agentRunId": "kz6XcL7K6i61LTsd",
+              "eventType": null,
+              "createdAt": 1781773456263
+            },
+            "source_room_message_id": "Lnsj7tdctNGMqLyN",
+            "source_message_id": "0loKYo4qy1NwWatw",
+            "task_id": "7CAChCR6Y1Pi",
+            "root_task_id": "7CAChCR6Y1Pi",
+            "workflow_run_id": "Ma7RZ3H7qFZhJU",
+            "workflow_step_id": "SR-YFT8BYlTKTw",
+            "agent_run_id": "kz6XcL7K6i61LTsd",
+            "event_type": null
+          }
+        },
+        {
+          "id": "co1iEut6Es5OoDEa",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "工作流已启动，进入 planning 阶段。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "DU84M9qJsmZX",
+              "sourceRoomMessageId": "_FUyqMjfXNb1HLwY",
+              "sourceMessageId": "0loKYo4qy1NwWatw",
+              "taskId": "7CAChCR6Y1Pi",
+              "rootTaskId": "7CAChCR6Y1Pi",
+              "workflowRunId": "Ma7RZ3H7qFZhJU",
+              "eventType": "workflow_started",
+              "createdAt": 1781773457619
+            },
+            "source_room_message_id": "_FUyqMjfXNb1HLwY",
+            "source_message_id": "0loKYo4qy1NwWatw",
+            "task_id": "7CAChCR6Y1Pi",
+            "root_task_id": "7CAChCR6Y1Pi",
+            "workflow_run_id": "Ma7RZ3H7qFZhJU",
+            "event_type": "workflow_started"
+          }
+        },
+        {
+          "id": "FZ2dpq_BaSMyDIcp",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "任务「轻量修改 README 文档，追加一行项目说明，并展示轻量计划。」无需批准，继续进入分配阶段。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "DU84M9qJsmZX",
+              "sourceRoomMessageId": "4dU4QbAUfo_dWao7",
+              "sourceMessageId": "0loKYo4qy1NwWatw",
+              "taskId": "7CAChCR6Y1Pi",
+              "rootTaskId": "7CAChCR6Y1Pi",
+              "workflowRunId": "Ma7RZ3H7qFZhJU",
+              "eventType": "workflow_stage_changed",
+              "createdAt": 1781773457942
+            },
+            "source_room_message_id": "4dU4QbAUfo_dWao7",
+            "source_message_id": "0loKYo4qy1NwWatw",
+            "task_id": "7CAChCR6Y1Pi",
+            "root_task_id": "7CAChCR6Y1Pi",
+            "workflow_run_id": "Ma7RZ3H7qFZhJU",
+            "event_type": "workflow_stage_changed"
+          }
+        },
+        {
+          "id": "nX9vkf6Rb9F-4g69",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "已创建任务 #h9z-ITZA-uGu：fake ACP lightweight plan，优先级 normal，已指派 6jIW0F6MGPiP",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "DU84M9qJsmZX",
+              "sourceRoomMessageId": "0kBlxSBOZNAqQOSU",
+              "sourceMessageId": "0loKYo4qy1NwWatw",
+              "taskId": "h9z-ITZA-uGu",
+              "rootTaskId": "7CAChCR6Y1Pi",
+              "eventType": "task_created",
+              "createdAt": 1781773457969
+            },
+            "source_room_message_id": "0kBlxSBOZNAqQOSU",
+            "source_message_id": "0loKYo4qy1NwWatw",
+            "task_id": "h9z-ITZA-uGu",
+            "root_task_id": "7CAChCR6Y1Pi",
+            "event_type": "task_created"
+          }
+        },
+        {
+          "id": "BZPcFjPd_yW-rREr",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "已根据计划为任务「轻量修改 README 文档，追加一行项目说明，并展示轻量计划。」创建 1 个子任务。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "DU84M9qJsmZX",
+              "sourceRoomMessageId": "pJzLJdpQmODJiu4-",
+              "sourceMessageId": "0loKYo4qy1NwWatw",
+              "taskId": "7CAChCR6Y1Pi",
+              "rootTaskId": "7CAChCR6Y1Pi",
+              "workflowRunId": "Ma7RZ3H7qFZhJU",
+              "workflowStepId": "urBGWmfqZFa66u",
+              "eventType": "workflow_assignment_created",
+              "createdAt": 1781773457973
+            },
+            "source_room_message_id": "pJzLJdpQmODJiu4-",
+            "source_message_id": "0loKYo4qy1NwWatw",
+            "task_id": "7CAChCR6Y1Pi",
+            "root_task_id": "7CAChCR6Y1Pi",
+            "workflow_run_id": "Ma7RZ3H7qFZhJU",
+            "workflow_step_id": "urBGWmfqZFa66u",
+            "event_type": "workflow_assignment_created"
+          }
+        },
+        {
+          "id": "wYtahoVBHvY7t01N",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "任务「轻量修改 README 文档，追加一行项目说明，并展示轻量计划。」已完成分配，创建 1 个子任务。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "DU84M9qJsmZX",
+              "sourceRoomMessageId": "jG14cIRFPHEC-wQw",
+              "sourceMessageId": "0loKYo4qy1NwWatw",
+              "taskId": "7CAChCR6Y1Pi",
+              "rootTaskId": "7CAChCR6Y1Pi",
+              "workflowRunId": "Ma7RZ3H7qFZhJU",
+              "workflowStepId": "urBGWmfqZFa66u",
+              "eventType": "workflow_stage_changed",
+              "createdAt": 1781773457979
+            },
+            "source_room_message_id": "jG14cIRFPHEC-wQw",
+            "source_message_id": "0loKYo4qy1NwWatw",
+            "task_id": "7CAChCR6Y1Pi",
+            "root_task_id": "7CAChCR6Y1Pi",
+            "workflow_run_id": "Ma7RZ3H7qFZhJU",
+            "workflow_step_id": "urBGWmfqZFa66u",
+            "event_type": "workflow_stage_changed"
+          }
+        },
+        {
+          "id": "lh5U5fBkcLwPeBcN",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "任务「fake ACP lightweight plan」状态变更为 in_progress",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "DU84M9qJsmZX",
+              "sourceRoomMessageId": "o4TQ68eNulGT7oDs",
+              "sourceMessageId": "0loKYo4qy1NwWatw",
+              "taskId": "h9z-ITZA-uGu",
+              "rootTaskId": "7CAChCR6Y1Pi",
+              "eventType": "task_status_changed",
+              "createdAt": 1781773457995
+            },
+            "source_room_message_id": "o4TQ68eNulGT7oDs",
+            "source_message_id": "0loKYo4qy1NwWatw",
+            "task_id": "h9z-ITZA-uGu",
+            "root_task_id": "7CAChCR6Y1Pi",
+            "event_type": "task_status_changed"
+          }
+        },
+        {
+          "id": "tZN3PaFnu1QT7D6k",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "子任务「fake ACP lightweight plan」进入 implementation 阶段。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "DU84M9qJsmZX",
+              "sourceRoomMessageId": "l8lBtdc6IuhIEAu-",
+              "sourceMessageId": "0loKYo4qy1NwWatw",
+              "taskId": "h9z-ITZA-uGu",
+              "rootTaskId": "7CAChCR6Y1Pi",
+              "workflowRunId": "Ma7RZ3H7qFZhJU",
+              "workflowStepId": "WcJQW76kdyuRop",
+              "eventType": "workflow_stage_changed",
+              "createdAt": 1781773457999
+            },
+            "source_room_message_id": "l8lBtdc6IuhIEAu-",
+            "source_message_id": "0loKYo4qy1NwWatw",
+            "task_id": "h9z-ITZA-uGu",
+            "root_task_id": "7CAChCR6Y1Pi",
+            "workflow_run_id": "Ma7RZ3H7qFZhJU",
+            "workflow_step_id": "WcJQW76kdyuRop",
+            "event_type": "workflow_stage_changed"
+          }
+        }
+      ]
+    }
+  },
+  "finishBranch": {
+    "sessionId": "lZ1XtT3EcM9hKv3i",
+    "beforeFinish": {
+      "workflowController": {
+        "workflow_run_id": "5V6oGGC_CuxMjJ",
+        "status": "awaiting_decision",
+        "selected_intent": "standard_development",
+        "active_stage": "finish_branch",
+        "controller": "planner",
+        "blocker": null,
+        "next_action": null,
+        "finishBranchDecision": {
+          "decision": null,
+          "options": [
+            "merge_local",
+            "create_pr",
+            "keep_branch",
+            "discard_work"
+          ],
+          "reason": "等待用户选择分支收尾方式",
+          "decidedAt": null
+        }
+      },
+      "artifacts": [
+        {
+          "id": "rMexWKte0GBnVM",
+          "type": "agent_assignment",
+          "status": "draft",
+          "title": "Agent Assignment",
+          "version": 1
+        },
+        {
+          "id": "j7y_AESYdTqNxv",
+          "type": "intent_routing",
+          "status": "draft",
+          "title": "Intent Routing",
+          "version": 1
+        },
+        {
+          "id": "T6ruj2YgegjHbY",
+          "type": "plan",
+          "status": "approved",
+          "title": "Superpowers Writing Plans Evidence",
+          "version": 1
+        },
+        {
+          "id": "C6cJZSy1P-c3FM",
+          "type": "spec",
+          "status": "approved",
+          "title": "Superpowers Brainstorming Evidence",
+          "version": 1
+        }
+      ],
+      "gates": [
+        {
+          "kind": "spec_confirm",
+          "status": "approved",
+          "artifactVersionId": "C6cJZSy1P-c3FM"
+        },
+        {
+          "kind": "plan_confirm",
+          "status": "approved",
+          "artifactVersionId": "T6ruj2YgegjHbY"
+        }
+      ],
+      "messages": [
+        {
+          "id": "rhCd_nw8vdU0Y8EB",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "子任务「Implement workflow-first」进入 implementation 阶段。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "SPZEYLPnZDcHgp-F",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "vRTL3lEYF3CY",
+              "rootTaskId": "hzbapNJmAmo0",
+              "workflowRunId": "5V6oGGC_CuxMjJ",
+              "workflowStepId": "0-0EQXlIBfm1t9",
+              "eventType": "workflow_stage_changed",
+              "createdAt": 1781773474395
+            },
+            "source_room_message_id": "SPZEYLPnZDcHgp-F",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "vRTL3lEYF3CY",
+            "root_task_id": "hzbapNJmAmo0",
+            "workflow_run_id": "5V6oGGC_CuxMjJ",
+            "workflow_step_id": "0-0EQXlIBfm1t9",
+            "event_type": "workflow_stage_changed"
+          }
+        },
+        {
+          "id": "y6qCTNRSyeJQaYp7",
+          "role": "assistant",
+          "senderName": "后端执行者",
+          "content": "implementation completed\n\n```json\n{\"superpowers\":{\"tddEvidence\":[{\"stage\":\"RED\",\"command\":\"node --test fake-workflow\",\"passed\":false,\"summary\":\"failed as expected\"},{\"stage\":\"GREEN",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "dUPwcRUAzLzkyogx",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "vRTL3lEYF3CY",
+              "rootTaskId": "hzbapNJmAmo0",
+              "workflowRunId": "5V6oGGC_CuxMjJ",
+              "workflowStepId": "0-0EQXlIBfm1t9",
+              "agentRunId": "Pvf5cGFTgPPynKQE",
+              "eventType": null,
+              "createdAt": 1781773477226
+            },
+            "source_room_message_id": "dUPwcRUAzLzkyogx",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "vRTL3lEYF3CY",
+            "root_task_id": "hzbapNJmAmo0",
+            "workflow_run_id": "5V6oGGC_CuxMjJ",
+            "workflow_step_id": "0-0EQXlIBfm1t9",
+            "agent_run_id": "Pvf5cGFTgPPynKQE",
+            "event_type": null
+          }
+        },
+        {
+          "id": "VTJNasqVUBLnIoEf",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "任务「Implement workflow-first」状态变更为 review",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "7sMQeLEYqsZ90-21",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "vRTL3lEYF3CY",
+              "rootTaskId": "hzbapNJmAmo0",
+              "eventType": "task_status_changed",
+              "createdAt": 1781773477233
+            },
+            "source_room_message_id": "7sMQeLEYqsZ90-21",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "vRTL3lEYF3CY",
+            "root_task_id": "hzbapNJmAmo0",
+            "event_type": "task_status_changed"
+          }
+        },
+        {
+          "id": "HbTioFEoxBk_8Jch",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "子任务「Implement workflow-first」的 implementation 阶段已完成，进入 review。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "6A7crqgoR4aSj-s5",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "vRTL3lEYF3CY",
+              "rootTaskId": "hzbapNJmAmo0",
+              "workflowRunId": "5V6oGGC_CuxMjJ",
+              "workflowStepId": "0-0EQXlIBfm1t9",
+              "agentRunId": "Pvf5cGFTgPPynKQE",
+              "eventType": "workflow_stage_changed",
+              "createdAt": 1781773477236
+            },
+            "source_room_message_id": "6A7crqgoR4aSj-s5",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "vRTL3lEYF3CY",
+            "root_task_id": "hzbapNJmAmo0",
+            "workflow_run_id": "5V6oGGC_CuxMjJ",
+            "workflow_step_id": "0-0EQXlIBfm1t9",
+            "agent_run_id": "Pvf5cGFTgPPynKQE",
+            "event_type": "workflow_stage_changed"
+          }
+        },
+        {
+          "id": "fJ653VKQQejqqu_M",
+          "role": "assistant",
+          "senderName": "审查员",
+          "content": "{\"verdict\":\"pass\",\"findings\":[],\"requiredFixes\":[],\"riskLevel\":\"low\"}",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "gATJban_NjkaWEjX",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "hzbapNJmAmo0",
+              "rootTaskId": "hzbapNJmAmo0",
+              "workflowRunId": "5V6oGGC_CuxMjJ",
+              "workflowStepId": "2XRmDQ2dqqUZD8",
+              "agentRunId": "tbJh8PbzMQSCle9f",
+              "eventType": null,
+              "createdAt": 1781773478189
+            },
+            "source_room_message_id": "gATJban_NjkaWEjX",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "hzbapNJmAmo0",
+            "root_task_id": "hzbapNJmAmo0",
+            "workflow_run_id": "5V6oGGC_CuxMjJ",
+            "workflow_step_id": "2XRmDQ2dqqUZD8",
+            "agent_run_id": "tbJh8PbzMQSCle9f",
+            "event_type": null
+          }
+        },
+        {
+          "id": "Wr_BrRd_Mj30Qg87",
+          "role": "assistant",
+          "senderName": "审查员",
+          "content": "{\"verdict\":\"pass\",\"findings\":[],\"requiredFixes\":[],\"riskLevel\":\"low\"}",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "jSmhyuEoEokjlB0I",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "hzbapNJmAmo0",
+              "rootTaskId": "hzbapNJmAmo0",
+              "workflowRunId": "5V6oGGC_CuxMjJ",
+              "workflowStepId": "PBpF0cx95w7qTT",
+              "agentRunId": "vfoB9xX22T_40Y6D",
+              "eventType": null,
+              "createdAt": 1781773479278
+            },
+            "source_room_message_id": "jSmhyuEoEokjlB0I",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "hzbapNJmAmo0",
+            "root_task_id": "hzbapNJmAmo0",
+            "workflow_run_id": "5V6oGGC_CuxMjJ",
+            "workflow_step_id": "PBpF0cx95w7qTT",
+            "agent_run_id": "vfoB9xX22T_40Y6D",
+            "event_type": null
+          }
+        },
+        {
+          "id": "HBSSHZKwFbCa7GvH",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "任务「实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完...」进入 verify 阶段。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "PAWqRpRGsMTQoks8",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "hzbapNJmAmo0",
+              "rootTaskId": "hzbapNJmAmo0",
+              "workflowRunId": "5V6oGGC_CuxMjJ",
+              "workflowStepId": "0XR7NFmvKNra1a",
+              "eventType": "workflow_stage_changed",
+              "createdAt": 1781773479296
+            },
+            "source_room_message_id": "PAWqRpRGsMTQoks8",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "hzbapNJmAmo0",
+            "root_task_id": "hzbapNJmAmo0",
+            "workflow_run_id": "5V6oGGC_CuxMjJ",
+            "workflow_step_id": "0XR7NFmvKNra1a",
+            "event_type": "workflow_stage_changed"
+          }
+        },
+        {
+          "id": "y6Ig_F1adCRjLf7D",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "任务「实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完...」验证已完成。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "k_OOPyRbW4BtRlzr",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "hzbapNJmAmo0",
+              "rootTaskId": "hzbapNJmAmo0",
+              "workflowRunId": "5V6oGGC_CuxMjJ",
+              "workflowStepId": "0XR7NFmvKNra1a",
+              "eventType": "workflow_stage_changed",
+              "createdAt": 1781773479571
+            },
+            "source_room_message_id": "k_OOPyRbW4BtRlzr",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "hzbapNJmAmo0",
+            "root_task_id": "hzbapNJmAmo0",
+            "workflow_run_id": "5V6oGGC_CuxMjJ",
+            "workflow_step_id": "0XR7NFmvKNra1a",
+            "event_type": "workflow_stage_changed"
+          }
+        }
+      ]
+    },
+    "beforeDom": {
+      "hasWorkflowMission": false,
+      "workflowChatMessageCount": 1,
+      "runFlowCapsuleCount": 6,
+      "approveButtonCount": 0,
+      "requestChangeButtonCount": 0,
+      "finishDecisionVisible": true,
+      "finishDecisionButtonCount": 4,
+      "hasRawMetadataOrExecutionLog": false,
+      "overflowNodes": [],
+      "sample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow Interaction Audit 7381 1781773438507\nInteraction finish branch\n刚刚\n已进入 Superpowers workflow intake：实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完...\nInteraction approve artifact\n刚刚\n已进入 Superpowers workflow intake：轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\nInteraction request change\n刚刚\n已请求 planner 修改 spec v1。\nWorkflow Audit 7381 1781773438484\nWorkflow Interaction Audit 7381 1781772523663\nWorkflow Audit 7381 1781772087567\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nInteraction finis...\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n17:04:25\n复制\n实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完整流程。\n规\n规划师\nbrainstorming · codex\n17:04:25\n思考 2s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n\njson {\"intent\":\"review_only\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n17:04:28\n思考 2s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"superpowers\":{\"designDocPath\":\"docs/superpowers/specs/fake-workflow-design.md\",\"designReviewVerdict\":\"approved\"}}\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n17:04:31\n思考 2s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n```json {\"goal\":\"fake ACP writing plans task\",\"summary\":\"fake ACP writing plans implementation plan\",\"assumptions\":[\"fake ACP deterministic browser validation\"],\"steps\":[{\"title\":\"Implement workflow-first routing\",\"intent\":\"fake ACP writing plans task\",\"assign...\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n后\n后端执行者\nimplementing · codex\n17:04:34\n思考 3s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n2 EVENTS\nchecks\nPASS\n\njson {\"superpowers\":{\"tddEvidence\":[{\"stage\":\"RED\",\"command\":\"node --test fake-workflow\",\"passed\":false,\"summary\":\"failed as expected\"},{\"stage\":\"GREEN\",\"command\":\"node --test fake-workflow\",\"passed\":true,\"summary\":\"passed\"}]}}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n审\n审查员\nreviewing · codex\n17:04:37\n思考 1s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"verdict\":\"pass\",\"findings\":[],\"requiredFixes\":[],\"riskLevel\":\"low\"}\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n审\n审查员\nreviewing · codex\n17:04:38\n思考 1s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"verdict\":\"pass\",\"findings\":[],\"requiredFixes\":[],\"riskLevel\":\"low\"}\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规划师 (PLANNER)\n17:04:39\nwaiting\n\nfake ACP writing plans implementation plan\n\n任务分配\n1 项\n01\nImplement workflow-first routing\nexecutor\n选择收尾方式\n等待用户选择分支收尾方式\n合并到本地主线\n创建 PR\n保留当前分支\n丢弃本次工作\n$\n粘贴文件会上传到项目文件库\n对话记录\n文件浏览器\n项目终端\n状态\n契约\n运行\n工具\n计划\nWORKFLOW 状态\n运行中\n状态\n\nWork"
+    },
+    "after": {
+      "workflowController": {
+        "workflow_run_id": "5V6oGGC_CuxMjJ",
+        "status": "completed",
+        "selected_intent": "standard_development",
+        "active_stage": "finish_branch",
+        "controller": "planner",
+        "blocker": null,
+        "next_action": null,
+        "finishBranchDecision": {
+          "decision": "keep_branch",
+          "options": [
+            "merge_local",
+            "create_pr",
+            "keep_branch",
+            "discard_work"
+          ],
+          "reason": "等待用户选择分支收尾方式",
+          "decidedAt": "2026-06-18T09:04:40.597Z"
+        }
+      },
+      "artifacts": [
+        {
+          "id": "rMexWKte0GBnVM",
+          "type": "agent_assignment",
+          "status": "draft",
+          "title": "Agent Assignment",
+          "version": 1
+        },
+        {
+          "id": "j7y_AESYdTqNxv",
+          "type": "intent_routing",
+          "status": "draft",
+          "title": "Intent Routing",
+          "version": 1
+        },
+        {
+          "id": "T6ruj2YgegjHbY",
+          "type": "plan",
+          "status": "approved",
+          "title": "Superpowers Writing Plans Evidence",
+          "version": 1
+        },
+        {
+          "id": "C6cJZSy1P-c3FM",
+          "type": "spec",
+          "status": "approved",
+          "title": "Superpowers Brainstorming Evidence",
+          "version": 1
+        }
+      ],
+      "gates": [
+        {
+          "kind": "spec_confirm",
+          "status": "approved",
+          "artifactVersionId": "C6cJZSy1P-c3FM"
+        },
+        {
+          "kind": "plan_confirm",
+          "status": "approved",
+          "artifactVersionId": "T6ruj2YgegjHbY"
+        }
+      ],
+      "messages": [
+        {
+          "id": "y6Ig_F1adCRjLf7D",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "任务「实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完...」验证已完成。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "k_OOPyRbW4BtRlzr",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "hzbapNJmAmo0",
+              "rootTaskId": "hzbapNJmAmo0",
+              "workflowRunId": "5V6oGGC_CuxMjJ",
+              "workflowStepId": "0XR7NFmvKNra1a",
+              "eventType": "workflow_stage_changed",
+              "createdAt": 1781773479571
+            },
+            "source_room_message_id": "k_OOPyRbW4BtRlzr",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "hzbapNJmAmo0",
+            "root_task_id": "hzbapNJmAmo0",
+            "workflow_run_id": "5V6oGGC_CuxMjJ",
+            "workflow_step_id": "0XR7NFmvKNra1a",
+            "event_type": "workflow_stage_changed"
+          }
+        },
+        {
+          "id": "3JdpNOdbyqfT9ouG",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "工作流已启动，进入 acceptance 阶段。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "QLg59yV5hDD5AHki",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "hzbapNJmAmo0",
+              "rootTaskId": "hzbapNJmAmo0",
+              "workflowRunId": "5V6oGGC_CuxMjJ",
+              "eventType": "workflow_started",
+              "createdAt": 1781773480599
+            },
+            "source_room_message_id": "QLg59yV5hDD5AHki",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "hzbapNJmAmo0",
+            "root_task_id": "hzbapNJmAmo0",
+            "workflow_run_id": "5V6oGGC_CuxMjJ",
+            "event_type": "workflow_started"
+          }
+        },
+        {
+          "id": "oHDhjU4X8hk4K0Aw",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "任务「实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完...」进入 acceptance 阶段。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "-2rtFT_-dI-Au1TU",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "hzbapNJmAmo0",
+              "rootTaskId": "hzbapNJmAmo0",
+              "workflowRunId": "5V6oGGC_CuxMjJ",
+              "workflowStepId": "T-1pq1LK8adT9S",
+              "eventType": "workflow_stage_changed",
+              "createdAt": 1781773481019
+            },
+            "source_room_message_id": "-2rtFT_-dI-Au1TU",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "hzbapNJmAmo0",
+            "root_task_id": "hzbapNJmAmo0",
+            "workflow_run_id": "5V6oGGC_CuxMjJ",
+            "workflow_step_id": "T-1pq1LK8adT9S",
+            "event_type": "workflow_stage_changed"
+          }
+        },
+        {
+          "id": "bQieD7ISLkbQ2g4f",
+          "role": "assistant",
+          "senderName": "验收员",
+          "content": "{\"verdict\":\"pass\",\"acceptedCriteria\":[\"fake ACP workflow stage completed\"],\"failedCriteria\":[],\"notes\":\"Accepted by fake ACP workflow stage output.\"}",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "9ef7BeHdBWr8pocJ",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "hzbapNJmAmo0",
+              "rootTaskId": "hzbapNJmAmo0",
+              "workflowRunId": "5V6oGGC_CuxMjJ",
+              "workflowStepId": "T-1pq1LK8adT9S",
+              "agentRunId": "y6CuR1buBN2LArNq",
+              "eventType": null,
+              "createdAt": 1781773483051
+            },
+            "source_room_message_id": "9ef7BeHdBWr8pocJ",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "hzbapNJmAmo0",
+            "root_task_id": "hzbapNJmAmo0",
+            "workflow_run_id": "5V6oGGC_CuxMjJ",
+            "workflow_step_id": "T-1pq1LK8adT9S",
+            "agent_run_id": "y6CuR1buBN2LArNq",
+            "event_type": null
+          }
+        },
+        {
+          "id": "EkwNp2l_EpJ6YQiW",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "任务「Implement workflow-first」状态变更为 done",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "opEX_MlUvQVrg772",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "vRTL3lEYF3CY",
+              "rootTaskId": "hzbapNJmAmo0",
+              "eventType": "task_status_changed",
+              "createdAt": 1781773483054
+            },
+            "source_room_message_id": "opEX_MlUvQVrg772",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "vRTL3lEYF3CY",
+            "root_task_id": "hzbapNJmAmo0",
+            "event_type": "task_status_changed"
+          }
+        },
+        {
+          "id": "c-kBklwmb4Jk7jul",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "任务「实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完...」状态变更为 done",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "CwtYP8vLluKX-_JG",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "hzbapNJmAmo0",
+              "rootTaskId": "hzbapNJmAmo0",
+              "eventType": "task_status_changed",
+              "createdAt": 1781773483056
+            },
+            "source_room_message_id": "CwtYP8vLluKX-_JG",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "hzbapNJmAmo0",
+            "root_task_id": "hzbapNJmAmo0",
+            "event_type": "task_status_changed"
+          }
+        },
+        {
+          "id": "uWwx5DXun2o7-VX8",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "任务「实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完...」已通过验收。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "DeOO2LpZt0WWu94n",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "hzbapNJmAmo0",
+              "rootTaskId": "hzbapNJmAmo0",
+              "workflowRunId": "5V6oGGC_CuxMjJ",
+              "workflowStepId": "T-1pq1LK8adT9S",
+              "agentRunId": "y6CuR1buBN2LArNq",
+              "eventType": "workflow_completed",
+              "createdAt": 1781773483061
+            },
+            "source_room_message_id": "DeOO2LpZt0WWu94n",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "hzbapNJmAmo0",
+            "root_task_id": "hzbapNJmAmo0",
+            "workflow_run_id": "5V6oGGC_CuxMjJ",
+            "workflow_step_id": "T-1pq1LK8adT9S",
+            "agent_run_id": "y6CuR1buBN2LArNq",
+            "event_type": "workflow_completed"
+          }
+        },
+        {
+          "id": "E6Qa_SHbTMRmqiwQ",
+          "role": "system",
+          "senderName": "工作流",
+          "content": "任务「实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完...」的完成摘要已写入记忆。",
+          "metadata": {
+            "session_workflow_bridge": {
+              "sourceRoomId": "nyZUMUKROgkN",
+              "sourceRoomMessageId": "joQTTTkEl-vm2Ayh",
+              "sourceMessageId": "t9JSFg8IDXwItHiF",
+              "taskId": "hzbapNJmAmo0",
+              "rootTaskId": "hzbapNJmAmo0",
+              "workflowRunId": "5V6oGGC_CuxMjJ",
+              "eventType": "workflow_memory_written",
+              "createdAt": 1781773483072
+            },
+            "source_room_message_id": "joQTTTkEl-vm2Ayh",
+            "source_message_id": "t9JSFg8IDXwItHiF",
+            "task_id": "hzbapNJmAmo0",
+            "root_task_id": "hzbapNJmAmo0",
+            "workflow_run_id": "5V6oGGC_CuxMjJ",
+            "event_type": "workflow_memory_written"
+          }
+        }
+      ]
+    },
+    "afterDom": {
+      "hasWorkflowMission": false,
+      "workflowChatMessageCount": 1,
+      "runFlowCapsuleCount": 7,
+      "approveButtonCount": 0,
+      "requestChangeButtonCount": 0,
+      "finishDecisionVisible": false,
+      "finishDecisionButtonCount": 0,
+      "hasRawMetadataOrExecutionLog": false,
+      "overflowNodes": [],
+      "sample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow Interaction Audit 7381 1781773438507\nInteraction finish branch\n刚刚\n已进入 Superpowers workflow intake：实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完...\nInteraction approve artifact\n刚刚\n已进入 Superpowers workflow intake：轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\nInteraction request change\n刚刚\n已请求 planner 修改 spec v1。\nWorkflow Audit 7381 1781773438484\nWorkflow Interaction Audit 7381 1781772523663\nWorkflow Audit 7381 1781772087567\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nInteraction finis...\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n17:04:25\n复制\n实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完整流程。\n规\n规划师\nbrainstorming · codex\n17:04:25\n思考 2s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n\njson {\"intent\":\"review_only\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n17:04:28\n思考 2s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"superpowers\":{\"designDocPath\":\"docs/superpowers/specs/fake-workflow-design.md\",\"designReviewVerdict\":\"approved\"}}\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n17:04:31\n思考 2s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n```json {\"goal\":\"fake ACP writing plans task\",\"summary\":\"fake ACP writing plans implementation plan\",\"assumptions\":[\"fake ACP deterministic browser validation\"],\"steps\":[{\"title\":\"Implement workflow-first routing\",\"intent\":\"fake ACP writing plans task\",\"assign...\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n后\n后端执行者\nimplementing · codex\n17:04:34\n思考 3s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n2 EVENTS\nchecks\nPASS\n\njson {\"superpowers\":{\"tddEvidence\":[{\"stage\":\"RED\",\"command\":\"node --test fake-workflow\",\"passed\":false,\"summary\":\"failed as expected\"},{\"stage\":\"GREEN\",\"command\":\"node --test fake-workflow\",\"passed\":true,\"summary\":\"passed\"}]}}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n审\n审查员\nreviewing · codex\n17:04:37\n思考 1s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"verdict\":\"pass\",\"findings\":[],\"requiredFixes\":[],\"riskLevel\":\"low\"}\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n审\n审查员\nreviewing · codex\n17:04:38\n思考 1s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"verdict\":\"pass\",\"findings\":[],\"requiredFixes\":[],\"riskLevel\":\"low\"}\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n验\n验收员\nverifying · codex\n17:04:41\n思考 2s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"verdict\":\"pass\",\"acceptedCriteria\":[\"fake ACP workflow stage completed\"],\"failedCriteria\":[],\"notes\":\"Accepted by fake ACP workflow"
+    }
+  },
+  "assertions": {
+    "requestChangeButtonsVisible": true,
+    "requestChangeSentWorkflowMetadata": true,
+    "approveButtonVisible": true,
+    "approveAdvancedGate": true,
+    "finishBranchDecisionVisible": true,
+    "finishBranchHasFourButtons": true,
+    "finishBranchKeepBranchCompleted": true,
+    "noWorkflowMission": true,
+    "workflowRenderedAsChatMessage": true,
+    "noRawMetadataOrExecutionLog": true,
+    "noDesktopOverflow": true
+  }
+}

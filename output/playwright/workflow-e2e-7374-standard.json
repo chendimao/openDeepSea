@@ -1,0 +1,150 @@
+{
+  "id": "standard",
+  "sessionId": "No7g0AOKMQHk7PYs",
+  "expectedIntent": "standard_development",
+  "detail": {
+    "workflowController": {
+      "workflow_run_id": "AkPA08T2kNnywJ",
+      "status": "completed",
+      "selected_intent": "standard_development",
+      "active_stage": "finish_branch",
+      "controller": "planner",
+      "blocker": null,
+      "next_action": null,
+      "finishBranchDecision": {
+        "decision": "keep_branch",
+        "options": [
+          "merge_local",
+          "create_pr",
+          "keep_branch",
+          "discard_work"
+        ],
+        "reason": "等待用户选择分支收尾方式",
+        "decidedAt": "2026-06-18T08:32:16.625Z"
+      }
+    },
+    "artifactTypes": [
+      "agent_assignment:draft",
+      "intent_routing:draft",
+      "plan:approved",
+      "spec:approved"
+    ],
+    "gateCount": 2,
+    "assignmentCount": 1,
+    "runCount": 7,
+    "messageCount": 29
+  },
+  "artifactTypes": [
+    "agent_assignment:draft:Agent Assignment",
+    "intent_routing:draft:Intent Routing",
+    "plan:approved:Superpowers Writing Plans Evidence",
+    "spec:approved:Superpowers Brainstorming Evidence"
+  ],
+  "gateStatuses": [
+    "spec_confirm:approved",
+    "plan_confirm:approved"
+  ],
+  "assignmentCount": 1,
+  "assignmentSample": [
+    {
+      "task_id": "task-1",
+      "task_title": "Implement workflow-first",
+      "role": "executor",
+      "assigned_agent_id": "backend-executor",
+      "assigned_agent_name": "后端执行者",
+      "backend": "codex",
+      "fallback_reason": null,
+      "execution_mode": "parallel",
+      "scope_write": [
+        "packages/backend/src/workflows"
+      ]
+    }
+  ],
+  "finishBranchBeforeDecision": {
+    "bodyLength": 3605,
+    "hasWorkflowMission": false,
+    "hasWorkflowChatMessage": true,
+    "workflowChatMessageCount": 1,
+    "hasRunFlowCapsule": true,
+    "runFlowCapsuleCount": 6,
+    "hasFinishBranchDecision": true,
+    "finishDecisionButtonCount": 4,
+    "hasRawMetadataLabel": false,
+    "hasRawExecutionLogLabel": false,
+    "hasWorkflowStatusLabel": true,
+    "workflowRects": [
+      {
+        "width": 552,
+        "height": 253.03125,
+        "left": 297,
+        "right": 849,
+        "top": 568.59375,
+        "bottom": 821.625,
+        "scrollWidth": 549,
+        "clientWidth": 549,
+        "scrollHeight": 251,
+        "clientHeight": 251
+      }
+    ],
+    "overflowNodes": [],
+    "sample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow E2E 7374 1781771470603\nE2E standard route finish branc...\n刚刚\n已进入 Superpowers workflow intake：实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完...\nE2E review route\n刚刚\n已进入 Superpowers workflow intake：只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在...\nE2E debug route\n刚刚\n已进入 Superpowers workflow intake：debug：排查为什么发送消息后马上进入 planning，应该先进入分析阶段，...\nE2E lightweight route\n刚刚\n已进入 Superpowers workflow intake：轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\nE2E analysis route\n刚刚\n已进入 Superpowers workflow intake：只分析不改代码：为什么移除项目时会提示 project has active r...\nE2E answer route\n刚刚\n已进入 Superpowers workflow intake：一句话回答：TypeScript 是什么？只需要直接回答。\nWorkflow E2E 7374 1781770801329\nWorkflow E2E 7374 1781770479960\nWorkflow E2E 7374 1781769364643\nWorkflow E2E 7374 1781769206267\nWorkflow E2E 7374 1781769016850\nWorkflow E2E 7374 1781768752055\nWorkflow E2E 7374 1781768443188\nWorkflow E2E 7374 1781768185217\nWorkflow E2E 7374 1781766944259\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nE2E standard rout...\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n16:32:04\n复制\n实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完整流程。\n规\n规划师\nbrainstorming · codex\n16:32:04\n思考 1s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n\njson {\"intent\":\"review_only\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n16:32:05\n思考 1s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"superpowers\":{\"designDocPath\":\"docs/superpowers/specs/fake-workflow-design.md\",\"designReviewVerdict\":\"approved\"}}\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n16:32:07\n思考 1s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n```json {\"goal\":\"fake ACP writing plans task\",\"summary\":\"fake ACP writing plans implementation plan\",\"assumptions\":[\"fake ACP deterministic browser validation\"],\"steps\":[{\"title\":\"Implement workflow-first routing\",\"intent\":\"fake ACP writing plans task\",\"assign...\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n后\n后端执行者\nimplementing · codex\n16:32:10\n思考 2s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n2 EVENTS\nchecks\nPASS\n\njson {\"superpowers\":{\"tddEvidence\":[{\"stage\":\"RED\",\"command\":\"node --test fake-workflow\",\"passed\":false,\"summary\":\"failed as expected\"},{\"stage\":\"GREEN\",\"command\":\"node --test fake-workflow\",\"passed\":true,\"summary\":\"passed\"}]}}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n审\n"
+  },
+  "dom": {
+    "bodyLength": 3848,
+    "hasWorkflowMission": false,
+    "hasWorkflowChatMessage": true,
+    "workflowChatMessageCount": 1,
+    "hasRunFlowCapsule": true,
+    "runFlowCapsuleCount": 7,
+    "hasFinishBranchDecision": false,
+    "finishDecisionButtonCount": 0,
+    "hasRawMetadataLabel": false,
+    "hasRawExecutionLogLabel": false,
+    "hasWorkflowStatusLabel": true,
+    "workflowRects": [
+      {
+        "width": 552,
+        "height": 152.1875,
+        "left": 297,
+        "right": 849,
+        "top": 669.6875,
+        "bottom": 821.875,
+        "scrollWidth": 549,
+        "clientWidth": 549,
+        "scrollHeight": 150,
+        "clientHeight": 150
+      }
+    ],
+    "overflowNodes": [],
+    "sample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow E2E 7374 1781771470603\nE2E standard route finish branc...\n刚刚\n已进入 Superpowers workflow intake：实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完...\nE2E review route\n刚刚\n已进入 Superpowers workflow intake：只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在...\nE2E debug route\n刚刚\n已进入 Superpowers workflow intake：debug：排查为什么发送消息后马上进入 planning，应该先进入分析阶段，...\nE2E lightweight route\n刚刚\n已进入 Superpowers workflow intake：轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\nE2E analysis route\n刚刚\n已进入 Superpowers workflow intake：只分析不改代码：为什么移除项目时会提示 project has active r...\nE2E answer route\n1 分钟前\n已进入 Superpowers workflow intake：一句话回答：TypeScript 是什么？只需要直接回答。\nWorkflow E2E 7374 1781770801329\nWorkflow E2E 7374 1781770479960\nWorkflow E2E 7374 1781769364643\nWorkflow E2E 7374 1781769206267\nWorkflow E2E 7374 1781769016850\nWorkflow E2E 7374 1781768752055\nWorkflow E2E 7374 1781768443188\nWorkflow E2E 7374 1781768185217\nWorkflow E2E 7374 1781766944259\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nE2E standard rout...\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n16:32:04\n复制\n实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完整流程。\n规\n规划师\nbrainstorming · codex\n16:32:04\n思考 1s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n\njson {\"intent\":\"review_only\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n16:32:05\n思考 1s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"superpowers\":{\"designDocPath\":\"docs/superpowers/specs/fake-workflow-design.md\",\"designReviewVerdict\":\"approved\"}}\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n16:32:07\n思考 1s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n```json {\"goal\":\"fake ACP writing plans task\",\"summary\":\"fake ACP writing plans implementation plan\",\"assumptions\":[\"fake ACP deterministic browser validation\"],\"steps\":[{\"title\":\"Implement workflow-first routing\",\"intent\":\"fake ACP writing plans task\",\"assign...\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n后\n后端执行者\nimplementing · codex\n16:32:10\n思考 2s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n2 EVENTS\nchecks\nPASS\n\njson {\"superpowers\":{\"tddEvidence\":[{\"stage\":\"RED\",\"command\":\"node --test fake-workflow\",\"passed\":false,\"summary\":\"failed as expected\"},{\"stage\":\"GREEN\",\"command\":\"node --test fake-workflow\",\"passed\":true,\"summary\":\"passed\"}]}}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS"
+  },
+  "mobileDom": {
+    "bodyLength": 3872,
+    "hasWorkflowMission": false,
+    "hasWorkflowChatMessage": true,
+    "workflowChatMessageCount": 1,
+    "hasRunFlowCapsule": true,
+    "runFlowCapsuleCount": 7,
+    "hasFinishBranchDecision": false,
+    "finishDecisionButtonCount": 0,
+    "hasRawMetadataLabel": false,
+    "hasRawExecutionLogLabel": false,
+    "hasWorkflowStatusLabel": true,
+    "workflowRects": [
+      {
+        "width": 348,
+        "height": 152.1875,
+        "left": 21,
+        "right": 369,
+        "top": 628.640625,
+        "bottom": 780.828125,
+        "scrollWidth": 345,
+        "clientWidth": 345,
+        "scrollHeight": 150,
+        "clientHeight": 150
+      }
+    ],
+    "overflowNodes": [],
+    "sample": "深海指挥中心\n新建会话\n⌘N\n项目\nWorkflow E2E 7374 1781771470603\nE2E standard route finish branc...\n刚刚\n已进入 Superpowers workflow intake：实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完...\nE2E review route\n刚刚\n已进入 Superpowers workflow intake：只做代码审查，不要修改文件：审查当前 workflow 聊天消息 UI 是否存在...\nE2E debug route\n刚刚\n已进入 Superpowers workflow intake：debug：排查为什么发送消息后马上进入 planning，应该先进入分析阶段，...\nE2E lightweight route\n刚刚\n已进入 Superpowers workflow intake：轻量修改 README 文档，追加一行项目说明，并展示轻量计划。\nE2E analysis route\n刚刚\n已进入 Superpowers workflow intake：只分析不改代码：为什么移除项目时会提示 project has active r...\nE2E answer route\n1 分钟前\n已进入 Superpowers workflow intake：一句话回答：TypeScript 是什么？只需要直接回答。\nWorkflow E2E 7374 1781770801329\nWorkflow E2E 7374 1781770479960\nWorkflow E2E 7374 1781769364643\nWorkflow E2E 7374 1781769206267\nWorkflow E2E 7374 1781769016850\nWorkflow E2E 7374 1781768752055\nWorkflow E2E 7374 1781768443188\nWorkflow E2E 7374 1781768185217\nWorkflow E2E 7374 1781766944259\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nE2E standard rout...\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n16:32:04\n复制\n实现一个设置页功能，创建前端界面和必要测试，并完成审查验证。需要分配子代理并走完整流程。\n规\n规划师\nbrainstorming · codex\n16:32:04\n思考 1s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n\njson {\"intent\":\"review_only\",\"confidence\":0.97,\"reason\":\"fake ACP planner routing evidence\"}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n16:32:05\n思考 1s\n完成\n复制\n保存为知识\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n{\"superpowers\":{\"designDocPath\":\"docs/superpowers/specs/fake-workflow-design.md\",\"designReviewVerdict\":\"approved\"}}\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n规\n规划师\nplanning · codex\n16:32:07\n思考 1s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n0 EVENTS\nchecks\nPASS\n```json {\"goal\":\"fake ACP writing plans task\",\"summary\":\"fake ACP writing plans implementation plan\",\"assumptions\":[\"fake ACP deterministic browser validation\"],\"steps\":[{\"title\":\"Implement workflow-first routing\",\"intent\":\"fake ACP writing plans task\",\"assign...\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n后\n后端执行者\nimplementing · codex\n16:32:10\n思考 2s\n完成\n复制\n保存为知识\n预览\n源码\n完成\n已生成 agent 输出，详见下方消息流。\nstdout\nDONE\nevents\n2 EVENTS\nchecks\nPASS\n\njson {\"superpowers\":{\"tddEvidence\":[{\"stage\":\"RED\",\"command\":\"node --test fake-workflow\",\"passed\":false,\"summary\":\"failed as expected\"},{\"stage\":\"GREEN\",\"command\":\"node --test fake-workflow\",\"passed\":true,\"summary\":\"passed\"}]}}\n\n查看 agent 过程详情\n查看执行过程\n0 GROUPS\n审\n审查员\nreviewing · code"
+  }
+}

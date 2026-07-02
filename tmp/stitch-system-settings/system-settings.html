@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>系统设置 - Mr. Krabs AI</title>
+<!-- Tailwind CSS v3 CDN -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts for better typography -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<style data-purpose="custom-config">
+    body {
+      font-family: 'Inter', 'Noto Sans SC', sans-serif;
+      background-color: #f8fafc;
+      color: #1e293b;
+    }
+    .glass-card {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(226, 232, 240, 0.8);
+    }
+    .active-sidebar-item {
+      background: #eff6ff;
+      border: 1px solid #dbeafe;
+      color: #2563eb;
+    }
+    .custom-switch {
+      width: 44px;
+      height: 24px;
+      appearance: none;
+      background: #e2e8f0;
+      border-radius: 999px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s ease;
+    }
+    .custom-switch:checked {
+      background: #3b82f6;
+    }
+    .custom-switch::before {
+      content: '';
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      top: 2px;
+      left: 2px;
+      transition: transform 0.2s ease;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .custom-switch:checked::before {
+      transform: translateX(20px);
+    }
+    /* Hide scrollbar but allow scrolling */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+  </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+<!-- BEGIN: MainHeader -->
+<header class="h-16 flex items-center justify-between px-6 bg-white border-b border-gray-100 shrink-0">
+<div class="flex items-center gap-4">
+<!-- Brand Logo -->
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">K</div>
+<div class="flex flex-col">
+<span class="text-sm font-bold leading-none">系统设置</span>
+<span class="text-[10px] text-gray-400 mt-1">管理全局行为与默认配置，项目内成员将遵循这些设置。</span>
+</div>
+</div>
+</div>
+<!-- Search and User Actions -->
+<div class="flex items-center gap-4">
+<div class="relative">
+<svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<input class="pl-10 pr-12 py-1.5 bg-gray-50 border-gray-200 rounded-lg text-sm w-64 focus:ring-blue-500 focus:border-blue-500" placeholder="搜索设置项" type="text"/>
+<span class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-400 font-mono">⌘K</span>
+</div>
+<button class="p-2 text-gray-400 hover:text-gray-600">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+<div class="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs font-bold ring-2 ring-blue-100 ring-offset-2">U</div>
+</div>
+</header>
+<!-- END: MainHeader -->
+<!-- BEGIN: MainLayout -->
+<div class="flex flex-1 overflow-hidden">
+<!-- BEGIN: Sidebar -->
+<aside class="w-64 border-r border-gray-100 bg-gray-50/50 flex flex-col p-4">
+<nav class="space-y-1 flex-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 hover:bg-gray-100 transition-colors" href="#">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+          通用设置
+        </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 hover:bg-gray-100 transition-colors" href="#">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+          会话提示词
+        </a>
+<!-- Active Nav Item -->
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm active-sidebar-item font-medium" href="#">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<div>
+<p>聊天设置</p>
+<p class="text-[10px] text-blue-400 opacity-80 mt-0.5">消息回复与协作默认行为</p>
+</div>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 hover:bg-gray-100 transition-colors" href="#">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.183.244l-.233.133a1 1 0 01-1.353-.195C3.125 15.21 3 15.105 3 15V7.414a2 2 0 01.586-1.414L7.586 2a2 2 0 012.828 0l4 4a2 2 0 01.586 1.414v4.586a2 2 0 01-1.414 1.414l-2 2a2 2 0 01-2.828 0l-4-4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+          模型 / AI
+        </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 hover:bg-gray-100 transition-colors" href="#">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+          工具与集成
+        </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 hover:bg-gray-100 transition-colors" href="#">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+          安全与权限
+        </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 hover:bg-gray-100 transition-colors" href="#">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+          通知设置
+        </a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 hover:bg-gray-100 transition-colors" href="#">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.183.244l-.233.133a1 1 0 01-1.353-.195C3.125 15.21 3 15.105 3 15V7.414a2 2 0 01.586-1.414L7.586 2a2 2 0 012.828 0l4 4a2 2 0 01.586 1.414v4.586a2 2 0 01-1.414 1.414l-2 2a2 2 0 01-2.828 0l-4-4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+          实验性功能
+        </a>
+</nav>
+<!-- Bottom Reset Button -->
+<div class="mt-auto">
+<button class="w-full text-left p-3 rounded-xl bg-blue-50/50 hover:bg-blue-50 border border-transparent hover:border-blue-100 transition-all group">
+<div class="flex items-center gap-2 text-blue-600">
+<svg class="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="text-sm font-medium">恢复默认设置</span>
+</div>
+<p class="text-[10px] text-blue-400 mt-1">将所有设置恢复为系统默认值</p>
+</button>
+</div>
+</aside>
+<!-- END: Sidebar -->
+<!-- BEGIN: MainContent -->
+<main class="flex-1 p-8 overflow-y-auto no-scrollbar">
+<div class="max-w-4xl mx-auto space-y-8">
+<!-- Section: Header -->
+<div class="flex items-start gap-4">
+<div class="p-2.5 bg-blue-100 rounded-xl text-blue-600">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<div>
+<h1 class="text-xl font-bold">聊天设置</h1>
+<p class="text-sm text-gray-500 mt-1">配置消息回复、协作流程和智能体行为的默认策略。</p>
+</div>
+</div>
+<!-- Section: Default Collaboration -->
+<div class="glass-card rounded-2xl p-6 shadow-sm space-y-6">
+<div class="flex items-center gap-3">
+<div class="p-1.5 bg-blue-50 rounded-lg text-blue-500">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<div>
+<h2 class="text-sm font-semibold">协作默认值</h2>
+<p class="text-xs text-gray-400">定义消息路由、决策流程和智能体的默认处理方式。</p>
+</div>
+</div>
+<div class="space-y-4">
+<!-- Row 1 -->
+<div class="flex items-center justify-between p-4 bg-gray-50/50 rounded-xl border border-gray-100">
+<div>
+<p class="text-sm font-medium">只响应 @</p>
+<p class="text-xs text-gray-400 mt-1">没有明确 @ 智能体时保持安静，避免不必要的打扰。</p>
+</div>
+<input class="custom-switch" type="checkbox"/>
+</div>
+<!-- Row 2 (Selected state) -->
+<div class="p-4 bg-blue-50/30 rounded-xl border border-blue-200">
+<div class="flex items-center justify-between mb-4">
+<div>
+<p class="text-sm font-medium">兜底回复</p>
+<p class="text-xs text-gray-400 mt-1">没有 @ 时由 planner 兜底生成协作调度建议。</p>
+</div>
+<input checked="" class="custom-switch" type="checkbox"/>
+</div>
+<div class="space-y-2">
+<label class="text-[10px] text-gray-400 uppercase tracking-wider font-bold">兜底智能体<p></p>
+<div class="relative">
+<select class="w-full pl-4 pr-10 py-2.5 bg-white border-gray-200 rounded-lg text-sm appearance-none focus:ring-blue-500 focus:border-blue-500">
+<option>规划师 (planner)</option>
+</select>
+<svg class="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+</label></div>
+</div>
+<!-- Grid Items -->
+<div class="grid grid-cols-2 gap-4">
+<div class="p-4 bg-gray-50/50 rounded-xl border border-gray-100 flex items-start gap-3">
+<div class="text-blue-500 mt-1">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<div class="flex-1">
+<div class="flex items-center justify-between">
+<p class="text-sm font-medium">需要决策时询问我</p>
+<input checked="" class="custom-switch" type="checkbox"/>
+</div>
+<p class="text-[10px] text-gray-400 mt-1 leading-relaxed">工作流遇到阻塞决策时暂停，等待人工选择。</p>
+</div>
+</div>
+<div class="p-4 bg-gray-50/50 rounded-xl border border-gray-100 flex items-start gap-3 opacity-60">
+<div class="text-gray-400 mt-1">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<div class="flex-1">
+<div class="flex items-center justify-between">
+<p class="text-sm font-medium">使用推荐选项自动继续</p>
+<input class="custom-switch" type="checkbox"/>
+</div>
+<p class="text-[10px] text-gray-400 mt-1 leading-relaxed">工作流使用推荐选项自动继续，适合低风险任务。</p>
+</div>
+</div>
+<div class="p-4 bg-gray-50/50 rounded-xl border border-gray-100 flex items-start gap-3">
+<div class="text-blue-500 mt-1">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.183.244l-.233.133a1 1 0 01-1.353-.195C3.125 15.21 3 15.105 3 15V7.414a2 2 0 01.586-1.414L7.586 2a2 2 0 012.828 0l4 4a2 2 0 01.586 1.414v4.586a2 2 0 01-1.414 1.414l-2 2a2 2 0 01-2.828 0l-4-4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<div class="flex-1">
+<div class="flex items-center justify-between">
+<p class="text-sm font-medium">开启记忆提取</p>
+<input checked="" class="custom-switch" type="checkbox"/>
+</div>
+<p class="text-[10px] text-gray-400 mt-1 leading-relaxed">Agent 回复完成后自动提取可复用记忆，并允许跨上下文引用。</p>
+</div>
+</div>
+<div class="p-4 bg-gray-50/50 rounded-xl border border-gray-100 flex items-start gap-3 opacity-60">
+<div class="text-gray-400 mt-1">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<div class="flex-1">
+<div class="flex items-center justify-between">
+<p class="text-sm font-medium">关闭记忆沉淀</p>
+<input class="custom-switch" type="checkbox"/>
+</div>
+<p class="text-[10px] text-gray-400 mt-1 leading-relaxed">不再自动调用 LLM 沉淀记忆；手动保存和手动新建任务记忆仍可用。</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Section: Connection Modes -->
+<div class="grid grid-cols-3 gap-4">
+<!-- Item 1 -->
+<div class="p-5 glass-card rounded-2xl border border-gray-100 flex flex-col gap-4 hover:border-blue-200 transition-colors cursor-pointer group">
+<div class="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-blue-500 group-hover:bg-blue-50 transition-colors">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<div>
+<p class="text-sm font-bold">项目接管</p>
+<p class="text-[10px] text-gray-400 mt-1 leading-relaxed">由 OpenDeepSea 在会话入口注入 using-superpowers，仅作为兼容回退使用。</p>
+</div>
+</div>
+<!-- Item 2 (Active) -->
+<div class="p-5 glass-card rounded-2xl border-2 border-blue-500 relative bg-blue-50/20 flex flex-col gap-4">
+<div class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-white border-2 border-white">
+<svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"></path></svg>
+</div>
+<div class="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<div>
+<p class="text-sm font-bold">Provider 接管</p>
+<p class="text-[10px] text-blue-600/70 mt-1 leading-relaxed font-medium">OpenDeepSea 不注入启动指令，交给 ACP provider 自身的 Superpowers 插件处理。</p>
+</div>
+</div>
+<!-- Item 3 -->
+<div class="p-5 glass-card rounded-2xl border border-gray-100 flex flex-col gap-4 opacity-50">
+<div class="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-gray-400">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<div>
+<p class="text-sm font-bold">关闭注入</p>
+<p class="text-[10px] text-gray-400 mt-1 leading-relaxed">OpenDeepSea 和受控 ACP 环境都不主动注入 Superpowers 启动指令。</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- END: MainContent -->
+</div>
+<!-- END: MainLayout -->
+<!-- BEGIN: FooterStatusBar -->
+<footer class="h-8 px-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-[10px] text-gray-400 shrink-0">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-1.5">
+<span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+<span>Service Operational</span>
+</div>
+<div class="flex items-center gap-3 border-l border-gray-200 pl-4">
+<span>Latency: <span class="text-gray-600 font-mono">45ms</span></span>
+<span>Error Rate: <span class="text-gray-600 font-mono">0.0%</span></span>
+<span>Response Time: <span class="text-gray-600 font-mono">1.2s</span></span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<span>Version 2.4.0-stable</span>
+<span class="font-bold text-gray-300">MR. KRABS AI</span>
+</div>
+</footer>
+<!-- END: FooterStatusBar -->
+</body></html>

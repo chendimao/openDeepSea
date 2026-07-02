@@ -1,0 +1,1001 @@
+diff --git "a/docs/superpowers/plans/2026-06-08-\344\274\232\350\257\235token\346\266\210\350\200\227\347\273\237\350\256\241\345\256\236\346\226\275\350\256\241\345\210\222.md" "b/docs/superpowers/plans/2026-06-08-\344\274\232\350\257\235token\346\266\210\350\200\227\347\273\237\350\256\241\345\256\236\346\226\275\350\256\241\345\210\222.md"
+new file mode 100644
+index 0000000..c35a0c1
+--- /dev/null
++++ "b/docs/superpowers/plans/2026-06-08-\344\274\232\350\257\235token\346\266\210\350\200\227\347\273\237\350\256\241\345\256\236\346\226\275\350\256\241\345\210\222.md"
+@@ -0,0 +1,122 @@
++# 会话 Token 消耗统计 Implementation Plan
++
++> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
++
++**Goal:** 状态栏显示当前会话累计 token 消耗，并把每次运行观测到的 token usage 写入 `session_token_usage` 表，供后续历史报表使用。
++
++**Architecture:** 后端在 ACP chunk 进入 session runtime 时标准化抽取 provider usage，写入 `session_token_usage` 作为 run 级 usage snapshot；workspace payload 和实时 WebSocket 事件都从该表聚合当前会话累计值。前端只消费 `bottomStatus.tokenUsage`，不自行解析 provider 原始事件。
++
++**Tech Stack:** Node.js、TypeScript、better-sqlite3、Express/WebSocket、React 18、Vite、node:test。
++
++---
++
++### Task 1: 数据表、类型与仓储
++
++**Files:**
++- Modify: `packages/backend/src/db.ts`
++- Modify: `packages/backend/src/session-types.ts`
++- Modify: `packages/frontend/src/lib/types.ts`
++- Create: `packages/backend/src/repos/session-token-usage.ts`
++- Test: `packages/backend/src/repos/sessions.test.ts`
++
++- [x] **Step 1: 写失败测试**
++
++在 `packages/backend/src/repos/sessions.test.ts` 中增加测试，断言 `session_token_usage` 表和索引存在，并断言仓储按 session 汇总时对同一 run 只使用最新 snapshot。
++
++- [x] **Step 2: 运行测试确认失败**
++
++Run: `npm run test -w @openclaw-room/backend -- src/repos/sessions.test.ts`
++
++Expected: FAIL，原因是 `session_token_usage` 表或仓储不存在。
++
++- [x] **Step 3: 实现表、类型与仓储**
++
++新增 `session_token_usage` 表，字段包含 `session_id`、`run_id`、`agent_id`、`provider`、`model`、`input_tokens`、`output_tokens`、`total_tokens`、`cached_input_tokens`、`reasoning_tokens`、`source`、`is_final`、`raw_payload`、`created_at`。新增仓储 `create/listBySession/summarizeBySession`。
++
++- [x] **Step 4: 运行测试确认通过**
++
++Run: `npm run test -w @openclaw-room/backend -- src/repos/sessions.test.ts`
++
++Expected: PASS。
++
++### Task 2: 后端聚合与实时采集
++
++**Files:**
++- Modify: `packages/backend/src/session-workspace-view-model.ts`
++- Modify: `packages/backend/src/session-workspace-view-model.test.ts`
++- Modify: `packages/backend/src/session-runtime.ts`
++- Modify: `packages/backend/src/session-runtime.test.ts`
++- Modify: `packages/backend/src/session.routes.ts`
++- Modify: `packages/backend/src/types.ts`
++
++- [x] **Step 1: 写失败测试**
++
++增加测试覆盖 `buildSessionBottomStatus()` 优先使用 `session_token_usage` 汇总；增加 `recordSessionChunk()` 从 ACP raw usage 中写入 usage 表并推送 bottom status 的测试。
++
++- [x] **Step 2: 运行测试确认失败**
++
++Run: `npm run test -w @openclaw-room/backend -- src/session-workspace-view-model.test.ts src/session-runtime.test.ts`
++
++Expected: FAIL，原因是函数签名、采集器或事件类型尚未实现。
++
++- [x] **Step 3: 实现采集和推送**
++
++新增 `extractTokenUsageFromChunk()`，在 `recordSessionChunk()` 写入 agent event 后抽取 usage，创建 usage snapshot，并通过 `session_bottom_status:snapshot` 推送最新 `bottomStatus`。
++
++- [x] **Step 4: 运行测试确认通过**
++
++Run: `npm run test -w @openclaw-room/backend -- src/session-workspace-view-model.test.ts src/session-runtime.test.ts`
++
++Expected: PASS。
++
++### Task 3: 前端状态栏更新
++
++**Files:**
++- Modify: `packages/frontend/src/lib/ws.ts`
++- Modify: `packages/frontend/src/session-ui/session-workspace-events.ts`
++- Modify: `packages/frontend/src/session-ui/session-workspace-events.test.ts`
++- Modify: `packages/frontend/src/session-ui/SessionShellView.tsx`
++- Modify: `packages/frontend/src/session-ui/SessionShell.test.tsx`
++
++- [x] **Step 1: 写失败测试**
++
++增加测试覆盖收到 `session_bottom_status:snapshot` 后更新 `payload.bottomStatus`；增加渲染测试断言状态栏文案为 `Token 消耗`，并显示累计 token 数。
++
++- [x] **Step 2: 运行测试确认失败**
++
++Run: `npm run test -w @openclaw-room/frontend -- src/session-ui/session-workspace-events.test.ts src/session-ui/SessionShell.test.tsx`
++
++Expected: FAIL，原因是事件类型和文案尚未实现。
++
++- [x] **Step 3: 实现前端消费**
++
++扩展 `WsServerEvent`，在 `applySessionWorkspaceEvent()` 里处理 `session_bottom_status:snapshot`，把状态栏标签从 `API 消耗` 改为 `Token 消耗`。
++
++- [x] **Step 4: 运行测试确认通过**
++
++Run: `npm run test -w @openclaw-room/frontend -- src/session-ui/session-workspace-events.test.ts src/session-ui/SessionShell.test.tsx`
++
++Expected: PASS。
++
++### Task 4: 验证、审查与提交
++
++**Files:**
++- Modify: 本计划文件
++
++- [x] **Step 1: 运行最终验证**
++
++Run: `npm run build`
++
++Expected: PASS。
++
++- [x] **Step 2: 审查 diff**
++
++Run: `git diff -- packages/backend/src/db.ts packages/backend/src/session-types.ts packages/backend/src/repos/session-token-usage.ts packages/backend/src/repos/sessions.test.ts packages/backend/src/session-workspace-view-model.ts packages/backend/src/session-workspace-view-model.test.ts packages/backend/src/session-runtime.ts packages/backend/src/session-runtime.test.ts packages/backend/src/session.routes.ts packages/backend/src/types.ts packages/frontend/src/lib/types.ts packages/frontend/src/lib/ws.ts packages/frontend/src/session-ui/session-workspace-events.ts packages/frontend/src/session-ui/session-workspace-events.test.ts packages/frontend/src/session-ui/SessionShellView.tsx packages/frontend/src/session-ui/SessionShell.test.tsx docs/superpowers/plans/2026-06-08-会话token消耗统计实施计划.md`
++
++Expected: diff 只包含本功能相关改动。
++
++- [x] **Step 3: 提交**
++
++Run: `git add <本功能相关文件> && git commit -m "feat(session): 统计会话token消耗"`
++
++Expected: commit 创建成功。
+diff --git a/packages/backend/src/db.ts b/packages/backend/src/db.ts
+index 9cead4d..65d2a12 100644
+--- a/packages/backend/src/db.ts
++++ b/packages/backend/src/db.ts
+@@ -474,6 +474,32 @@ CREATE TABLE IF NOT EXISTS session_runs (
+ CREATE INDEX IF NOT EXISTS idx_session_runs_session ON session_runs(session_id, started_at);
+ CREATE INDEX IF NOT EXISTS idx_session_runs_status ON session_runs(status, updated_at);
+ 
++CREATE TABLE IF NOT EXISTS session_token_usage (
++  id TEXT PRIMARY KEY,
++  session_id TEXT NOT NULL,
++  run_id TEXT,
++  agent_id TEXT,
++  provider TEXT,
++  model TEXT,
++  input_tokens INTEGER NOT NULL DEFAULT 0,
++  output_tokens INTEGER NOT NULL DEFAULT 0,
++  total_tokens INTEGER NOT NULL DEFAULT 0,
++  cached_input_tokens INTEGER,
++  reasoning_tokens INTEGER,
++  source TEXT NOT NULL,
++  is_final INTEGER NOT NULL DEFAULT 0 CHECK (is_final IN (0, 1)),
++  raw_payload TEXT NOT NULL DEFAULT '{}',
++  created_at INTEGER NOT NULL,
++  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
++  FOREIGN KEY (run_id) REFERENCES session_runs(id) ON DELETE SET NULL
++);
++CREATE INDEX IF NOT EXISTS idx_session_token_usage_session
++  ON session_token_usage(session_id, created_at);
++CREATE INDEX IF NOT EXISTS idx_session_token_usage_run
++  ON session_token_usage(run_id, created_at);
++CREATE INDEX IF NOT EXISTS idx_session_token_usage_provider
++  ON session_token_usage(provider, model, created_at);
++
+ CREATE TABLE IF NOT EXISTS session_agent_runtimes (
+   id TEXT PRIMARY KEY,
+   session_id TEXT NOT NULL,
+diff --git a/packages/backend/src/repos/session-token-usage.ts b/packages/backend/src/repos/session-token-usage.ts
+new file mode 100644
+index 0000000..f8e1507
+--- /dev/null
++++ b/packages/backend/src/repos/session-token-usage.ts
+@@ -0,0 +1,112 @@
++import { nanoid } from 'nanoid';
++import { db, now } from '../db.js';
++import type { AcpBackend } from '../types.js';
++import type { SessionTokenUsageRecord, SessionTokenUsageSummary } from '../session-types.js';
++import { parseJsonObject } from './sessions.js';
++
++type SessionTokenUsageRow = Omit<SessionTokenUsageRecord, 'raw_payload'> & {
++  raw_payload: string | null;
++};
++
++export const sessionTokenUsageRepo = {
++  create(input: {
++    session_id: string;
++    run_id?: string | null;
++    agent_id?: string | null;
++    provider?: AcpBackend | null;
++    model?: string | null;
++    input_tokens: number;
++    output_tokens: number;
++    total_tokens?: number | null;
++    cached_input_tokens?: number | null;
++    reasoning_tokens?: number | null;
++    source: string;
++    is_final?: boolean;
++    raw_payload?: Record<string, unknown>;
++  }): SessionTokenUsageRecord {
++    const id = nanoid(16);
++    const inputTokens = normalizeTokenCount(input.input_tokens);
++    const outputTokens = normalizeTokenCount(input.output_tokens);
++    const totalTokens = normalizeTokenCount(input.total_tokens ?? inputTokens + outputTokens);
++    db.prepare(`
++      INSERT INTO session_token_usage (
++        id, session_id, run_id, agent_id, provider, model,
++        input_tokens, output_tokens, total_tokens,
++        cached_input_tokens, reasoning_tokens, source, is_final,
++        raw_payload, created_at
++      )
++      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
++    `).run(
++      id,
++      input.session_id,
++      input.run_id ?? null,
++      input.agent_id ?? null,
++      input.provider ?? null,
++      input.model ?? null,
++      inputTokens,
++      outputTokens,
++      totalTokens,
++      nullableTokenCount(input.cached_input_tokens),
++      nullableTokenCount(input.reasoning_tokens),
++      input.source,
++      input.is_final ? 1 : 0,
++      JSON.stringify(input.raw_payload ?? {}),
++      now(),
++    );
++    return this.get(id)!;
++  },
++
++  get(id: string): SessionTokenUsageRecord | undefined {
++    const row = db.prepare('SELECT * FROM session_token_usage WHERE id = ?').get(id) as
++      | SessionTokenUsageRow
++      | undefined;
++    return row ? parseSessionTokenUsageRow(row) : undefined;
++  },
++
++  listBySession(sessionId: string, input: { limit?: number } = {}): SessionTokenUsageRecord[] {
++    const limit = input.limit ?? 500;
++    const rows = db.prepare(`
++      SELECT * FROM (
++        SELECT * FROM session_token_usage
++        WHERE session_id = ?
++        ORDER BY created_at DESC, id DESC
++        LIMIT ?
++      ) ORDER BY created_at ASC, id ASC
++    `).all(sessionId, limit) as SessionTokenUsageRow[];
++    return rows.map(parseSessionTokenUsageRow);
++  },
++
++  summarizeBySession(sessionId: string): SessionTokenUsageSummary | null {
++    const latestByRun = new Map<string, SessionTokenUsageRecord>();
++    for (const record of this.listBySession(sessionId, { limit: 2_000 })) {
++      latestByRun.set(record.run_id ?? record.id, record);
++    }
++    const totals = [...latestByRun.values()].reduce(
++      (acc, record) => ({
++        input: acc.input + record.input_tokens,
++        output: acc.output + record.output_tokens,
++        total: acc.total + record.total_tokens,
++      }),
++      { input: 0, output: 0, total: 0 },
++    );
++    return totals.total > 0 ? totals : null;
++  },
++};
++
++function parseSessionTokenUsageRow(row: SessionTokenUsageRow): SessionTokenUsageRecord {
++  return {
++    ...row,
++    provider: row.provider as AcpBackend | null,
++    is_final: row.is_final ? 1 : 0,
++    raw_payload: parseJsonObject(row.raw_payload),
++  };
++}
++
++function normalizeTokenCount(value: number): number {
++  return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
++}
++
++function nullableTokenCount(value: number | null | undefined): number | null {
++  if (value === null || value === undefined) return null;
++  return normalizeTokenCount(value);
++}
+diff --git a/packages/backend/src/repos/sessions.test.ts b/packages/backend/src/repos/sessions.test.ts
+index 4864cc8..b6efd80 100644
+--- a/packages/backend/src/repos/sessions.test.ts
++++ b/packages/backend/src/repos/sessions.test.ts
+@@ -19,6 +19,7 @@ const { sessionEvidenceRepo } = await import('./session-evidence.js');
+ const { sessionContextRepo } = await import('./session-context.js');
+ const { sessionCompactionRepo } = await import('./session-compactions.js');
+ const { sessionCheckpointRepo } = await import('./session-checkpoints.js');
++const { sessionTokenUsageRepo } = await import('./session-token-usage.js');
+ 
+ test('session schema creates all new tables', () => {
+   const rows = db.prepare(`
+@@ -33,6 +34,7 @@ test('session schema creates all new tables', () => {
+         'session_context_sources',
+         'session_compactions',
+         'session_evidence_events',
++        'session_token_usage',
+         'session_checkpoints',
+         'history_records'
+       )
+@@ -49,6 +51,7 @@ test('session schema creates all new tables', () => {
+     'session_messages',
+     'session_plan_items',
+     'session_runs',
++    'session_token_usage',
+     'sessions',
+   ]);
+ });
+@@ -62,6 +65,8 @@ test('session schema creates the primary lookup indexes', () => {
+         'idx_session_messages_session',
+         'idx_session_runs_session',
+         'idx_session_evidence_session',
++        'idx_session_token_usage_session',
++        'idx_session_token_usage_run',
+         'idx_history_project'
+       )
+     ORDER BY name
+@@ -72,10 +77,85 @@ test('session schema creates the primary lookup indexes', () => {
+     'idx_session_evidence_session',
+     'idx_session_messages_session',
+     'idx_session_runs_session',
++    'idx_session_token_usage_run',
++    'idx_session_token_usage_session',
+     'idx_sessions_project_status_updated',
+   ]);
+ });
+ 
++test('sessionTokenUsageRepo summarizes latest token usage snapshot per run', () => {
++  const project = projectRepo.create({
++    name: 'Token Usage Project',
++    path: mkdtempSync(join(tmpdir(), 'token-usage-project-')),
++  });
++  const session = sessionRepo.create({
++    project_id: project.id,
++    title: 'Token Usage Session',
++  });
++  const firstRun = sessionRunRepo.create({
++    session_id: session.id,
++    provider: 'codex',
++    model: 'gpt-5.5',
++    mode: 'code',
++    prompt: 'first',
++  });
++  const secondRun = sessionRunRepo.create({
++    session_id: session.id,
++    provider: 'codex',
++    model: 'gpt-5.5',
++    mode: 'code',
++    prompt: 'second',
++  });
++
++  sessionTokenUsageRepo.create({
++    session_id: session.id,
++    run_id: firstRun.id,
++    agent_id: 'planner',
++    provider: 'codex',
++    model: 'gpt-5.5',
++    input_tokens: 100,
++    output_tokens: 20,
++    total_tokens: 120,
++    source: 'provider_usage',
++    raw_payload: { usage: 'first partial' },
++  });
++  sessionTokenUsageRepo.create({
++    session_id: session.id,
++    run_id: firstRun.id,
++    agent_id: 'planner',
++    provider: 'codex',
++    model: 'gpt-5.5',
++    input_tokens: 150,
++    output_tokens: 30,
++    total_tokens: 180,
++    source: 'provider_usage',
++    is_final: true,
++    raw_payload: { usage: 'first final' },
++  });
++  sessionTokenUsageRepo.create({
++    session_id: session.id,
++    run_id: secondRun.id,
++    agent_id: 'planner',
++    provider: 'codex',
++    model: 'gpt-5.5',
++    input_tokens: 70,
++    output_tokens: 25,
++    total_tokens: 95,
++    source: 'provider_usage',
++    is_final: true,
++    raw_payload: { usage: 'second final' },
++  });
++
++  const summary = sessionTokenUsageRepo.summarizeBySession(session.id);
++
++  assert.deepEqual(summary, {
++    input: 220,
++    output: 55,
++    total: 275,
++  });
++  sessionRepo.close(session.id);
++});
++
+ test('session schema creates agent runtime and event tables', () => {
+   const tables = db.prepare(`
+     SELECT name FROM sqlite_master
+diff --git a/packages/backend/src/session-runtime.test.ts b/packages/backend/src/session-runtime.test.ts
+index 70316c6..eb4e81c 100644
+--- a/packages/backend/src/session-runtime.test.ts
++++ b/packages/backend/src/session-runtime.test.ts
+@@ -9,6 +9,7 @@ process.env.OPENCLAW_ROOM_DB = join(mkdtempSync(join(tmpdir(), 'openclaw-room-se
+ const { projectRepo } = await import('./repos/projects.js');
+ const { sessionRepo, sessionRunRepo, sessionAgentEventRepo } = await import('./repos/sessions.js');
+ const { sessionEvidenceRepo } = await import('./repos/session-evidence.js');
++const { sessionTokenUsageRepo } = await import('./repos/session-token-usage.js');
+ const { runSessionAgent, setSessionRuntimeAdapterForTest } = await import('./session-runtime.js');
+ const { wsHub } = await import('./ws-hub.js');
+ 
+@@ -361,6 +362,90 @@ test('runSessionAgent records raw ACP event tool calls as tool evidence', async
+   assert.equal(rawToolEvidence?.event_type, 'tool_call');
+ });
+ 
++test('runSessionAgent records token usage snapshots from ACP usage updates and broadcasts bottom status', async () => {
++  const sent: string[] = [];
++  const socket = {
++    OPEN: 1,
++    readyState: 1,
++    send: (payload: string) => sent.push(payload),
++  } as unknown as import('ws').WebSocket;
++  const project = projectRepo.create({
++    name: 'runtime token usage project',
++    path: mkdtempSync(join(tmpdir(), 'session-runtime-token-usage-')),
++  });
++  const session = sessionRepo.create({
++    project_id: project.id,
++    title: 'Runtime Token Usage',
++    mode: 'code',
++    provider: 'codex',
++    model: 'gpt-5.5',
++    workspace_path: project.path,
++  });
++  wsHub.subscribeSession(session.id, socket);
++
++  setSessionRuntimeAdapterForTest({
++    backend: 'codex',
++    listSessions: async () => [],
++    invoke: async ({ onChunk, onSession }) => {
++      onSession?.('acp-token-usage');
++      onChunk({
++        stream: 'stdout',
++        channel: 'event',
++        text: '',
++        rawType: 'usage_update',
++        rawEvent: {
++          method: 'session/update',
++          params: {
++            sessionId: 'acp-token-usage',
++            update: {
++              sessionUpdate: 'usage_update',
++              usage: {
++                input_tokens: 200,
++                output_tokens: 40,
++                total_tokens: 240,
++                input_tokens_details: { cached_tokens: 25 },
++                output_tokens_details: { reasoning_tokens: 12 },
++              },
++            },
++          },
++        },
++      });
++      return { exitCode: 0, sessionId: 'acp-token-usage', stderr: '' };
++    },
++  });
++
++  const run = await runSessionAgent({
++    sessionId: session.id,
++    agentId: 'planner',
++    prompt: '继续',
++    provider: 'codex',
++    model: 'gpt-5.5',
++  });
++
++  const usageRows = sessionTokenUsageRepo.listBySession(session.id);
++  assert.equal(usageRows.length, 1);
++  assert.equal(usageRows[0]?.run_id, run.id);
++  assert.equal(usageRows[0]?.agent_id, 'planner');
++  assert.equal(usageRows[0]?.provider, 'codex');
++  assert.equal(usageRows[0]?.model, 'gpt-5.5');
++  assert.equal(usageRows[0]?.input_tokens, 200);
++  assert.equal(usageRows[0]?.output_tokens, 40);
++  assert.equal(usageRows[0]?.total_tokens, 240);
++  assert.equal(usageRows[0]?.cached_input_tokens, 25);
++  assert.equal(usageRows[0]?.reasoning_tokens, 12);
++
++  const events = sent.map((payload) =>
++    JSON.parse(payload) as { type: string; bottomStatus?: { tokenUsage: { input: number; output: number; total: number } | null } }
++  );
++  const bottomStatus = events.find((event) => event.type === 'session_bottom_status:snapshot');
++  assert.deepEqual(bottomStatus?.bottomStatus?.tokenUsage, {
++    input: 200,
++    output: 40,
++    total: 240,
++  });
++  wsHub.removeSocket(socket);
++});
++
+ test('runSessionAgent prefers normalized tool event when raw type is generic', async () => {
+   const project = projectRepo.create({
+     name: 'runtime normalized tool project',
+diff --git a/packages/backend/src/session-runtime.ts b/packages/backend/src/session-runtime.ts
+index d996e95..46c7d93 100644
+--- a/packages/backend/src/session-runtime.ts
++++ b/packages/backend/src/session-runtime.ts
+@@ -2,6 +2,7 @@ import { getAdapter } from './acp/index.js';
+ import type { AcpStreamChannel, AcpStreamChunk, SessionAdapter } from './acp/types.js';
+ import { projectRepo } from './repos/projects.js';
+ import { sessionEvidenceRepo } from './repos/session-evidence.js';
++import { sessionTokenUsageRepo } from './repos/session-token-usage.js';
+ import {
+   DEFAULT_SESSION_AGENT_ID,
+   sessionAgentEventRepo,
+@@ -12,7 +13,7 @@ import {
+ import { runRegistry } from './run-registry.js';
+ import { broadcastActiveSessionUpsert } from './session-active-broadcast.js';
+ import type { SessionAgentEventChannel } from './session-types.js';
+-import { buildSessionInspectorSnapshot } from './session-workspace-view-model.js';
++import { buildSessionBottomStatus, buildSessionInspectorSnapshot } from './session-workspace-view-model.js';
+ import { wsHub } from './ws-hub.js';
+ import type {
+   AcpBackend,
+@@ -210,6 +211,8 @@ export function recordSessionChunk(input: {
+     agentEvent: streamEvent,
+   });
+ 
++  recordTokenUsageSnapshot(input);
++
+   const evidenceType = resolveEvidenceType(input.chunk);
+   if (!evidenceType) return;
+   const event = sessionEvidenceRepo.create({
+@@ -235,6 +238,127 @@ export function recordSessionChunk(input: {
+   }
+ }
+ 
++function recordTokenUsageSnapshot(input: {
++  sessionId: string;
++  agentId: string;
++  runId: string;
++  chunk: AcpStreamChunk;
++}): void {
++  const usage = extractTokenUsageFromChunk(input.chunk);
++  if (!usage) return;
++  const run = sessionRunRepo.get(input.runId);
++  sessionTokenUsageRepo.create({
++    session_id: input.sessionId,
++    run_id: input.runId,
++    agent_id: run?.agent_id ?? input.agentId,
++    provider: run?.provider ?? null,
++    model: run?.model ?? null,
++    input_tokens: usage.inputTokens,
++    output_tokens: usage.outputTokens,
++    total_tokens: usage.totalTokens,
++    cached_input_tokens: usage.cachedInputTokens,
++    reasoning_tokens: usage.reasoningTokens,
++    source: 'provider_usage',
++    is_final: usage.isFinal,
++    raw_payload: usage.rawPayload,
++  });
++  broadcastSessionBottomStatus(input.sessionId);
++}
++
++function extractTokenUsageFromChunk(chunk: AcpStreamChunk): {
++  inputTokens: number;
++  outputTokens: number;
++  totalTokens: number;
++  cachedInputTokens: number | null;
++  reasoningTokens: number | null;
++  isFinal: boolean;
++  rawPayload: Record<string, unknown>;
++} | null {
++  const candidate = findUsageCandidate([
++    chunk.event?.payload,
++    chunk.event,
++    chunk.rawEvent,
++  ]);
++  if (!candidate) return null;
++  const inputTokens = firstTokenNumber(candidate, ['input_tokens', 'inputTokens', 'prompt_tokens', 'promptTokens', 'input']);
++  const outputTokens = firstTokenNumber(candidate, ['output_tokens', 'outputTokens', 'completion_tokens', 'completionTokens', 'output']);
++  const totalTokens = firstTokenNumber(candidate, ['total_tokens', 'totalTokens', 'total']);
++  const inputDetails = record(candidate['input_tokens_details']) ?? record(candidate['inputTokenDetails']);
++  const outputDetails = record(candidate['output_tokens_details']) ?? record(candidate['outputTokenDetails']);
++  const cachedInputTokens = firstTokenNumber(candidate, [
++    'cached_input_tokens',
++    'cachedInputTokens',
++    'cache_read_input_tokens',
++    'cacheReadInputTokens',
++    'cache_creation_input_tokens',
++    'cacheCreationInputTokens',
++  ]) ?? firstTokenNumber(inputDetails, ['cached_tokens', 'cachedTokens']);
++  const reasoningTokens = firstTokenNumber(candidate, ['reasoning_tokens', 'reasoningTokens'])
++    ?? firstTokenNumber(outputDetails, ['reasoning_tokens', 'reasoningTokens']);
++  const normalizedInput = inputTokens ?? 0;
++  const normalizedOutput = outputTokens ?? 0;
++  const normalizedTotal = totalTokens ?? normalizedInput + normalizedOutput;
++  if (normalizedTotal <= 0) return null;
++
++  return {
++    inputTokens: normalizedInput,
++    outputTokens: normalizedOutput,
++    totalTokens: normalizedTotal,
++    cachedInputTokens,
++    reasoningTokens,
++    isFinal: chunk.rawType === 'usage_update' ||
++      candidate['is_final'] === true ||
++      candidate['isFinal'] === true ||
++      candidate['final'] === true,
++    rawPayload: {
++      rawType: chunk.rawType ?? null,
++      usage: candidate,
++    },
++  };
++}
++
++function findUsageCandidate(values: unknown[]): Record<string, unknown> | null {
++  const queue = values
++    .map(record)
++    .filter((value): value is Record<string, unknown> => value !== null);
++  const seen = new Set<Record<string, unknown>>();
++  while (queue.length > 0) {
++    const current = queue.shift()!;
++    if (seen.has(current)) continue;
++    seen.add(current);
++    if (hasTokenUsageShape(current)) return current;
++    for (const value of Object.values(current)) {
++      const child = record(value);
++      if (child) queue.push(child);
++    }
++  }
++  return null;
++}
++
++function hasTokenUsageShape(value: Record<string, unknown>): boolean {
++  return firstTokenNumber(value, [
++    'input_tokens',
++    'inputTokens',
++    'prompt_tokens',
++    'promptTokens',
++    'output_tokens',
++    'outputTokens',
++    'completion_tokens',
++    'completionTokens',
++    'total_tokens',
++    'totalTokens',
++  ]) !== null;
++}
++
++function firstTokenNumber(recordValue: Record<string, unknown> | null, keys: string[]): number | null {
++  if (!recordValue) return null;
++  for (const key of keys) {
++    const value = recordValue[key];
++    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return Math.round(value);
++  }
++  return null;
++}
++
+ function finishSessionRun(input: {
+   runId: string;
+   agentId: string;
+@@ -405,6 +529,17 @@ function shouldBroadcastInspectorSnapshot(eventType: SessionEvidenceType): boole
+     eventType === 'browser_check';
+ }
+ 
++function broadcastSessionBottomStatus(sessionId: string): void {
++  const runs = sessionRunRepo.listBySession(sessionId);
++  const evidence = sessionEvidenceRepo.listBySession(sessionId);
++  const bottomStatus = buildSessionBottomStatus(runs, evidence, sessionTokenUsageRepo.summarizeBySession(sessionId));
++  wsHub.broadcastSession(sessionId, {
++    type: 'session_bottom_status:snapshot',
++    sessionId,
++    bottomStatus,
++  });
++}
++
+ function broadcastSessionInspectorSnapshot(sessionId: string): void {
+   const runs = sessionRunRepo.listBySession(sessionId);
+   const evidence = sessionEvidenceRepo.listBySession(sessionId);
+@@ -430,3 +565,9 @@ function trimEvidenceText(text: string): string {
+   const lines = text.split('\n').slice(0, MAX_EVIDENCE_LINES).join('\n');
+   return lines.length > STREAM_PAYLOAD_LIMIT ? lines.slice(0, STREAM_PAYLOAD_LIMIT) : lines;
+ }
++
++function record(value: unknown): Record<string, unknown> | null {
++  return value && typeof value === 'object' && !Array.isArray(value)
++    ? value as Record<string, unknown>
++    : null;
++}
+diff --git a/packages/backend/src/session-types.ts b/packages/backend/src/session-types.ts
+index d619f53..74c1024 100644
+--- a/packages/backend/src/session-types.ts
++++ b/packages/backend/src/session-types.ts
+@@ -138,6 +138,30 @@ export interface SessionRun {
+   completed_at: number | null;
+ }
+ 
++export interface SessionTokenUsageRecord {
++  id: string;
++  session_id: string;
++  run_id: string | null;
++  agent_id: string | null;
++  provider: AcpBackend | null;
++  model: string | null;
++  input_tokens: number;
++  output_tokens: number;
++  total_tokens: number;
++  cached_input_tokens: number | null;
++  reasoning_tokens: number | null;
++  source: string;
++  is_final: 0 | 1;
++  raw_payload: Record<string, unknown>;
++  created_at: number;
++}
++
++export interface SessionTokenUsageSummary {
++  input: number;
++  output: number;
++  total: number;
++}
++
+ export interface SessionAgentRuntime {
+   id: string;
+   session_id: string;
+diff --git a/packages/backend/src/session-workspace-view-model.test.ts b/packages/backend/src/session-workspace-view-model.test.ts
+index e1c5250..6671b0f 100644
+--- a/packages/backend/src/session-workspace-view-model.test.ts
++++ b/packages/backend/src/session-workspace-view-model.test.ts
+@@ -700,6 +700,32 @@ test('buildSessionBottomStatus derives response and error metrics from runs', ()
+   assert.equal(rows.indexStatus, 'unknown');
+ });
+ 
++test('buildSessionBottomStatus uses session token usage summary over legacy evidence usage', () => {
++  const rows = buildSessionBottomStatus([], [{
++    id: 'legacy-usage',
++    session_id: 'session-1',
++    seq: 1,
++    event_type: 'status',
++    severity: 'info',
++    source_run_id: null,
++    source_message_id: null,
++    title: 'Legacy usage',
++    summary: null,
++    payload: { usage: { input_tokens: 1, output_tokens: 2 } },
++    created_at: Date.now(),
++  }], {
++    input: 150,
++    output: 30,
++    total: 180,
++  });
++
++  assert.deepEqual(rows.tokenUsage, {
++    input: 150,
++    output: 30,
++    total: 180,
++  });
++});
++
+ function createAgentEvent(input: {
+   sessionId: string;
+   id: string;
+diff --git a/packages/backend/src/session-workspace-view-model.ts b/packages/backend/src/session-workspace-view-model.ts
+index aa148e9..3eb21b5 100644
+--- a/packages/backend/src/session-workspace-view-model.ts
++++ b/packages/backend/src/session-workspace-view-model.ts
+@@ -13,6 +13,7 @@ import type {
+   SessionPlanItemStatus,
+   SessionProjectSwitcher,
+   SessionRun,
++  SessionTokenUsageSummary,
+   SessionToolRow,
+ } from './types.js';
+ import { historyRecordRepo } from './repos/history-records.js';
+@@ -71,7 +72,11 @@ function buildRecentProjectSessions(project: Project): SessionProjectSwitcher['p
+     .slice(0, 3);
+ }
+ 
+-export function buildSessionBottomStatus(runs: SessionRun[], evidence: SessionEvidenceEvent[]): SessionBottomStatus {
++export function buildSessionBottomStatus(
++  runs: SessionRun[],
++  evidence: SessionEvidenceEvent[],
++  tokenUsageSummary: SessionTokenUsageSummary | null = null,
++): SessionBottomStatus {
+   const recentRuns = runs.slice(-20);
+   const lastCompleted = [...recentRuns].reverse().find((run) => run.completed_at !== null && run.started_at);
+   const failedCount = recentRuns.filter((run) => run.status === 'failed').length;
+@@ -86,7 +91,7 @@ export function buildSessionBottomStatus(runs: SessionRun[], evidence: SessionEv
+       : null,
+     errorRate: recentRuns.length > 0 ? failedCount / recentRuns.length : 0,
+     networkLatencyMs: null,
+-    tokenUsage: collectTokenUsage(evidence),
++    tokenUsage: tokenUsageSummary ?? collectTokenUsage(evidence),
+   };
+ }
+ 
+diff --git a/packages/backend/src/session.routes.ts b/packages/backend/src/session.routes.ts
+index 0e64c39..8933ffc 100644
+--- a/packages/backend/src/session.routes.ts
++++ b/packages/backend/src/session.routes.ts
+@@ -20,6 +20,7 @@ import { sessionContractRepo } from './repos/session-contracts.js';
+ import { sessionContextRepo } from './repos/session-context.js';
+ import { sessionEvidenceRepo } from './repos/session-evidence.js';
+ import { sessionCheckpointRepo } from './repos/session-checkpoints.js';
++import { sessionTokenUsageRepo } from './repos/session-token-usage.js';
+ import { buildContextManifestDraft } from './session-context.js';
+ import { buildStatusSnapshot } from './session-status.js';
+ import { broadcastActiveSessionRemove, broadcastActiveSessionUpsert } from './session-active-broadcast.js';
+@@ -200,7 +201,11 @@ export function buildWorkspacePayload(project: Project, activeSession: Session):
+     context: sessionContextRepo.getLatestBySession(activeSession.id) ?? null,
+     evidence,
+     projectSwitcher: buildSessionProjectSwitcher(project.id),
+-    bottomStatus: buildSessionBottomStatus(detail.runs, detail.evidence),
++    bottomStatus: buildSessionBottomStatus(
++      detail.runs,
++      detail.evidence,
++      sessionTokenUsageRepo.summarizeBySession(activeSession.id),
++    ),
+     contract: sessionContractRepo.getOrCreate(activeSession),
+     toolRows: inspector.toolRows,
+     diffRows: inspector.diffRows,
+diff --git a/packages/backend/src/types.ts b/packages/backend/src/types.ts
+index dc96336..67aff82 100644
+--- a/packages/backend/src/types.ts
++++ b/packages/backend/src/types.ts
+@@ -48,6 +48,8 @@ export type {
+   SessionRun,
+   SessionRunStatus,
+   SessionStatus,
++  SessionTokenUsageRecord,
++  SessionTokenUsageSummary,
+   SessionToolRow,
+   SessionWorkspacePayload,
+   StatusSnapshot,
+@@ -1345,6 +1347,11 @@ export type WsServerEvent =
+   | { type: 'session_message:new'; sessionId: string; message: import('./session-types.js').SessionMessage }
+   | { type: 'session_run:created'; sessionId: string; run: import('./session-types.js').SessionRun }
+   | { type: 'session_run:updated'; sessionId: string; run: import('./session-types.js').SessionRun }
++  | {
++      type: 'session_bottom_status:snapshot';
++      sessionId: string;
++      bottomStatus: import('./session-types.js').SessionBottomStatus;
++    }
+   | {
+       type: 'session_run:stream';
+       sessionId: string;
+diff --git a/packages/frontend/src/lib/ws.ts b/packages/frontend/src/lib/ws.ts
+index 8afa25c..c5ae1a8 100644
+--- a/packages/frontend/src/lib/ws.ts
++++ b/packages/frontend/src/lib/ws.ts
+@@ -18,6 +18,7 @@ import type {
+   SessionPlanItem,
+   SessionRun,
+   SessionToolRow,
++  SessionBottomStatus,
+   SessionWorkspacePayload,
+   Task,
+   TaskArtifact,
+@@ -66,6 +67,7 @@ export type WsServerEvent =
+   | { type: 'session_message:new'; sessionId: string; message: SessionMessage }
+   | { type: 'session_run:created'; sessionId: string; run: SessionRun }
+   | { type: 'session_run:updated'; sessionId: string; run: SessionRun }
++  | { type: 'session_bottom_status:snapshot'; sessionId: string; bottomStatus: SessionBottomStatus }
+   | {
+       type: 'session_run:stream';
+       sessionId: string;
+diff --git a/packages/frontend/src/session-ui/SessionShell.test.tsx b/packages/frontend/src/session-ui/SessionShell.test.tsx
+index 60237d9..6cd99b3 100644
+--- a/packages/frontend/src/session-ui/SessionShell.test.tsx
++++ b/packages/frontend/src/session-ui/SessionShell.test.tsx
+@@ -89,6 +89,21 @@ test('SessionShell renders Deepsea command center modules', () => {
+   assert.doesNotMatch(html, /当前状态/);
+ });
+ 
++test('SessionShell renders current session token usage in the bottom status bar', () => {
++  const payload = createPayload();
++  payload.bottomStatus.tokenUsage = {
++    input: 10_000,
++    output: 2_345,
++    total: 12_345,
++  };
++
++  const html = renderSessionShell(payload);
++
++  assert.match(html, /Token 消耗/);
++  assert.match(html, /12,345 tokens/);
++  assert.doesNotMatch(html, /API 消耗/);
++});
++
+ test('SessionShell renders tool rows as detail buttons', () => {
+   const html = renderSessionShell(createPayload());
+ 
+diff --git a/packages/frontend/src/session-ui/SessionShellView.tsx b/packages/frontend/src/session-ui/SessionShellView.tsx
+index 064d3ef..e2ce56e 100644
+--- a/packages/frontend/src/session-ui/SessionShellView.tsx
++++ b/packages/frontend/src/session-ui/SessionShellView.tsx
+@@ -192,7 +192,7 @@ function BottomStatusBar({
+       <span className="deepsea-bottom-status__divider" />
+       <div className="deepsea-bottom-status__group">
+         <FileText aria-hidden="true" />
+-        <span className="deepsea-bottom-status__label">API 消耗</span>
++        <span className="deepsea-bottom-status__label">Token 消耗</span>
+         <strong>{status.tokenUsage ? `${status.tokenUsage.total.toLocaleString()} tokens` : '--'}</strong>
+       </div>
+       <span className="deepsea-bottom-status__divider" />
+diff --git a/packages/frontend/src/session-ui/session-workspace-events.test.ts b/packages/frontend/src/session-ui/session-workspace-events.test.ts
+index 242c0b2..603c749 100644
+--- a/packages/frontend/src/session-ui/session-workspace-events.test.ts
++++ b/packages/frontend/src/session-ui/session-workspace-events.test.ts
+@@ -78,6 +78,69 @@ test('applySessionWorkspaceEvent appends activity chunks to activity log', () =>
+   assert.equal(next.activeSession.agentEvents[0]?.channel, 'activity');
+ });
+ 
++test('applySessionWorkspaceEvent updates bottom status token usage snapshot', () => {
++  const payload = createPayload('session-current');
++  payload.bottomStatus = {
++    health: 'ok',
++    healthLabel: '良好',
++    indexStatus: 'unknown',
++    indexLabel: '未接入索引',
++    lastResponseMs: null,
++    errorRate: 0,
++    networkLatencyMs: null,
++    tokenUsage: null,
++  };
++  const event = {
++    type: 'session_bottom_status:snapshot',
++    sessionId: 'session-current',
++    bottomStatus: {
++      health: 'ok',
++      healthLabel: '良好',
++      indexStatus: 'unknown',
++      indexLabel: '未接入索引',
++      lastResponseMs: 1200,
++      errorRate: 0,
++      networkLatencyMs: null,
++      tokenUsage: { input: 200, output: 40, total: 240 },
++    },
++  } as WsServerEvent;
++
++  const next = applySessionWorkspaceEvent(payload, event);
++
++  assert.deepEqual(next.bottomStatus.tokenUsage, { input: 200, output: 40, total: 240 });
++  assert.equal(next.bottomStatus.lastResponseMs, 1200);
++});
++
++test('applySessionWorkspaceEvent ignores bottom status snapshots for another session', () => {
++  const payload = createPayload('session-current');
++  payload.bottomStatus = {
++    health: 'ok',
++    healthLabel: '良好',
++    indexStatus: 'unknown',
++    indexLabel: '未接入索引',
++    lastResponseMs: null,
++    errorRate: 0,
++    networkLatencyMs: null,
++    tokenUsage: null,
++  };
++  const event = {
++    type: 'session_bottom_status:snapshot',
++    sessionId: 'session-other',
++    bottomStatus: {
++      health: 'ok',
++      healthLabel: '良好',
++      indexStatus: 'unknown',
++      indexLabel: '未接入索引',
++      lastResponseMs: 1200,
++      errorRate: 0,
++      networkLatencyMs: null,
++      tokenUsage: { input: 200, output: 40, total: 240 },
++    },
++  } as WsServerEvent;
++
++  assert.equal(applySessionWorkspaceEvent(payload, event), payload);
++});
++
+ test('applySessionWorkspaceEvent appends empty ACP agent events from stream envelope', () => {
+   const payload = createPayload('session-current');
+   const event: WsServerEvent = {
+diff --git a/packages/frontend/src/session-ui/session-workspace-events.ts b/packages/frontend/src/session-ui/session-workspace-events.ts
+index 6f6bad2..a2365e4 100644
+--- a/packages/frontend/src/session-ui/session-workspace-events.ts
++++ b/packages/frontend/src/session-ui/session-workspace-events.ts
+@@ -63,6 +63,12 @@ export function applySessionWorkspaceEvent(
+       },
+     };
+   }
++  if (event.type === 'session_bottom_status:snapshot') {
++    return {
++      ...payload,
++      bottomStatus: event.bottomStatus,
++    };
++  }
+   if (event.type === 'session_run:stream') {
+     return {
+       ...payload,

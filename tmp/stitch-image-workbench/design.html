@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>图片生成工作台 - Image Generation Workspace</title>
+<!-- Tailwind CSS v3 CDN -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<style data-purpose="custom-scrollbars">
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #e5e7eb;
+      border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #d1d5db;
+    }
+  </style>
+<style data-purpose="typography">
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 12px;
+      color: #333;
+    }
+    .text-xxs { font-size: 0.65rem; }
+  </style>
+</head>
+<body class="bg-[#f5f7fa] h-screen flex flex-col overflow-hidden">
+<!-- BEGIN: MainHeader -->
+<header class="h-12 bg-white border-b border-gray-200 flex items-center justify-between px-4 shrink-0">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+</div>
+<div>
+<h1 class="font-bold text-sm leading-tight flex items-center gap-1">
+            图片生成工作台
+            <svg class="w-4 h-4 text-gray-400" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" fill-rule="evenodd"></path></svg>
+</h1>
+<p class="text-gray-400 text-xxs">project-fsmvh7D-unbi · image generation workspace</p>
+</div>
+</div>
+</div>
+<!-- Mode Switcher -->
+<nav class="flex items-center bg-gray-100 rounded-lg p-0.5">
+<button class="px-4 py-1 rounded-md bg-white shadow-sm text-blue-600 flex items-center gap-1 font-medium">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+        任务生成
+      </button>
+<button class="px-4 py-1 text-gray-500 flex items-center gap-1 hover:text-gray-700">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+        批量生成
+      </button>
+<button class="px-4 py-1 text-gray-500 flex items-center gap-1 hover:text-gray-700">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+        高级模式
+      </button>
+</nav>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-3">
+<div class="flex items-center gap-1 text-gray-500">
+<span class="w-2 h-2 rounded-full bg-green-500"></span>
+<span class="text-xs">API 余额充足</span>
+</div>
+<div class="bg-gray-100 rounded-full px-3 py-1 flex items-center gap-2">
+<span class="text-xs text-gray-600 font-medium">32,680 / 50,000 tokens</span>
+</div>
+</div>
+<div class="flex items-center gap-3 border-l pl-4 border-gray-200">
+<button class="text-gray-400 hover:text-gray-600">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+<div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold">U</div>
+</div>
+</div>
+</header>
+<!-- END: MainHeader -->
+<main class="flex-1 flex overflow-hidden">
+<!-- BEGIN: LeftIconSidebar -->
+<aside class="w-12 border-r border-gray-200 bg-white flex flex-col items-center py-4 gap-6 shrink-0">
+<button class="text-gray-400 hover:text-blue-600 transition-colors">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+<button class="text-blue-600 bg-blue-50 p-1.5 rounded-lg">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+<button class="text-gray-400 hover:text-blue-600 transition-colors">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+<button class="text-gray-400 hover:text-blue-600 transition-colors">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+<button class="text-gray-400 hover:text-blue-600 transition-colors">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</aside>
+<!-- END: LeftIconSidebar -->
+<!-- BEGIN: ModelConfigSidebar -->
+<aside class="w-64 border-r border-gray-200 bg-white overflow-y-auto shrink-0 flex flex-col">
+<div class="p-4 flex-1">
+<h2 class="font-bold text-sm mb-4">模型配置</h2>
+<!-- Model Selector -->
+<div class="mb-4">
+<label class="block text-gray-500 mb-1.5">模型</label>
+<div class="relative">
+<select class="w-full bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-xs appearance-none focus:ring-0 focus:border-blue-500">
+<option>gpt-image-2</option>
+</select>
+<div class="absolute right-2 top-1.5 flex items-center gap-1">
+<span class="bg-blue-100 text-blue-600 text-[10px] px-1 rounded">最新</span>
+<svg class="w-3 h-3 text-gray-400" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" fill-rule="evenodd"></path></svg>
+</div>
+</div>
+</div>
+<!-- API Key -->
+<div class="mb-6">
+<label class="block text-gray-500 mb-1.5">API Key</label>
+<div class="relative">
+<input class="w-full bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-xs focus:ring-0 focus:border-blue-500" type="password" value="sk-••••••••••••••••••••••••••••••"/>
+<button class="absolute right-2 top-2 text-gray-400">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+</div>
+<h3 class="font-bold text-sm mb-4">输出设置</h3>
+<!-- Number of Images -->
+<div class="mb-4">
+<label class="block text-gray-500 mb-1.5">生成数量</label>
+<div class="grid grid-cols-4 gap-2">
+<button class="bg-gray-50 border border-gray-200 rounded py-1 text-xs hover:border-blue-500">1</button>
+<button class="bg-blue-50 border border-blue-600 text-blue-600 rounded py-1 text-xs relative">
+              2
+              <span class="absolute -top-1 -right-1 flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+</span>
+</button>
+<button class="bg-gray-50 border border-gray-200 rounded py-1 text-xs hover:border-blue-500">3</button>
+<button class="bg-gray-50 border border-gray-200 rounded py-1 text-xs hover:border-blue-500">4</button>
+</div>
+</div>
+<!-- Aspect Ratio -->
+<div class="mb-4">
+<label class="block text-gray-500 mb-1.5">尺寸</label>
+<div class="grid grid-cols-3 gap-2">
+<button class="bg-gray-50 border border-gray-200 rounded p-1 text-center">
+<div class="mx-auto w-4 h-4 border border-gray-400 mb-1"></div>
+<span class="block text-[10px] text-gray-400">1:1</span>
+<span class="block text-[10px] text-gray-400 scale-90">1024x1024</span>
+</button>
+<button class="bg-blue-50 border border-blue-600 text-blue-600 rounded p-1 text-center">
+<div class="mx-auto w-6 h-3 border border-blue-400 mb-1"></div>
+<span class="block text-[10px] font-bold">16:9</span>
+<span class="block text-[10px] scale-90">1792x1024</span>
+</button>
+<button class="bg-gray-50 border border-gray-200 rounded p-1 text-center">
+<div class="mx-auto w-3 h-6 border border-gray-400 mb-1"></div>
+<span class="block text-[10px] text-gray-400">9:16</span>
+<span class="block text-[10px] text-gray-400 scale-90">1024x1792</span>
+</button>
+<button class="bg-gray-50 border border-gray-200 rounded p-1 text-center">
+<div class="mx-auto w-5 h-4 border border-gray-400 mb-1"></div>
+<span class="block text-[10px] text-gray-400">4:3</span>
+<span class="block text-[10px] text-gray-400 scale-90">1365x1024</span>
+</button>
+<button class="bg-gray-50 border border-gray-200 rounded p-1 text-center">
+<div class="mx-auto w-4 h-5 border border-gray-400 mb-1"></div>
+<span class="block text-[10px] text-gray-400">3:4</span>
+<span class="block text-[10px] text-gray-400 scale-90">1024x1365</span>
+</button>
+<button class="bg-gray-50 border border-gray-200 rounded p-1 text-center">
+<svg class="mx-auto w-4 h-4 text-gray-400 mb-1" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="block text-[10px] text-gray-400">自定义</span>
+<span class="block text-[10px] text-gray-400 scale-90">W x H</span>
+</button>
+</div>
+</div>
+<!-- Quality -->
+<div class="mb-4">
+<label class="block text-gray-500 mb-1.5">质量</label>
+<div class="flex p-0.5 bg-gray-100 rounded">
+<button class="flex-1 py-1 text-xs text-gray-500">标准</button>
+<button class="flex-1 py-1 text-xs bg-white rounded shadow-sm text-blue-600 font-medium">高清</button>
+<button class="flex-1 py-1 text-xs text-gray-500">超清</button>
+</div>
+</div>
+<!-- Style -->
+<div class="mb-4">
+<label class="block text-gray-500 mb-1.5">风格</label>
+<div class="relative">
+<select class="w-full bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-xs appearance-none focus:ring-0 focus:border-blue-500">
+<option>自然 (Natural)</option>
+</select>
+<svg class="absolute right-2 top-2 w-3 h-3 text-gray-400 pointer-events-none" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" fill-rule="evenodd"></path></svg>
+</div>
+</div>
+<!-- Reference Image -->
+<div class="mb-4">
+<label class="block text-gray-500 mb-1.5">参考图 (可选)</label>
+<div class="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center bg-gray-50 hover:bg-white hover:border-blue-300 cursor-pointer group">
+<div class="flex flex-col items-center">
+<svg class="w-8 h-8 text-gray-300 group-hover:text-blue-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<p class="text-[10px] text-gray-500 mt-2">点击或拖拽上传参考图</p>
+<p class="text-[9px] text-gray-400">支持 JPG / PNG / WebP, 最大 10MB</p>
+</div>
+</div>
+</div>
+<!-- Prompt -->
+<div class="mb-4">
+<div class="flex justify-between items-center mb-1.5">
+<label class="text-gray-500">提示词 (Prompt)</label>
+</div>
+<div class="relative">
+<textarea class="w-full bg-gray-50 border border-gray-200 rounded p-2 text-xs focus:ring-0 focus:border-blue-500 min-h-[100px] resize-none" placeholder="输入提示词...">一座未来感的海上城市，日落时分，天空橙紫色，飞行器在城市上空穿梭，数字艺术风格，高细节，电影级光影。</textarea>
+<span class="absolute bottom-1 right-2 text-[10px] text-gray-400">48 / 2000</span>
+</div>
+</div>
+<!-- Negative Prompt -->
+<div class="mb-4">
+<label class="block text-gray-500 mb-1.5">负向提示词 (可选)</label>
+<div class="relative">
+<textarea class="w-full bg-gray-50 border border-gray-200 rounded p-2 text-xs focus:ring-0 focus:border-blue-500 min-h-[60px] resize-none" placeholder="不希望出现的内容，例如：模糊，低质量，文字..."></textarea>
+<span class="absolute bottom-1 right-2 text-[10px] text-gray-400">0 / 1000</span>
+</div>
+</div>
+</div>
+<!-- Action Footer -->
+<div class="p-4 border-t border-gray-200 bg-white grid grid-cols-3 gap-2 sticky bottom-0">
+<button class="bg-gray-100 hover:bg-gray-200 py-2 rounded text-xs font-medium transition-colors">清空</button>
+<button class="col-span-2 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded text-xs font-bold flex items-center justify-center gap-1 transition-colors">
+<svg class="w-3 h-3" fill="currentColor" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+          生成图片 <span class="ml-1 opacity-80">⚡ 15</span>
+</button>
+</div>
+</aside>
+<!-- END: ModelConfigSidebar -->
+<!-- BEGIN: MainContent -->
+<section class="flex-1 bg-[#f5f7fa] overflow-y-auto p-6">
+<!-- BEGIN: TaskQueue -->
+<div class="mb-8" data-purpose="task-queue">
+<div class="flex justify-between items-center mb-4">
+<h2 class="font-bold text-sm">任务队列</h2>
+<div class="flex gap-2">
+<button class="px-3 py-1 bg-white border border-gray-200 rounded text-xs hover:bg-gray-50 flex items-center gap-1">
+<svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+              清空队列
+            </button>
+<button class="px-3 py-1 bg-white border border-gray-200 rounded text-xs hover:bg-gray-50 flex items-center gap-1">
+<svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+              全部下载
+            </button>
+</div>
+</div>
+<div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex items-center gap-4">
+<div class="w-16 h-12 bg-gray-200 rounded overflow-hidden relative">
+<img alt="Generating..." class="w-full h-full object-cover opacity-50 blur-[2px]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCaPAHPhUlU4LnZIdpxL5GQzZkJSWcly9mG063jbVKvv_GaX-xfEpmCxeIOnJ0DqMmMjifoO4e-sZ3s1PBDzILnB6-XmbMBRp8453RVZ8y9XYy-7jF13St9wlCO3ViAh1pwBgAxB0Xph_k0vpk0eG1Em7cnKMihpiapze9pzZlXG41otxHQFdaI_i-uGxxWmuDTJRhzxEoUeHGftxd6IMiHnVhLKVg7PCRgecCUAbB4vG9xYieAtmts8sxUEO_EfBIibvUM190DRU4"/>
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+</div>
+</div>
+<div class="flex-1">
+<div class="flex items-center gap-2 mb-1">
+<span class="text-xs font-bold text-blue-600">进行中</span>
+<h3 class="text-xs font-medium truncate max-w-md">一座未来感的海上城市，日落时分，天空橙紫色，飞行器在...</h3>
+</div>
+<div class="flex items-center gap-3 text-xxs text-gray-400 mb-2">
+<span class="bg-gray-100 px-1.5 py-0.5 rounded">gpt-image-2</span>
+<span>16:9</span>
+<span>高清</span>
+<span>2 张</span>
+</div>
+<div class="flex items-center gap-3">
+<div class="flex-1 bg-gray-100 h-1.5 rounded-full overflow-hidden">
+<div class="bg-blue-600 h-full w-[45%]"></div>
+</div>
+<span class="text-xxs text-gray-500 font-mono">预计剩余 00:18</span>
+<span class="text-xxs text-blue-600 font-bold">45%</span>
+<button class="text-gray-400 hover:text-red-500">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- END: TaskQueue -->
+<!-- BEGIN: GenerationResults -->
+<div data-purpose="generation-results">
+<h2 class="font-bold text-sm mb-4">生成结果</h2>
+<!-- Result Item 1 -->
+<div class="mb-8">
+<div class="flex justify-between items-start mb-3">
+<div>
+<p class="text-xxs text-gray-400 mb-1">2024-06-08 10:23:45</p>
+<h3 class="text-xs font-medium max-w-2xl leading-relaxed">一座未来感的海上城市，日落时分，天空橙紫色，飞行器在城市上空穿梭，数字艺术风格，高细节，电影级光影。</h3>
+<div class="flex gap-2 mt-2">
+<span class="bg-white border border-gray-200 text-xxs text-gray-500 px-2 py-0.5 rounded">gpt-image-2</span>
+<span class="bg-white border border-gray-200 text-xxs text-gray-500 px-2 py-0.5 rounded">16:9</span>
+<span class="bg-white border border-gray-200 text-xxs text-gray-500 px-2 py-0.5 rounded">高清</span>
+<span class="bg-white border border-gray-200 text-xxs text-gray-500 px-2 py-0.5 rounded">2 张</span>
+</div>
+</div>
+<div class="flex gap-1">
+<button class="p-1.5 bg-white border border-gray-200 rounded text-gray-500 hover:bg-gray-50"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+<button class="p-1.5 bg-white border border-gray-200 rounded text-gray-500 hover:bg-gray-50"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+<button class="p-1.5 bg-white border border-gray-200 rounded text-gray-500 hover:bg-gray-50"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="rounded-xl overflow-hidden border border-gray-200 bg-gray-200 aspect-[16/9] relative group">
+<img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCaPAHPhUlU4LnZIdpxL5GQzZkJSWcly9mG063jbVKvv_GaX-xfEpmCxeIOnJ0DqMmMjifoO4e-sZ3s1PBDzILnB6-XmbMBRp8453RVZ8y9XYy-7jF13St9wlCO3ViAh1pwBgAxB0Xph_k0vpk0eG1Em7cnKMihpiapze9pzZlXG41otxHQFdaI_i-uGxxWmuDTJRhzxEoUeHGftxd6IMiHnVhLKVg7PCRgecCUAbB4vG9xYieAtmts8sxUEO_EfBIibvUM190DRU4"/>
+<div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="bg-black/50 p-1.5 rounded-full text-white"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+</div>
+</div>
+<div class="rounded-xl overflow-hidden border border-gray-200 bg-gray-200 aspect-[16/9] relative group">
+<img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCaPAHPhUlU4LnZIdpxL5GQzZkJSWcly9mG063jbVKvv_GaX-xfEpmCxeIOnJ0DqMmMjifoO4e-sZ3s1PBDzILnB6-XmbMBRp8453RVZ8y9XYy-7jF13St9wlCO3ViAh1pwBgAxB0Xph_k0vpk0eG1Em7cnKMihpiapze9pzZlXG41otxHQFdaI_i-uGxxWmuDTJRhzxEoUeHGftxd6IMiHnVhLKVg7PCRgecCUAbB4vG9xYieAtmts8sxUEO_EfBIibvUM190DRU4" style="object-position: 80% 50%;"/>
+<div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="bg-black/50 p-1.5 rounded-full text-white"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+</div>
+</div>
+</div>
+</div>
+<!-- Result Item 2 -->
+<div class="mb-8">
+<div class="flex justify-between items-start mb-3">
+<div>
+<p class="text-xxs text-gray-400 mb-1">2024-06-08 10:18:33</p>
+<h3 class="text-xs font-medium max-w-2xl leading-relaxed">雪山湖泊，清晨薄雾，阳光穿透云层，宁静的自然风景，超真实摄影风格。</h3>
+<div class="flex gap-2 mt-2">
+<span class="bg-white border border-gray-200 text-xxs text-gray-500 px-2 py-0.5 rounded">gpt-image-2</span>
+<span class="bg-white border border-gray-200 text-xxs text-gray-500 px-2 py-0.5 rounded">4:3</span>
+<span class="bg-white border border-gray-200 text-xxs text-gray-500 px-2 py-0.5 rounded">超清</span>
+<span class="bg-white border border-gray-200 text-xxs text-gray-500 px-2 py-0.5 rounded">4 张</span>
+</div>
+</div>
+<div class="flex gap-1">
+<button class="p-1.5 bg-white border border-gray-200 rounded text-gray-500 hover:bg-gray-50"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+<button class="p-1.5 bg-white border border-gray-200 rounded text-gray-500 hover:bg-gray-50"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+<button class="p-1.5 bg-white border border-gray-200 rounded text-gray-500 hover:bg-gray-50"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+</div>
+</div>
+<div class="grid grid-cols-4 gap-4">
+<div class="rounded-lg overflow-hidden border border-gray-200 bg-gray-200 aspect-[4/3]">
+<img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAXcO9x0VbC_ZJWXo4RZH33SNyUy8xb_63d-0HTHQRAH37kATDR42cSrvcldGw6zQCegMTVNwqptmT12fAJZorJqevbGw2AmxI6cwUxadKklTMwBHowfLt-L9fXKr14_6vK1vLY5yDZ_EPk3jhnyDvydAvmhjtt9nMNxko_ehjIkbKSesE49b_fHwH_Y0avide3qu48_1nG0RpmEH-33i_hO_t8-Y7C8-xipRTaXdU_VRCc6CbhT4CYT88ovpn9NgnwZ13tH_Iab6U"/>
+</div>
+<div class="rounded-lg overflow-hidden border border-gray-200 bg-gray-200 aspect-[4/3]">
+<img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBaQR1BRg_KQxFjpeGWeodnXxZvGV5LnnxXCoWz_EbG8qaFPV0y-pUyc_OroqbPz7hLdxB7YBMZ2VSKcFOipP0hGWs_cIn2F1nfvhLfmTcJWbK_v1LIumJ0sFpqofYEuUk4wFo8pk3PMuhU5jAsJLb19ZDzD81GOZSig2Igon69JdVZR-ibWN05hvM9ShpzGHusn6emsZbyQRYYrJ2XVAVwdv_R9NE3RWo6lXACY2ZHo1uj1Ap2wCjBoJYxCCJo_s3dY2PFB31Ws4s"/>
+</div>
+<div class="rounded-lg overflow-hidden border border-gray-200 bg-gray-200 aspect-[4/3]">
+<img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC9EElHm0cZAxZnF3ncBsjIc30T51iGvmR6jto8ouDUvASwjmjkTar0NNuetqbsJdMpfVRsWeP1Vvq0725jmHinbLwK-SEw3COTFCP_3qF8nZdgDf1ZLDrKusoEaEz2kgWhhNp-jzJCBRHcnQSR8e0mEtdo7_NVB4YTADmyo-043iJX-dAJvCxpxNciHRtPG31aZkafSZNV3TdKpoy-dSM3Jo604xBySDfs7x4-AyutNhxYfFuOZFKDLnF7s3gJlGbNnz6O85_VyUI"/>
+</div>
+<div class="rounded-lg overflow-hidden border border-gray-200 bg-gray-200 aspect-[4/3] relative group">
+<img class="w-full h-full object-cover grayscale brightness-75" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC9vtoiGWoZECXBp98gOH2ZFFCObsFLjdItwXtFkavwGuz3rIXBIXbKr7cdjLYbHltpO_ZA1QVscVz2ya02cA6Rsc2neO4M2pNcLcvK0hfR66tNsi8ypXPCBuwqFdxg6pS45uz4KqvCW_aqwMrMuO3wVOlgvR5_AnRaGQRwNlZTr_gvnN5Cc4WDV1HXrKgZoslMAC8NZ7SGFIAzHLLQq8uBWMeGKvSDcC5Ig1w-SUcQbjeOFmhbK1mpi-lkHNtsJ9s5MCHaNL03rp4"/>
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border border-white/30 group-hover:bg-white/40 transition-all cursor-pointer">
+<svg class="w-5 h-5 text-white" fill="currentColor" viewbox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="py-8 text-center">
+<p class="text-gray-400 text-xs">已经到底了</p>
+</div>
+</div>
+<!-- END: GenerationResults -->
+</section>
+<!-- END: MainContent -->
+<!-- BEGIN: RightSidebar -->
+<aside class="w-72 border-l border-gray-200 bg-white overflow-y-auto shrink-0 flex flex-col p-4 gap-6">
+<!-- Task Stats -->
+<section data-purpose="task-stats">
+<h2 class="font-bold text-sm mb-4">任务统计</h2>
+<div class="grid grid-cols-4 gap-2">
+<div class="bg-gray-50 border border-gray-100 p-2 rounded-lg">
+<p class="text-gray-400 text-xxs mb-1">总任务</p>
+<p class="text-lg font-bold font-mono">128</p>
+</div>
+<div class="bg-gray-50 border border-gray-100 p-2 rounded-lg">
+<p class="text-green-500 text-xxs mb-1">完成</p>
+<p class="text-lg font-bold font-mono">96</p>
+</div>
+<div class="bg-gray-50 border border-gray-100 p-2 rounded-lg">
+<p class="text-blue-500 text-xxs mb-1">进行中</p>
+<p class="text-lg font-bold font-mono">3</p>
+</div>
+<div class="bg-gray-50 border border-gray-100 p-2 rounded-lg">
+<p class="text-red-500 text-xxs mb-1">失败</p>
+<p class="text-lg font-bold font-mono">2</p>
+</div>
+</div>
+</section>
+<!-- History -->
+<section class="flex-1" data-purpose="history">
+<div class="flex items-center justify-between mb-4">
+<h2 class="font-bold text-sm">历史记录</h2>
+</div>
+<div class="flex items-center gap-2 mb-4">
+<div class="flex-1 relative">
+<input class="w-full bg-gray-50 border border-gray-200 rounded px-8 py-1.5 text-xs focus:ring-0 focus:border-blue-500" placeholder="搜索历史记录..." type="text"/>
+<svg class="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<button class="p-1.5 border border-gray-200 rounded bg-white text-gray-500"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 4.5h18m-18 5h18m-18 5h18m-18 5h18" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+</div>
+<div class="space-y-4">
+<!-- History Item 1 -->
+<div class="flex gap-3 group cursor-pointer hover:bg-gray-50 p-2 -mx-2 rounded-lg transition-colors">
+<div class="flex-shrink-0 grid grid-cols-2 gap-0.5 w-16 h-12 rounded overflow-hidden">
+<img class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCaPAHPhUlU4LnZIdpxL5GQzZkJSWcly9mG063jbVKvv_GaX-xfEpmCxeIOnJ0DqMmMjifoO4e-sZ3s1PBDzILnB6-XmbMBRp8453RVZ8y9XYy-7jF13St9wlCO3ViAh1pwBgAxB0Xph_k0vpk0eG1Em7cnKMihpiapze9pzZlXG41otxHQFdaI_i-uGxxWmuDTJRhzxEoUeHGftxd6IMiHnVhLKVg7PCRgecCUAbB4vG9xYieAtmts8sxUEO_EfBIibvUM190DRU4"/>
+<img class="w-full h-full object-cover scale-110" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCaPAHPhUlU4LnZIdpxL5GQzZkJSWcly9mG063jbVKvv_GaX-xfEpmCxeIOnJ0DqMmMjifoO4e-sZ3s1PBDzILnB6-XmbMBRp8453RVZ8y9XYy-7jF13St9wlCO3ViAh1pwBgAxB0Xph_k0vpk0eG1Em7cnKMihpiapze9pzZlXG41otxHQFdaI_i-uGxxWmuDTJRhzxEoUeHGftxd6IMiHnVhLKVg7PCRgecCUAbB4vG9xYieAtmts8sxUEO_EfBIibvUM190DRU4"/>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-start">
+<h4 class="text-xs font-bold truncate">未来海上城市</h4>
+<span class="text-[10px] text-gray-400 font-mono">0:18</span>
+</div>
+<p class="text-xxs text-gray-400">16:9 · 高清 · 2 张</p>
+<div class="flex justify-between items-center mt-1">
+<span class="text-[10px] text-gray-400">10:23</span>
+<span class="text-[10px] text-green-500 flex items-center gap-0.5"><span class="w-1 h-1 bg-green-500 rounded-full"></span> 完成</span>
+</div>
+</div>
+</div>
+<!-- History Item 2 -->
+<div class="flex gap-3 group cursor-pointer hover:bg-gray-50 p-2 -mx-2 rounded-lg transition-colors">
+<div class="flex-shrink-0 grid grid-cols-2 gap-0.5 w-16 h-12 rounded overflow-hidden">
+<div class="bg-gray-200"></div>
+<div class="bg-gray-200"></div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-start">
+<h4 class="text-xs font-bold truncate">雪山湖泊风景</h4>
+<span class="text-[10px] text-gray-400 font-mono">0:18</span>
+</div>
+<p class="text-xxs text-gray-400">4:3 · 超清 · 4 张</p>
+<div class="flex justify-between items-center mt-1">
+<span class="text-[10px] text-gray-400">10:18</span>
+<span class="text-[10px] text-green-500 flex items-center gap-0.5"><span class="w-1 h-1 bg-green-500 rounded-full"></span> 完成</span>
+</div>
+</div>
+</div>
+<!-- History Item 3 -->
+<div class="flex gap-3 group cursor-pointer hover:bg-gray-50 p-2 -mx-2 rounded-lg transition-colors">
+<div class="flex-shrink-0 grid grid-cols-2 gap-0.5 w-16 h-12 rounded overflow-hidden">
+<div class="bg-gray-200"></div>
+<div class="bg-gray-200"></div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-start">
+<h4 class="text-xs font-bold truncate">赛博朋克城市街道</h4>
+<span class="text-[10px] text-gray-400 font-mono">0:27</span>
+</div>
+<p class="text-xxs text-gray-400">9:16 · 高清 · 2 张</p>
+<div class="flex justify-between items-center mt-1">
+<span class="text-[10px] text-gray-400">昨天 18:42</span>
+<span class="text-[10px] text-green-500 flex items-center gap-0.5"><span class="w-1 h-1 bg-green-500 rounded-full"></span> 完成</span>
+</div>
+</div>
+</div>
+<!-- History Item 4 (Failed) -->
+<div class="flex gap-3 group cursor-pointer hover:bg-gray-50 p-2 -mx-2 rounded-lg transition-colors">
+<div class="flex-shrink-0 bg-gray-200 w-16 h-12 rounded flex items-center justify-center">
+<svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-start">
+<h4 class="text-xs font-bold truncate">宇航员在火星表面</h4>
+<span class="text-[10px] text-gray-400 font-mono">0:13</span>
+</div>
+<p class="text-xxs text-gray-400">1:1 · 标准 · 1 张</p>
+<div class="flex justify-between items-center mt-1">
+<span class="text-[10px] text-gray-400">昨天 16:30</span>
+<span class="text-[10px] text-red-500 flex items-center gap-0.5"><span class="w-1 h-1 bg-red-500 rounded-full"></span> 失败</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Quick Actions -->
+<section data-purpose="quick-actions">
+<h2 class="font-bold text-sm mb-4">快捷操作</h2>
+<div class="space-y-2">
+<div class="grid grid-cols-2 gap-2">
+<button class="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded py-2 px-3 text-xs hover:bg-gray-100 transition-colors">
+<svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+              导入提示词模板
+            </button>
+<button class="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded py-2 px-3 text-xs hover:bg-gray-100 transition-colors">
+<svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+              分享当前配置
+            </button>
+</div>
+<button class="w-full flex items-center gap-2 bg-gray-50 border border-gray-200 rounded py-2 px-3 text-xs hover:bg-gray-100 transition-colors">
+<svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+            查看使用文档
+          </button>
+</div>
+</section>
+</aside>
+<!-- END: RightSidebar -->
+</main>
+<!-- BEGIN: StatusFooter -->
+<footer class="h-6 bg-white border-t border-gray-200 flex items-center justify-between px-3 text-[10px] text-gray-400 shrink-0">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-green-500"></span>
+<span>System Ready</span>
+</div>
+<div class="flex items-center gap-3 font-mono">
+<span>Latency: <span class="text-gray-600">42ms</span></span>
+<span>Response: <span class="text-gray-600">1.2s</span></span>
+<span>Error rate: <span class="text-gray-600">0.02%</span></span>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<span>v2.4.1-stable</span>
+<span class="text-gray-300">|</span>
+<span>© 2024 Deepsea Command Center</span>
+</div>
+</footer>
+<!-- END: StatusFooter -->
+</body></html>

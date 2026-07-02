@@ -1,0 +1,41 @@
+{
+  "messageCount": 6,
+  "runCount": 0,
+  "workflowController": {
+    "workflow_run_id": "ofQyuxkOa2OQ0W",
+    "status": "completed",
+    "selected_intent": "answer",
+    "active_stage": "answer",
+    "controller": "planner",
+    "blocker": null,
+    "next_action": null
+  },
+  "workflowArtifacts": [
+    {
+      "id": "f2kRRY5u1qI8mT",
+      "workflow_run_id": "ofQyuxkOa2OQ0W",
+      "artifact_type": "intent_routing",
+      "version": 1,
+      "status": "draft",
+      "title": "Intent Routing",
+      "content": "```json\n{\n  \"intent\": \"answer\",\n  \"confidence\": 0.97,\n  \"reason\": \"fake ACP planner routing evidence\"\n}\n```",
+      "structured_data": {
+        "intent": "answer",
+        "confidence": 0.97,
+        "reason": "fake ACP planner routing evidence"
+      },
+      "created_by_agent_id": "planner",
+      "change_request_message_id": null,
+      "approved_by": null,
+      "approved_at": null,
+      "created_at": 1781759953096
+    }
+  ],
+  "workflowGates": [],
+  "textHasWorkflowMission": false,
+  "textHasExecutionLog": false,
+  "textHasMetadata": false,
+  "textHasAssistantAnswer": true,
+  "textHasMergedWorkflowEvents": false,
+  "textSample": "深海指挥中心\n会话\n聊天\n智能体\n技能\n知识库\n图片\n资源\n新建会话\n⌘N\n项目\nWorkflow Browser Verify 7346\nWorkflow browser answer protoco...\n刚刚\n已进入 Superpowers workflow intake：为什么这个系统要使用 workflow-first？请用一句话回答。\nFindBorderBarSize\n对话记录\n文件浏览器\n项目终端\nWorkflow browser ...\n待办\n0\n3. 对话记录\n(Transcript)\n全部展开\nuser\n13:19:12\n复制\n为什么这个系统要使用 workflow-first？请用一句话回答。\n规划师 (PLANNER)\n13:19:13\ndone\n\n已通过 workflow-first answer 路径处理：为什么这个系统要使用 workflow-first？请用一句话回答。\n\n$\n粘贴文件会上传到项目文件库\n对话记录\n文件浏览器\n项目终端\n状态\n契约\n运行\n工具\n计划\nWORKFLOW 状态\n已完成\n状态\n\nWorkflow 已完成。\n\n阶段\n\nanswer · planner\n\n目标契约 (CONTRACT)\n编辑\n目标 (OBJECTIVE)\n\nWorkflow browser answer protocol fake\n\n原因 (REASON)\n\nfake ACP planner routing evidence\n\n边界 (SCOPE)\n\n未设置范围\n\n风险 (RISKS)\n\n 暂无风险记录\n\n验收 (ACCEPTANCE)\n\n暂无验收标准\n\n会话计划 (SESSION PLAN)\n暂无会话计划\n代理运行 (ACTIVE RUN)\n0 条记录\n暂无代理运行\n工具调用 (TOOLS)\n0 条记录\n暂无工具调用\n本次会话变更 (SESSION CHANGES)\n本会话暂无文件变更\n0\nno session changes\n0\n查看预览\n立即应用\nWorkflow browser answer prot...\n·\ndetached\nclean\n响应耗时\n--\n错误率\n0.0%\n网络延迟\n--\n压缩\n⌘P\n分叉\n⌘B\n上下文压力\n28%\n规\nTOKEN 消耗\n--\n导出"
+}

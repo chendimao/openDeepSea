@@ -1,0 +1,68 @@
+[
+  {
+    "name": "review",
+    "sessionId": "kRFg29UNtfVoTuDn",
+    "url": "http://127.0.0.1:5192/projects/gZwB76YO-EzS/sessions/kRFg29UNtfVoTuDn",
+    "workflowCount": 1,
+    "artifactApproveCount": 2,
+    "flags": {
+      "hasWorkflowMission": false,
+      "hasExecutionLog": false,
+      "hasRawSuperpowers": false,
+      "hasFakeWorkflowControl": false
+    },
+    "intents": [
+      "review_only"
+    ],
+    "runStatuses": [],
+    "gates": [
+      {
+        "kind": "plan_confirm",
+        "status": "pending",
+        "artifact_version_id": "JjSceOU19m8QHf"
+      }
+    ],
+    "controller": {
+      "workflow_run_id": "j9gHk990rew93b",
+      "status": "running",
+      "selected_intent": "review_only",
+      "active_stage": "reviewer_assignment",
+      "controller": "reviewer",
+      "blocker": null,
+      "next_action": null
+    }
+  },
+  {
+    "name": "standard",
+    "sessionId": "p9nuIi5BUIO4PTQr",
+    "url": "http://127.0.0.1:5192/projects/gZwB76YO-EzS/sessions/p9nuIi5BUIO4PTQr",
+    "workflowCount": 1,
+    "artifactApproveCount": 2,
+    "flags": {
+      "hasWorkflowMission": false,
+      "hasExecutionLog": false,
+      "hasRawSuperpowers": false,
+      "hasFakeWorkflowControl": false
+    },
+    "intents": [
+      "standard_development"
+    ],
+    "runStatuses": [],
+    "gates": [
+      {
+        "kind": "spec_confirm",
+        "status": "pending",
+        "artifact_version_id": "U4O-u5mVOWP86F"
+      }
+    ],
+    "controller": {
+      "workflow_run_id": "qr1jeEKgLtja1H",
+      "status": "awaiting_approval",
+      "selected_intent": "standard_development",
+      "active_stage": "brainstorming",
+      "controller": "user",
+      "blocker": "Waiting for approved spec artifact version",
+      "next_action": "等待用户确认当前 workflow artifact。"
+    }
+  }
+]
