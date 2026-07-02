@@ -1,7 +1,0 @@
-我先查项目知识库里和“删除项目 / active runs”相关的现有说明，再给出可执行的 debug 规划判断。```json
-{
-  "intent": "debug_plan",
-  "confidence": 0.92,
-  "reason": "用户明确要求 debug：分析删除项目时为何可能提示 `project has active runs`，并且要求先给 debug_plan、不要直接修改文件。当前知识库检索未找到相关资料，scope 内无可引用来源。建议进入只读调试流程：先定位删除项目 API/仓储实现与 active runs 判定逻辑，再追踪 run 生命周期、数据库状态更新、并发/残留状态场景，最后形成根因假设、验证命令和后续修复边界。"
-}
-```

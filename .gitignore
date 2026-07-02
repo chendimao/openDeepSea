@@ -11,6 +11,8 @@ release/
 .DS_Store
 .superpowers/
 .playwright-cli/
+tmp/
+output/
 data/
 *.db
 *.db-shm
